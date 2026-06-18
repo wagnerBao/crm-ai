@@ -73,7 +73,7 @@ public sealed class PostgresOpportunityContextRepository(NpgsqlDataSource dataSo
     private static async Task<PipelineStageSnapshot?> ReadStageAsync(NpgsqlConnection connection, Guid stageId, CancellationToken cancellationToken)
     {
         const string sql = """
-            select id, title, sort_order
+            select stage_id, stage_title, stage_sort_order
             from vw_ai_agent_opportunity_context
             where stage_id = @id
             """;
@@ -83,7 +83,7 @@ public sealed class PostgresOpportunityContextRepository(NpgsqlDataSource dataSo
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
 
         return await reader.ReadAsync(cancellationToken)
-            ? new PipelineStageSnapshot(ReadGuid(reader, "id"), reader.GetString(reader.GetOrdinal("title")), reader.GetInt32(reader.GetOrdinal("sort_order")))
+            ? new PipelineStageSnapshot(ReadGuid(reader, "stage_id"), reader.GetString(reader.GetOrdinal("stage_title")), reader.GetInt32(reader.GetOrdinal("stage_sort_order")))
             : null;
     }
 
