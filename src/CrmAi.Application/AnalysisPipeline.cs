@@ -15,14 +15,45 @@ public interface IRiskAnalysisAgent
 public interface IOpenAiRiskAnalysisClient
 {
     Task<OpenAiRiskAnalysisResponse> AnalyzeAsync(
-        string instructions,
+        AiAgentRuntimeSettings settings,
         RiskAnalysisAgentInput input,
         CancellationToken cancellationToken);
+}
+
+public interface IOpenAiWhatsappConversationAnalysisClient
+{
+    Task<OpenAiWhatsappConversationAnalysisResponse> AnalyzeAsync(
+        AiAgentRuntimeSettings settings,
+        WhatsappConversationAnalysisInput input,
+        CancellationToken cancellationToken);
+}
+
+public interface IAiAgentRuntimeSettingsRepository
+{
+    Task<AiAgentRuntimeSettings> GetAsync(string agentKey, string? companyId, CancellationToken cancellationToken);
 }
 
 public interface IAnalysisResultStore
 {
     Task SaveRiskAnalysisAsync(OpportunityAnalysisContext context, RiskAnalysisResult result, CancellationToken cancellationToken);
+}
+
+public interface IWhatsappConversationAnalysisAgent
+{
+    Task<WhatsappConversationAnalysisResult?> AnalyzeAsync(OpportunityAnalysisContext context, CancellationToken cancellationToken);
+}
+
+public interface IWhatsappConversationActionStore
+{
+    Task ApplyAsync(OpportunityAnalysisContext context, WhatsappConversationAnalysisResult result, CancellationToken cancellationToken);
+}
+
+public interface IWhatsappConversationAnalysisScheduler
+{
+    Task ScheduleAsync(OpportunityEvent opportunityEvent, CancellationToken cancellationToken);
+    Task<IReadOnlyCollection<OpportunityEvent>> ClaimDueAsync(int limit, CancellationToken cancellationToken);
+    Task CompleteAsync(string eventId, CancellationToken cancellationToken);
+    Task FailAsync(string eventId, string error, CancellationToken cancellationToken);
 }
 
 public interface IOpportunityAnalysisEventProcessor
@@ -44,14 +75,33 @@ public interface IGamificationProjectionService
 public sealed class OpportunityAnalysisEventProcessor(
     IOpportunityContextRepository contextRepository,
     IRiskAnalysisAgent riskAnalysisAgent,
-    IAnalysisResultStore resultStore) : IOpportunityAnalysisEventProcessor
+    IAnalysisResultStore resultStore,
+    IWhatsappConversationAnalysisAgent whatsappConversationAnalysisAgent,
+    IWhatsappConversationActionStore whatsappConversationActionStore,
+    IWhatsappConversationAnalysisScheduler whatsappConversationAnalysisScheduler) : IOpportunityAnalysisEventProcessor
 {
     public async Task ProcessAsync(OpportunityEvent opportunityEvent, CancellationToken cancellationToken)
     {
+        if (string.Equals(opportunityEvent.Type, "opportunity.whatsapp.message.created", StringComparison.OrdinalIgnoreCase))
+        {
+            await whatsappConversationAnalysisScheduler.ScheduleAsync(opportunityEvent, cancellationToken);
+            return;
+        }
+
         var context = await contextRepository.GetForAnalysisAsync(opportunityEvent, cancellationToken);
         if (context is null)
         {
             return;
+        }
+
+        if (string.Equals(opportunityEvent.Type, "opportunity.whatsapp.conversation.batch", StringComparison.OrdinalIgnoreCase))
+        {
+            var whatsappResult = await whatsappConversationAnalysisAgent.AnalyzeAsync(context, cancellationToken);
+            if (whatsappResult is not null)
+            {
+                await whatsappConversationActionStore.ApplyAsync(context, whatsappResult, cancellationToken);
+                context = await contextRepository.GetForAnalysisAsync(opportunityEvent, cancellationToken) ?? context;
+            }
         }
 
         var result = await riskAnalysisAgent.AnalyzeAsync(context, cancellationToken);

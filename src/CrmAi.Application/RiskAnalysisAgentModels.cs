@@ -13,13 +13,16 @@ public sealed record OpenAiRiskAnalysisResponse(
     IReadOnlyCollection<string> Recommendations);
 
 public sealed record RiskAnalysisAgentInput(
-    AnalysisOpportunitySummary Opportunity,
+    AnalysisOpportunitySummary? Opportunity,
+    AnalysisAccountSummary? Account,
+    IReadOnlyCollection<AnalysisProductSummary> Products,
     AnalysisPipelineSummary Pipeline,
     AnalysisActivitySummary Activities,
     IReadOnlyCollection<AnalysisNoteSummary> RecentNotes,
     IReadOnlyCollection<AnalysisContactSummary> Contacts,
     IReadOnlyCollection<AnalysisUserSummary> Users,
     IReadOnlyCollection<AnalysisHistoryEventSummary> RecentHistoryEvents,
+    IReadOnlyCollection<AnalysisAgentInsightSummary> RelatedAgentInsights,
     AnalysisTriggerEventSummary TriggerEvent,
     CommercialRuleAssessment CommercialRuleAssessment);
 
@@ -67,6 +70,12 @@ public sealed record AnalysisContactSummary(string Name, string Role, string Sta
 public sealed record AnalysisUserSummary(string Name, string Role, bool IsActive);
 
 public sealed record AnalysisHistoryEventSummary(string Event, string? UserId, DateTime CreatedAt);
+
+public sealed record AnalysisAccountSummary(string Id, string Name, string Segment, string City, string Uf, string Status);
+
+public sealed record AnalysisProductSummary(string Id, string Name, string Type, decimal Price, bool Featured, string Status, string? InterestOrigin, string Summary);
+
+public sealed record AnalysisAgentInsightSummary(string Title, string Message, string Kind, decimal? Confidence, string Status, DateTime CreatedAt);
 
 public sealed record AnalysisTriggerEventSummary(string Type, DateTime OccurredAt, string? UserId);
 

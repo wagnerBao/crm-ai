@@ -6,34 +6,22 @@ using Microsoft.Extensions.Options;
 
 namespace CrmAi.Application;
 
-public sealed class OpenAiRiskAnalysisOptions
-{
-    public const string SectionName = "OpenAI";
-
-    public string? ApiKey { get; init; }
-
-    public string Model { get; init; } = "gpt-4.1-mini";
-
-    public string ResponsesEndpoint { get; init; } = "https://api.openai.com/v1/responses";
-}
-
-public sealed class OpenAiResponsesRiskAnalysisClient(
+public sealed class OpenAiResponsesWhatsappConversationAnalysisClient(
     HttpClient httpClient,
-    IOptions<OpenAiRiskAnalysisOptions> options) : IOpenAiRiskAnalysisClient
+    IOptions<OpenAiRiskAnalysisOptions> options) : IOpenAiWhatsappConversationAnalysisClient
 {
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web)
     {
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
     };
 
-    public async Task<OpenAiRiskAnalysisResponse> AnalyzeAsync(
+    public async Task<OpenAiWhatsappConversationAnalysisResponse> AnalyzeAsync(
         AiAgentRuntimeSettings settings,
-        RiskAnalysisAgentInput input,
+        WhatsappConversationAnalysisInput input,
         CancellationToken cancellationToken)
     {
         var configuredOptions = options.Value;
         var apiKey = ResolveApiKey(settings, configuredOptions);
-
         if (string.IsNullOrWhiteSpace(apiKey))
         {
             throw new InvalidOperationException("OpenAI API key was not configured. Set OpenAI:ApiKey or OPENAI_API_KEY.");
@@ -51,9 +39,9 @@ public sealed class OpenAiResponsesRiskAnalysisClient(
                 format = new
                 {
                     type = "json_schema",
-                    name = "risk_analysis_result",
+                    name = "whatsapp_conversation_analysis_result",
                     strict = true,
-                    schema = RiskAnalysisJsonSchema.Value
+                    schema = WhatsappConversationAnalysisJsonSchema.Value
                 }
             }
         }, options: SerializerOptions);
@@ -62,12 +50,12 @@ public sealed class OpenAiResponsesRiskAnalysisClient(
         var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
         if (!response.IsSuccessStatusCode)
         {
-            throw new InvalidOperationException($"OpenAI risk analysis failed with status {(int)response.StatusCode}: {responseBody}");
+            throw new InvalidOperationException($"OpenAI WhatsApp conversation analysis failed with status {(int)response.StatusCode}: {responseBody}");
         }
 
         var outputText = ExtractOutputText(responseBody);
-        return JsonSerializer.Deserialize<OpenAiRiskAnalysisResponse>(outputText, SerializerOptions)
-            ?? throw new InvalidOperationException("OpenAI response did not match the risk analysis schema.");
+        return JsonSerializer.Deserialize<OpenAiWhatsappConversationAnalysisResponse>(outputText, SerializerOptions)
+            ?? throw new InvalidOperationException("OpenAI response did not match the WhatsApp conversation analysis schema.");
     }
 
     private static string? ResolveApiKey(AiAgentRuntimeSettings settings, OpenAiRiskAnalysisOptions configuredOptions)

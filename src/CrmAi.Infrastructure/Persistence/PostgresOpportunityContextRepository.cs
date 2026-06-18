@@ -1,6 +1,7 @@
 using CrmAi.Application;
 using CrmAi.Domain;
 using Npgsql;
+using NpgsqlTypes;
 
 namespace CrmAi.Infrastructure.Persistence;
 
@@ -28,17 +29,20 @@ public sealed class PostgresOpportunityContextRepository(NpgsqlDataSource dataSo
         var contacts = await ReadContactsAsync(connection, opportunityId, cancellationToken);
         var users = await ReadUsersAsync(connection, opportunityId, opportunity.OwnerUserId, cancellationToken);
         var history = await ReadHistoryAsync(connection, opportunityId, cancellationToken);
-        var metricRules = await ReadMetricRulesAsync(connection, cancellationToken);
+        var account = await ReadAccountAsync(connection, opportunityId, cancellationToken);
+        var products = await ReadProductsAsync(connection, opportunityId, cancellationToken);
+        var insights = await ReadAgentInsightsAsync(connection, opportunityId, cancellationToken);
+        var metricRules = await ReadMetricRulesAsync(connection, opportunity.CompanyId, cancellationToken);
 
-        return new OpportunityAnalysisContext(opportunity, stage, notes, activities, contacts, users, history, metricRules, triggerEvent);
+        return new OpportunityAnalysisContext(opportunity, stage, notes, activities, contacts, users, history, account, products, insights, metricRules, triggerEvent);
     }
 
     private static async Task<OpportunitySnapshot?> ReadOpportunityAsync(NpgsqlConnection connection, Guid opportunityId, CancellationToken cancellationToken)
     {
         const string sql = """
-            select id, name, pipeline_id, stage_id, account_id, owner_user_id, value, status, risk, created_at, updated_at, last_activity_at
-            from opportunities
-            where id = @id
+            select opportunity_id, company_id, name, pipeline_id, stage_id, account_id, owner_user_id, value, status, risk, created_at, updated_at, last_activity_at
+            from vw_ai_agent_opportunity_context
+            where opportunity_id = @id
             """;
 
         await using var command = new NpgsqlCommand(sql, connection);
@@ -51,7 +55,8 @@ public sealed class PostgresOpportunityContextRepository(NpgsqlDataSource dataSo
         }
 
         return new OpportunitySnapshot(
-            ReadGuid(reader, "id"),
+            ReadGuid(reader, "opportunity_id"),
+            ReadNullableGuid(reader, "company_id"),
             reader.GetString(reader.GetOrdinal("name")),
             ReadGuid(reader, "pipeline_id"),
             ReadGuid(reader, "stage_id"),
@@ -69,8 +74,8 @@ public sealed class PostgresOpportunityContextRepository(NpgsqlDataSource dataSo
     {
         const string sql = """
             select id, title, sort_order
-            from pipeline_stages
-            where id = @id
+            from vw_ai_agent_opportunity_context
+            where stage_id = @id
             """;
 
         await using var command = new NpgsqlCommand(sql, connection);
@@ -86,7 +91,7 @@ public sealed class PostgresOpportunityContextRepository(NpgsqlDataSource dataSo
     {
         const string sql = """
             select id, text, author_user_id, created_at
-            from notes
+            from vw_ai_agent_note_context
             where opportunity_id = @opportunityId
             order by created_at desc
             limit 50
@@ -113,7 +118,7 @@ public sealed class PostgresOpportunityContextRepository(NpgsqlDataSource dataSo
     {
         const string sql = """
             select id, title, activity_type, channel, status, date_at, notes, owner_user_id, created_at, updated_at
-            from activities
+            from vw_ai_agent_activity_context
             where opportunity_id = @opportunityId
             order by date_at desc
             limit 100
@@ -145,11 +150,10 @@ public sealed class PostgresOpportunityContextRepository(NpgsqlDataSource dataSo
     private static async Task<IReadOnlyCollection<ContactSnapshot>> ReadContactsAsync(NpgsqlConnection connection, Guid opportunityId, CancellationToken cancellationToken)
     {
         const string sql = """
-            select c.id, c.account_id, c.name, c.role, c.email, c.phone, c.owner_user_id, c.status
-            from contacts c
-            inner join opportunity_contacts oc on oc.contact_id = c.id
-            where oc.opportunity_id = @opportunityId
-            order by c.name
+            select id, account_id, name, role, email, phone, owner_user_id, status
+            from vw_ai_agent_contact_context
+            where opportunity_id = @opportunityId
+            order by name
             """;
 
         await using var command = new NpgsqlCommand(sql, connection);
@@ -176,23 +180,14 @@ public sealed class PostgresOpportunityContextRepository(NpgsqlDataSource dataSo
     private static async Task<IReadOnlyCollection<UserSnapshot>> ReadUsersAsync(NpgsqlConnection connection, Guid opportunityId, string? ownerUserId, CancellationToken cancellationToken)
     {
         const string sql = """
-            select distinct u.id, u.name, u.role, u.is_active
-            from users u
-            where u.id in (
-                select user_id from opportunity_users where opportunity_id = @opportunityId
-                union
-                select owner_user_id from activities where opportunity_id = @opportunityId and owner_user_id is not null
-                union
-                select author_user_id from notes where opportunity_id = @opportunityId and author_user_id is not null
-                union
-                select @ownerUserId::uuid where @ownerUserId is not null
-            )
-            order by u.name
+            select id, name, role, is_active
+            from vw_ai_agent_user_context
+            where opportunity_id = @opportunityId
+            order by name
             """;
 
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue("opportunityId", opportunityId);
-        command.Parameters.AddWithValue("ownerUserId", string.IsNullOrWhiteSpace(ownerUserId) ? DBNull.Value : Guid.Parse(ownerUserId));
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
 
         var users = new List<UserSnapshot>();
@@ -212,7 +207,7 @@ public sealed class PostgresOpportunityContextRepository(NpgsqlDataSource dataSo
     {
         const string sql = """
             select id, event, user_id, created_at
-            from opportunity_history
+            from vw_ai_agent_history_context
             where opportunity_id = @opportunityId
             order by created_at desc
             limit 100
@@ -235,24 +230,103 @@ public sealed class PostgresOpportunityContextRepository(NpgsqlDataSource dataSo
         return events;
     }
 
-    private static async Task<IReadOnlyCollection<CommercialAnalysisMetricRuleSnapshot>> ReadMetricRulesAsync(NpgsqlConnection connection, CancellationToken cancellationToken)
+    private static async Task<AccountSnapshot?> ReadAccountAsync(NpgsqlConnection connection, Guid opportunityId, CancellationToken cancellationToken)
+    {
+        const string sql = """
+            select account_id, account_name, account_segment, account_city, account_uf, account_status
+            from vw_ai_agent_opportunity_context
+            where opportunity_id = @opportunityId
+              and account_id is not null
+            """;
+
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("opportunityId", opportunityId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+
+        return await reader.ReadAsync(cancellationToken)
+            ? new AccountSnapshot(
+                ReadGuid(reader, "account_id"),
+                reader.GetString(reader.GetOrdinal("account_name")),
+                reader.GetString(reader.GetOrdinal("account_segment")),
+                reader.GetString(reader.GetOrdinal("account_city")),
+                reader.GetString(reader.GetOrdinal("account_uf")),
+                reader.GetString(reader.GetOrdinal("account_status")))
+            : null;
+    }
+
+    private static async Task<IReadOnlyCollection<ProductSnapshot>> ReadProductsAsync(NpgsqlConnection connection, Guid opportunityId, CancellationToken cancellationToken)
+    {
+        const string sql = """
+            select id, name, type, price, featured, status, interest_origin, summary
+            from vw_ai_agent_product_context
+            where opportunity_id = @opportunityId
+            order by name
+            """;
+
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("opportunityId", opportunityId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+
+        var products = new List<ProductSnapshot>();
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            products.Add(new ProductSnapshot(
+                ReadGuid(reader, "id"),
+                reader.GetString(reader.GetOrdinal("name")),
+                reader.GetString(reader.GetOrdinal("type")),
+                reader.GetDecimal(reader.GetOrdinal("price")),
+                reader.GetBoolean(reader.GetOrdinal("featured")),
+                reader.GetString(reader.GetOrdinal("status")),
+                ReadNullableString(reader, "interest_origin"),
+                reader.GetString(reader.GetOrdinal("summary"))));
+        }
+
+        return products;
+    }
+
+    private static async Task<IReadOnlyCollection<AgentInsightSnapshot>> ReadAgentInsightsAsync(NpgsqlConnection connection, Guid opportunityId, CancellationToken cancellationToken)
+    {
+        const string sql = """
+            select id, title, message, kind, confidence, status, created_at, updated_at
+            from vw_ai_agent_insight_context
+            where opportunity_id = @opportunityId
+              and kind <> 'risk'
+            order by updated_at desc
+            limit 20
+            """;
+
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("opportunityId", opportunityId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+
+        var insights = new List<AgentInsightSnapshot>();
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            insights.Add(new AgentInsightSnapshot(
+                ReadGuid(reader, "id"),
+                reader.GetString(reader.GetOrdinal("title")),
+                reader.GetString(reader.GetOrdinal("message")),
+                reader.GetString(reader.GetOrdinal("kind")),
+                ReadNullableDecimal(reader, "confidence"),
+                reader.GetString(reader.GetOrdinal("status")),
+                reader.GetDateTime(reader.GetOrdinal("created_at")),
+                reader.GetDateTime(reader.GetOrdinal("updated_at"))));
+        }
+
+        return insights;
+    }
+
+    private static async Task<IReadOnlyCollection<CommercialAnalysisMetricRuleSnapshot>> ReadMetricRulesAsync(NpgsqlConnection connection, string? companyId, CancellationToken cancellationToken)
     {
         const string sql = """
             select r.id, r.metric_key, r.pipeline_id, r.stage_id, r.level, r.operator, r.threshold_value, r.threshold_unit
-            from commercial_analysis_metric_rules r
-            inner join commercial_analysis_settings s on s.id = r.settings_id
-            where s.is_active = true
-              and s.id = (
-                  select id
-                  from commercial_analysis_settings
-                  where is_active = true
-                  order by updated_at desc
-                  limit 1
-              )
+            from vw_ai_agent_commercial_metric_rule_context r
+            where (@companyId is null or r.company_id = @companyId or r.company_id is null)
             order by r.metric_key, r.level
             """;
 
         await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.Add("companyId", NpgsqlDbType.Uuid).Value = string.IsNullOrWhiteSpace(companyId) ? DBNull.Value : Guid.Parse(companyId);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
 
         var rules = new List<CommercialAnalysisMetricRuleSnapshot>();
@@ -291,5 +365,11 @@ public sealed class PostgresOpportunityContextRepository(NpgsqlDataSource dataSo
     {
         var ordinal = reader.GetOrdinal(name);
         return reader.IsDBNull(ordinal) ? null : reader.GetDateTime(ordinal);
+    }
+
+    private static decimal? ReadNullableDecimal(NpgsqlDataReader reader, string name)
+    {
+        var ordinal = reader.GetOrdinal(name);
+        return reader.IsDBNull(ordinal) ? null : reader.GetDecimal(ordinal);
     }
 }

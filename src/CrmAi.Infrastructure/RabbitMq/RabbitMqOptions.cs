@@ -17,6 +17,7 @@ public sealed class RabbitMqOptions
         "crm.events.opportunity.activity.created",
         "crm.events.opportunity.activity.updated",
         "crm.events.opportunity.note.created",
+        "crm.events.opportunity.whatsapp.message.created",
         "crm.events.opportunity.stage.changed",
         "crm.events.opportunity.pipeline.changed",
         "crm.events.opportunity.updated"

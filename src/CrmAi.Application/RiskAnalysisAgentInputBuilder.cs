@@ -4,8 +4,9 @@ namespace CrmAi.Application;
 
 public sealed class RiskAnalysisAgentInputBuilder(CommercialRuleAssessmentService commercialRuleAssessmentService)
 {
-    public RiskAnalysisAgentRequest Build(OpportunityAnalysisContext context)
+    public RiskAnalysisAgentRequest Build(OpportunityAnalysisContext context, IReadOnlyCollection<string>? contextEntityKeys = null)
     {
+        var entityKeys = new ContextEntitySelection(contextEntityKeys);
         var analyzedAt = context.TriggerEvent.OccurredAt == default
             ? DateTime.UtcNow
             : context.TriggerEvent.OccurredAt.ToUniversalTime();
@@ -49,7 +50,8 @@ public sealed class RiskAnalysisAgentInputBuilder(CommercialRuleAssessmentServic
                 overdueActivities,
                 interactionCount,
                 hasStageRegression,
-                commercialAssessment),
+                commercialAssessment,
+                entityKeys),
             snapshotUpdate);
     }
 
@@ -64,9 +66,10 @@ public sealed class RiskAnalysisAgentInputBuilder(CommercialRuleAssessmentServic
         int overdueActivities,
         int interactionCount,
         bool hasStageRegression,
-        CommercialRuleAssessment commercialRuleAssessment)
+        CommercialRuleAssessment commercialRuleAssessment,
+        ContextEntitySelection entityKeys)
         => new(
-            new AnalysisOpportunitySummary(
+            entityKeys.Has("opportunity") ? new AnalysisOpportunitySummary(
                 context.Opportunity.Id,
                 context.Opportunity.Name,
                 context.Opportunity.Status,
@@ -78,7 +81,15 @@ public sealed class RiskAnalysisAgentInputBuilder(CommercialRuleAssessmentServic
                 latestInteractionAt,
                 lastInteractionDays,
                 interactionCount,
-                analyzedAt),
+                analyzedAt) : null,
+            entityKeys.Has("account") && context.Account is not null
+                ? new AnalysisAccountSummary(context.Account.Id, context.Account.Name, context.Account.Segment, context.Account.City, context.Account.Uf, context.Account.Status)
+                : null,
+            entityKeys.Has("products")
+                ? context.Products
+                    .Select(product => new AnalysisProductSummary(product.Id, product.Name, product.Type, product.Price, product.Featured, product.Status, product.InterestOrigin, product.Summary))
+                    .ToArray()
+                : [],
             new AnalysisPipelineSummary(
                 context.Opportunity.PipelineId,
                 context.Stage.Id,
@@ -90,7 +101,7 @@ public sealed class RiskAnalysisAgentInputBuilder(CommercialRuleAssessmentServic
             new AnalysisActivitySummary(
                 openActivities,
                 overdueActivities,
-                context.Activities
+                entityKeys.Has("activities") ? context.Activities
                     .OrderByDescending(activity => activity.DateAt)
                     .Take(15)
                     .Select(activity => new AnalysisActivityItem(
@@ -101,23 +112,28 @@ public sealed class RiskAnalysisAgentInputBuilder(CommercialRuleAssessmentServic
                         activity.DateAt.ToUniversalTime(),
                         activity.Notes,
                         activity.OwnerUserId))
-                    .ToArray()),
-            context.Notes
+                    .ToArray() : []),
+            entityKeys.Has("notes") ? context.Notes
                 .OrderByDescending(note => note.CreatedAt)
                 .Take(10)
                 .Select(note => new AnalysisNoteSummary(note.Text, note.AuthorUserId, note.CreatedAt.ToUniversalTime()))
-                .ToArray(),
-            context.Contacts
+                .ToArray() : [],
+            entityKeys.Has("contacts") ? context.Contacts
                 .Select(contact => new AnalysisContactSummary(contact.Name, contact.Role, contact.Status, contact.OwnerUserId))
-                .ToArray(),
-            context.Users
+                .ToArray() : [],
+            entityKeys.Has("users") ? context.Users
                 .Select(user => new AnalysisUserSummary(user.Name, user.Role, user.IsActive))
-                .ToArray(),
-            context.HistoryEvents
+                .ToArray() : [],
+            entityKeys.Has("history") ? context.HistoryEvents
                 .OrderByDescending(history => history.CreatedAt)
                 .Take(20)
                 .Select(history => new AnalysisHistoryEventSummary(history.Event, history.UserId, history.CreatedAt.ToUniversalTime()))
-                .ToArray(),
+                .ToArray() : [],
+            entityKeys.Has("agent_insights") ? context.AgentInsights
+                .OrderByDescending(insight => insight.UpdatedAt)
+                .Take(10)
+                .Select(insight => new AnalysisAgentInsightSummary(insight.Title, insight.Message, insight.Kind, insight.Confidence, insight.Status, insight.CreatedAt.ToUniversalTime()))
+                .ToArray() : [],
             new AnalysisTriggerEventSummary(context.TriggerEvent.Type, context.TriggerEvent.OccurredAt.ToUniversalTime(), context.TriggerEvent.UserId),
             commercialRuleAssessment);
 
@@ -150,4 +166,11 @@ public sealed class RiskAnalysisAgentInputBuilder(CommercialRuleAssessmentServic
 
     private static int DaysBetween(DateTime from, DateTime to)
         => Math.Max(0, (int)Math.Floor((to.ToUniversalTime() - from.ToUniversalTime()).TotalDays));
+
+    private sealed class ContextEntitySelection(IReadOnlyCollection<string>? keys)
+    {
+        private readonly HashSet<string> _keys = (keys ?? []).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        public bool Has(string key) => _keys.Count == 0 || _keys.Contains(key);
+    }
 }

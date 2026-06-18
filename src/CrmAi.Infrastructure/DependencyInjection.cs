@@ -21,10 +21,14 @@ public static class DependencyInjection
 
         services.AddSingleton(new NpgsqlDataSourceBuilder(connectionString).Build());
         services.AddScoped<IOpportunityContextRepository, PostgresOpportunityContextRepository>();
+        services.AddScoped<IAiAgentRuntimeSettingsRepository, PostgresAiAgentRuntimeSettingsRepository>();
         services.AddScoped<IAnalysisResultStore, PostgresAnalysisResultStore>();
+        services.AddScoped<IWhatsappConversationActionStore, PostgresWhatsappConversationActionStore>();
+        services.AddScoped<IWhatsappConversationAnalysisScheduler, PostgresWhatsappConversationAnalysisScheduler>();
         services.AddScoped<IDailyCheckinProjectionService, PostgresDailyCheckinProjectionService>();
         services.AddScoped<IGamificationProjectionService, PostgresGamificationProjectionService>();
         services.AddHostedService<RabbitMqOpportunityAnalysisConsumer>();
+        services.AddHostedService<WhatsappConversationAnalysisHostedService>();
         services.AddHostedService<RabbitMqDailyCheckinConsumer>();
         services.AddHostedService<RabbitMqGamificationConsumer>();
         services.AddHostedService<DailyCheckinSnapshotHostedService>();

@@ -16,11 +16,15 @@ public sealed record OpportunityAnalysisContext(
     IReadOnlyCollection<ContactSnapshot> Contacts,
     IReadOnlyCollection<UserSnapshot> Users,
     IReadOnlyCollection<HistoryEventSnapshot> HistoryEvents,
+    AccountSnapshot? Account,
+    IReadOnlyCollection<ProductSnapshot> Products,
+    IReadOnlyCollection<AgentInsightSnapshot> AgentInsights,
     IReadOnlyCollection<CommercialAnalysisMetricRuleSnapshot> MetricRules,
     OpportunityEvent TriggerEvent);
 
 public sealed record OpportunitySnapshot(
     string Id,
+    string? CompanyId,
     string Name,
     string PipelineId,
     string StageId,
@@ -63,6 +67,12 @@ public sealed record UserSnapshot(string Id, string Name, string Role, bool IsAc
 
 public sealed record HistoryEventSnapshot(string Id, string Event, string? UserId, DateTime CreatedAt);
 
+public sealed record AccountSnapshot(string Id, string Name, string Segment, string City, string Uf, string Status);
+
+public sealed record ProductSnapshot(string Id, string Name, string Type, decimal Price, bool Featured, string Status, string? InterestOrigin, string Summary);
+
+public sealed record AgentInsightSnapshot(string Id, string Title, string Message, string Kind, decimal? Confidence, string Status, DateTime CreatedAt, DateTime UpdatedAt);
+
 public sealed record CommercialAnalysisMetricRuleSnapshot(
     string Id,
     string MetricKey,
@@ -89,6 +99,17 @@ public sealed record RiskAnalysisResult(
     IReadOnlyCollection<string> Reasons,
     IReadOnlyCollection<string> Recommendations,
     OpportunityAnalysisSnapshotUpdate SnapshotUpdate);
+
+public sealed record WhatsappConversationAnalysisResult(
+    string ConversationSummary,
+    bool ShouldCreateNote,
+    string? NoteText,
+    bool ShouldCreateActivity,
+    string? ActivityTitle,
+    string? ActivityNotes,
+    DateTime? ActivityDueAt,
+    int ConfidenceScore,
+    IReadOnlyCollection<string> Reasons);
 
 public enum RiskLevel
 {

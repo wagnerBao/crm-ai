@@ -12,7 +12,9 @@ public static class DependencyInjection
         services.AddSingleton<CommercialRuleAssessmentService>();
         services.AddSingleton<RiskAnalysisAgentInputBuilder>();
         services.AddHttpClient<IOpenAiRiskAnalysisClient, OpenAiResponsesRiskAnalysisClient>();
+        services.AddHttpClient<IOpenAiWhatsappConversationAnalysisClient, OpenAiResponsesWhatsappConversationAnalysisClient>();
         services.AddScoped<IRiskAnalysisAgent, RiskAnalysisAgent>();
+        services.AddScoped<IWhatsappConversationAnalysisAgent, WhatsappConversationAnalysisAgent>();
 
         return services;
     }

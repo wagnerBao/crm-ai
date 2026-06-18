@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  crmai:
+    image: wagnerbao/crm-ai:latest
+    networks:
+      - network_public
+    restart: unless-stopped
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ASPNETCORE_URLS=http://+:8093
+      - ConnectionStrings__CrmDatabase=Host=postgres;Port=5432;Database=crmdb;Username=crm_user;Password=crmPostgresPasS
+      - RabbitMQ__Uri=amqp://admin:rabbitBrokerPasS@rabbitmq:5672/
+      - RabbitMQ__OpportunityAnalysisQueue=crm.projections.opportunity-analysis
+      - RabbitMQ__DailyCheckinQueue=crm.projections.daily-checkin
+      - RabbitMQ__GamificationQueue=crm.projections.gamification
+      - RabbitMQ__PrefetchCount=8
+      - RabbitMQ__RequeueOnFailure=false
+      - RabbitMQ__DailyCheckinSnapshotIntervalMinutes=15
+      - OpenAI__Model=gpt-4.1-mini
+      - OpenAI__ResponsesEndpoint=https://api.openai.com/v1/responses
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      labels:
+        - "traefik.enable=true"
+        - "traefik.docker.network=network_public"
+        - "traefik.http.routers.crmai.rule=Host(`crmai.brokerchat.com.br`)"
+        - "traefik.http.routers.crmai.entrypoints=websecure"
+        - "traefik.http.routers.crmai.priority=1"
+        - "traefik.http.routers.crmai.tls.certresolver=letsencryptresolver"
+        - "traefik.http.routers.crmai.service=crmai"
+        - "traefik.http.services.crmai.loadbalancer.server.port=8093"
+
+networks:
+  network_public:
+    name: network_public
+    external: true
