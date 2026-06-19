@@ -16,8 +16,8 @@ public sealed class PostgresAnalysisResultStore(NpgsqlDataSource dataSource) : I
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
         const string insertSql = """
-            insert into ai_insights (id, opportunity_id, title, message, kind, confidence, status, created_at, updated_at)
-            values (@id, @opportunityId, @title, @message, @kind, @confidence, @status, @createdAt, @updatedAt)
+            insert into ai_insights (id, opportunity_id, title, message, kind, confidence, status, company_id, created_at, updated_at)
+            values (@id, @opportunityId, @title, @message, @kind, @confidence, @status, @companyId, @createdAt, @updatedAt)
             """;
 
         var now = DateTime.UtcNow;
@@ -38,6 +38,7 @@ public sealed class PostgresAnalysisResultStore(NpgsqlDataSource dataSource) : I
             command.Parameters.AddWithValue("kind", "risk-analysis");
             command.Parameters.AddWithValue("confidence", NpgsqlDbType.Numeric, result.RiskScore / 100m);
             command.Parameters.AddWithValue("status", "active");
+            command.Parameters.Add("companyId", NpgsqlDbType.Uuid).Value = string.IsNullOrWhiteSpace(context.Opportunity.CompanyId) ? DBNull.Value : Guid.Parse(context.Opportunity.CompanyId);
             command.Parameters.AddWithValue("createdAt", now);
             command.Parameters.AddWithValue("updatedAt", now);
             await command.ExecuteNonQueryAsync(cancellationToken);
