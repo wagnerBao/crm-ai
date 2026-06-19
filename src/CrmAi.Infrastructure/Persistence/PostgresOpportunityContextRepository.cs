@@ -321,7 +321,7 @@ public sealed class PostgresOpportunityContextRepository(NpgsqlDataSource dataSo
         const string sql = """
             select r.id, r.metric_key, r.pipeline_id, r.stage_id, r.level, r.operator, r.threshold_value, r.threshold_unit
             from vw_ai_agent_commercial_metric_rule_context r
-            where (@companyId is null or r.company_id = @companyId or r.company_id is null)
+            where (@companyId::uuid is null or r.company_id = @companyId::uuid or r.company_id is null)
             order by r.metric_key, r.level
             """;
 

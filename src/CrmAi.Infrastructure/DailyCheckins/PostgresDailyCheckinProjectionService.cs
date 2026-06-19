@@ -132,7 +132,7 @@ public sealed class PostgresDailyCheckinProjectionService(NpgsqlDataSource dataS
 
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue("snapshotDate", date);
-        command.Parameters.AddWithValue("groupId", string.IsNullOrWhiteSpace(groupId) ? DBNull.Value : Guid.Parse(groupId));
+        command.Parameters.Add("groupId", NpgsqlDbType.Uuid).Value = string.IsNullOrWhiteSpace(groupId) ? DBNull.Value : Guid.Parse(groupId);
         var payload = await command.ExecuteScalarAsync(cancellationToken);
         return payload is null || payload is DBNull
             ? null
@@ -413,7 +413,7 @@ public sealed class PostgresDailyCheckinProjectionService(NpgsqlDataSource dataS
     private static void AddSnapshotParameters(NpgsqlCommand command, DateOnly date, string? groupId, DateTime snapshotAt, string payload)
     {
         command.Parameters.AddWithValue("snapshotDate", date);
-        command.Parameters.AddWithValue("groupId", string.IsNullOrWhiteSpace(groupId) ? DBNull.Value : Guid.Parse(groupId));
+        command.Parameters.Add("groupId", NpgsqlDbType.Uuid).Value = string.IsNullOrWhiteSpace(groupId) ? DBNull.Value : Guid.Parse(groupId);
         command.Parameters.AddWithValue("snapshotAt", snapshotAt);
         command.Parameters.AddWithValue("payload", payload);
     }
@@ -470,12 +470,12 @@ public sealed class PostgresDailyCheckinProjectionService(NpgsqlDataSource dataS
             from users u
             left join user_groups g on g.id = u.group_id
             where u.is_active = true
-              and (@groupId is null or u.group_id = @groupId)
+              and (@groupId::uuid is null or u.group_id = @groupId::uuid)
             order by u.name
             """;
 
         await using var command = new NpgsqlCommand(sql, connection);
-        command.Parameters.AddWithValue("groupId", string.IsNullOrWhiteSpace(groupId) ? DBNull.Value : Guid.Parse(groupId));
+        command.Parameters.Add("groupId", NpgsqlDbType.Uuid).Value = string.IsNullOrWhiteSpace(groupId) ? DBNull.Value : Guid.Parse(groupId);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         var users = new List<DailyCheckinUserDto>();
         while (await reader.ReadAsync(cancellationToken))

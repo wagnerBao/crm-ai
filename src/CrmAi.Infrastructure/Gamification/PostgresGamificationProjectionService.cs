@@ -1,6 +1,7 @@
 using CrmAi.Application;
 using CrmAi.Domain;
 using Npgsql;
+using NpgsqlTypes;
 
 namespace CrmAi.Infrastructure.Gamification;
 
@@ -149,7 +150,7 @@ public sealed class PostgresGamificationProjectionService(NpgsqlDataSource dataS
 
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue("scoredAt", scoredAt);
-        command.Parameters.AddWithValue("groupId", userGroupId.HasValue ? userGroupId.Value : DBNull.Value);
+        command.Parameters.Add("groupId", NpgsqlDbType.Uuid).Value = userGroupId.HasValue ? userGroupId.Value : DBNull.Value;
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         var games = new List<GamificationGameSnapshot>();
         while (await reader.ReadAsync(cancellationToken))

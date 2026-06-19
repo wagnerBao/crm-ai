@@ -4,6 +4,7 @@ using CrmAi.Application;
 using CrmAi.Domain;
 using Microsoft.Extensions.Configuration;
 using Npgsql;
+using NpgsqlTypes;
 
 namespace CrmAi.Infrastructure.Persistence;
 
@@ -406,14 +407,14 @@ public sealed class PostgresWhatsappConversationAnalysisScheduler(
             from whatsapp_messages
             where conversation_id = @conversationId
               and status <> 'deleted'
-              and (@after is null or message_at > @after)
+              and (@after::timestamptz is null or message_at > @after::timestamptz)
             order by message_at desc
             limit 30
             """;
 
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue("conversationId", id);
-        command.Parameters.AddWithValue("after", after is null ? DBNull.Value : after.Value);
+        command.Parameters.Add("after", NpgsqlDbType.TimestampTz).Value = after is null ? DBNull.Value : after.Value;
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         var rows = new List<string>();
         while (await reader.ReadAsync(cancellationToken))

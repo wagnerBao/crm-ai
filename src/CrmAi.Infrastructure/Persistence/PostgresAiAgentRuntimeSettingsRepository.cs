@@ -15,8 +15,8 @@ public sealed class PostgresAiAgentRuntimeSettingsRepository(NpgsqlDataSource da
             select agent_key, is_active, provider, model, api_key, system_prompt, debounce_minutes, context_instructions, context_entity_keys::text
             from ai_agent_settings
             where agent_key = @agentKey
-              and (@companyId is null or company_id = @companyId or company_id is null)
-            order by case when company_id = @companyId then 0 else 1 end, updated_at desc
+              and (@companyId::uuid is null or company_id = @companyId::uuid or company_id is null)
+            order by case when company_id = @companyId::uuid then 0 else 1 end, updated_at desc
             limit 1
             """;
 
