@@ -13,6 +13,7 @@ public static class DependencyInjection
         services.AddSingleton<RiskAnalysisAgentInputBuilder>();
         services.AddHttpClient<IOpenAiRiskAnalysisClient, OpenAiResponsesRiskAnalysisClient>();
         services.AddHttpClient<IOpenAiWhatsappConversationAnalysisClient, OpenAiResponsesWhatsappConversationAnalysisClient>();
+        services.AddHttpClient<IOpenAiMeetingAudioClient, OpenAiMeetingAudioClient>();
         services.AddScoped<IRiskAnalysisAgent, RiskAnalysisAgent>();
         services.AddScoped<IWhatsappConversationAnalysisAgent, WhatsappConversationAnalysisAgent>();
 

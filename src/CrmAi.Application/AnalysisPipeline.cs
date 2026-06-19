@@ -28,6 +28,21 @@ public interface IOpenAiWhatsappConversationAnalysisClient
         CancellationToken cancellationToken);
 }
 
+public interface IOpenAiMeetingAudioClient
+{
+    Task<string> TranscribeAsync(
+        AiAgentRuntimeSettings settings,
+        string fileName,
+        string mimeType,
+        byte[] content,
+        CancellationToken cancellationToken);
+
+    Task<OpenAiMeetingAudioAnalysisResponse> AnalyzeAsync(
+        AiAgentRuntimeSettings settings,
+        MeetingAudioAnalysisInput input,
+        CancellationToken cancellationToken);
+}
+
 public interface IAiAgentRuntimeSettingsRepository
 {
     Task<AiAgentRuntimeSettings> GetAsync(string agentKey, string? companyId, CancellationToken cancellationToken);
@@ -56,6 +71,11 @@ public interface IWhatsappConversationAnalysisScheduler
     Task FailAsync(string eventId, string error, CancellationToken cancellationToken);
 }
 
+public interface IMeetingAudioAnalysisService
+{
+    Task ProcessAsync(OpportunityEvent opportunityEvent, CancellationToken cancellationToken);
+}
+
 public interface IOpportunityAnalysisEventProcessor
 {
     Task ProcessAsync(OpportunityEvent opportunityEvent, CancellationToken cancellationToken);
@@ -78,10 +98,17 @@ public sealed class OpportunityAnalysisEventProcessor(
     IAnalysisResultStore resultStore,
     IWhatsappConversationAnalysisAgent whatsappConversationAnalysisAgent,
     IWhatsappConversationActionStore whatsappConversationActionStore,
-    IWhatsappConversationAnalysisScheduler whatsappConversationAnalysisScheduler) : IOpportunityAnalysisEventProcessor
+    IWhatsappConversationAnalysisScheduler whatsappConversationAnalysisScheduler,
+    IMeetingAudioAnalysisService meetingAudioAnalysisService) : IOpportunityAnalysisEventProcessor
 {
     public async Task ProcessAsync(OpportunityEvent opportunityEvent, CancellationToken cancellationToken)
     {
+        if (string.Equals(opportunityEvent.Type, "opportunity.meeting_audio.recording.created", StringComparison.OrdinalIgnoreCase))
+        {
+            await meetingAudioAnalysisService.ProcessAsync(opportunityEvent, cancellationToken);
+            return;
+        }
+
         if (string.Equals(opportunityEvent.Type, "opportunity.whatsapp.message.created", StringComparison.OrdinalIgnoreCase))
         {
             await whatsappConversationAnalysisScheduler.ScheduleAsync(opportunityEvent, cancellationToken);

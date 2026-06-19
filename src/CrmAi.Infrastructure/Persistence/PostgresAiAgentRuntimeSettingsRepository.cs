@@ -70,6 +70,7 @@ public sealed class PostgresAiAgentRuntimeSettingsRepository(NpgsqlDataSource da
     {
         "risk-analysis" => new(agentKey, true, "openai", "gpt-4.1-mini", null, "Voce e o Risk Analysis Agent do CRM. Responda apenas com JSON valido no schema solicitado.", 1, null, ["opportunity", "account", "products", "activities", "notes", "contacts", "users", "history", "agent_insights"]),
         "whatsapp-conversation-analysis" => new(agentKey, true, "openai", "gpt-4.1-mini", null, "Voce e o WhatsApp Conversation Analysis Agent do CRM. Responda apenas com JSON valido no schema solicitado.", 10, null, ["opportunity", "account", "activities", "notes", "agent_insights"]),
+        "meeting-service-analysis" => new(agentKey, true, "openai", "gpt-4.1-mini", null, "Voce e o Agent de Analise do Atendimento do CRM. Avalie transcricoes de reunioes do Google Meet. Identifique objecoes, oportunidades para quebra-las e proximo passo. Responda apenas com JSON valido no schema solicitado.", 1, "Analise reunioes gravadas do Google Meet. Priorize quebra de objecoes, oportunidades comerciais e proximo passo de qualificacao.", ["opportunity", "account", "activities", "notes", "contacts", "agent_insights"]),
         _ => new(agentKey, true, "openai", "gpt-4.1-mini", null, "Voce e um agent do CRM. Responda apenas no formato solicitado.", 1, null, [])
     };
 }
