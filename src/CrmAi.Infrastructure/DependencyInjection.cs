@@ -29,8 +29,8 @@ public static class DependencyInjection
         services.AddScoped<IGamificationProjectionService, PostgresGamificationProjectionService>();
         services.AddHostedService<RabbitMqOpportunityAnalysisConsumer>();
         services.AddHostedService<WhatsappConversationAnalysisHostedService>();
-        //services.AddHostedService<RabbitMqDailyCheckinConsumer>();
-        //services.AddHostedService<RabbitMqGamificationConsumer>();
+        services.AddHostedService<RabbitMqDailyCheckinConsumer>();
+        services.AddHostedService<RabbitMqGamificationConsumer>();
         services.AddHostedService<DailyCheckinSnapshotHostedService>();
 
         return services;
