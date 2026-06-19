@@ -103,7 +103,7 @@ public sealed class RiskAnalysisAgentTests
             now,
             activities:
             [
-                new ActivitySnapshot(Guid.NewGuid().ToString(), "Ligacao", "call", "phone", "done", now.AddDays(-1), null, null, now.AddDays(-1), now.AddDays(-1))
+                new ActivitySnapshot(Guid.NewGuid().ToString(), "Ligacao", "call", "phone", "done", now.AddDays(-1), null, null, null, now.AddDays(-1), now.AddDays(-1))
             ],
             notes:
             [
@@ -145,7 +145,7 @@ public sealed class RiskAnalysisAgentTests
     }
 
     private static ActivitySnapshot PendingActivity(DateTime date)
-        => new(Guid.NewGuid().ToString(), "Pendente", "task", "email", "pending", date, null, null, date, date);
+        => new(Guid.NewGuid().ToString(), "Pendente", "task", "email", "pending", date, null, null, null, date, date);
 
     private static RiskAnalysisAgent CreateAgent(IOpenAiRiskAnalysisClient openAiClient)
         => new(openAiClient, new FakeAgentSettingsRepository(), new RiskAnalysisAgentInputBuilder(new CommercialRuleAssessmentService()));

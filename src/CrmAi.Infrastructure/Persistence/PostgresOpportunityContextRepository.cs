@@ -117,7 +117,7 @@ public sealed class PostgresOpportunityContextRepository(NpgsqlDataSource dataSo
     private static async Task<IReadOnlyCollection<ActivitySnapshot>> ReadActivitiesAsync(NpgsqlConnection connection, Guid opportunityId, CancellationToken cancellationToken)
     {
         const string sql = """
-            select id, title, activity_type, channel, status, date_at, notes, owner_user_id, created_at, updated_at
+            select id, title, activity_type, channel, status, date_at, notes, completion_notes, owner_user_id, created_at, updated_at
             from vw_ai_agent_activity_context
             where opportunity_id = @opportunityId
             order by date_at desc
@@ -139,6 +139,7 @@ public sealed class PostgresOpportunityContextRepository(NpgsqlDataSource dataSo
                 reader.GetString(reader.GetOrdinal("status")),
                 reader.GetDateTime(reader.GetOrdinal("date_at")),
                 ReadNullableString(reader, "notes"),
+                ReadNullableString(reader, "completion_notes"),
                 ReadNullableGuid(reader, "owner_user_id"),
                 reader.GetDateTime(reader.GetOrdinal("created_at")),
                 reader.GetDateTime(reader.GetOrdinal("updated_at"))));

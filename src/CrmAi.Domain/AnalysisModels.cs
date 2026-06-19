@@ -49,6 +49,7 @@ public sealed record ActivitySnapshot(
     string Status,
     DateTime DateAt,
     string? Notes,
+    string? CompletedNotes,
     string? OwnerUserId,
     DateTime CreatedAt,
     DateTime UpdatedAt);

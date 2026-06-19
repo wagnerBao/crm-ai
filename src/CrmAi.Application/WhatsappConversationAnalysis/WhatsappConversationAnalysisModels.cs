@@ -72,6 +72,7 @@ public sealed record WhatsappConversationAnalysisInput(
                         activity.Status,
                         activity.DateAt.ToUniversalTime(),
                         activity.Notes,
+                        activity.CompletedNotes,
                         activity.OwnerUserId))
                     .ToArray() : []),
             entityKeys.Has("notes") ? context.Notes

@@ -61,6 +61,7 @@ public sealed record AnalysisActivityItem(
     string Status,
     DateTime DateAt,
     string? Notes,
+    string? CompletedNotes,
     string? OwnerUserId);
 
 public sealed record AnalysisNoteSummary(string Text, string? AuthorUserId, DateTime CreatedAt);
