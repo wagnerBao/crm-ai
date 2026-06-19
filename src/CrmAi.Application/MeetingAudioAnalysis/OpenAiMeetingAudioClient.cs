@@ -36,7 +36,7 @@ public sealed class OpenAiMeetingAudioClient(
         form.Add(new StringContent("pt"), "language");
         form.Add(new ByteArrayContent(content)
         {
-            Headers = { ContentType = new MediaTypeHeaderValue(string.IsNullOrWhiteSpace(mimeType) ? "audio/webm" : mimeType) }
+            Headers = { ContentType = new MediaTypeHeaderValue(NormalizeMimeType(mimeType)) }
         }, "file", string.IsNullOrWhiteSpace(fileName) ? "meet-audio.webm" : fileName);
         request.Content = form;
 
@@ -106,6 +106,12 @@ public sealed class OpenAiMeetingAudioClient(
 
     private static string? FirstConfiguredValue(params string?[] values)
         => values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))?.Trim();
+
+    private static string NormalizeMimeType(string? mimeType)
+    {
+        var normalized = mimeType?.Split(';', 2)[0].Trim();
+        return string.IsNullOrWhiteSpace(normalized) ? "audio/webm" : normalized;
+    }
 
     private static string ExtractOutputText(string responseBody)
     {

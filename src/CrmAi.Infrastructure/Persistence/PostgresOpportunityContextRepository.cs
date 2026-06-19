@@ -116,9 +116,10 @@ public sealed class PostgresOpportunityContextRepository(NpgsqlDataSource dataSo
 
     private static async Task<IReadOnlyCollection<ActivitySnapshot>> ReadActivitiesAsync(NpgsqlConnection connection, Guid opportunityId, CancellationToken cancellationToken)
     {
-        const string sql = """
-            select id, title, activity_type, channel, status, date_at, notes, completion_notes, owner_user_id, created_at, updated_at
-            from vw_ai_agent_activity_context
+        var completionNotesExpression = await ResolveActivityCompletionNotesExpressionAsync(connection, cancellationToken);
+        var sql = $"""
+            select id, title, activity_type, channel, status, date_at, notes, {completionNotesExpression} as completion_notes, owner_user_id, created_at, updated_at
+            from activities
             where opportunity_id = @opportunityId
             order by date_at desc
             limit 100
@@ -146,6 +147,23 @@ public sealed class PostgresOpportunityContextRepository(NpgsqlDataSource dataSo
         }
 
         return activities;
+    }
+
+    private static async Task<string> ResolveActivityCompletionNotesExpressionAsync(NpgsqlConnection connection, CancellationToken cancellationToken)
+    {
+        const string sql = """
+            select column_name
+            from information_schema.columns
+            where table_schema = current_schema()
+              and table_name = 'activities'
+              and column_name in ('completion_notes', 'completed_notes')
+            order by case column_name when 'completed_notes' then 0 else 1 end
+            limit 1
+            """;
+
+        await using var command = new NpgsqlCommand(sql, connection);
+        var column = await command.ExecuteScalarAsync(cancellationToken) as string;
+        return column is "completed_notes" or "completion_notes" ? column : "null::text";
     }
 
     private static async Task<IReadOnlyCollection<ContactSnapshot>> ReadContactsAsync(NpgsqlConnection connection, Guid opportunityId, CancellationToken cancellationToken)
