@@ -10,13 +10,13 @@ public sealed class WhatsappConversationAnalysisAgent(
 
     public async Task<WhatsappConversationAnalysisResult?> AnalyzeAsync(OpportunityAnalysisContext context, CancellationToken cancellationToken)
     {
-        var input = WhatsappConversationAnalysisInput.FromContext(context);
+        var settings = await agentSettingsRepository.GetAsync(AgentKey, context.Opportunity.CompanyId, cancellationToken);
+        var input = WhatsappConversationAnalysisInput.FromContext(context, settings.ContextEntityKeys);
         if (string.IsNullOrWhiteSpace(input.NewTranscript))
         {
             return null;
         }
 
-        var settings = await agentSettingsRepository.GetAsync(AgentKey, context.Opportunity.CompanyId, cancellationToken);
         if (!settings.IsActive)
         {
             return null;
