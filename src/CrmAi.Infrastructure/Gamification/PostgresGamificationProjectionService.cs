@@ -124,7 +124,13 @@ public sealed class PostgresGamificationProjectionService(NpgsqlDataSource dataS
 
     private static async Task<IReadOnlySet<string>> ReadOpportunityTagsAsync(NpgsqlConnection connection, Guid opportunityId, CancellationToken cancellationToken)
     {
-        const string sql = "select lower(tag) from opportunity_tags where opportunity_id = @opportunityId";
+        const string sql = """
+            select lower(t.name)
+            from entity_tags et
+            inner join tags t on t.id = et.tag_id
+            where et.entity_type = 'opportunity'
+              and et.entity_id = @opportunityId
+            """;
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue("opportunityId", opportunityId);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
