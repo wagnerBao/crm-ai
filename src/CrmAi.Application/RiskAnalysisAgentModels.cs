@@ -74,7 +74,7 @@ public sealed record AnalysisHistoryEventSummary(string Event, string? UserId, D
 
 public sealed record AnalysisAccountSummary(string Id, string Name, string Segment, string City, string Uf, string Status);
 
-public sealed record AnalysisProductSummary(string Id, string Name, string Type, decimal Price, bool Featured, string Status, string? InterestOrigin, string Summary);
+public sealed record AnalysisProductSummary(string Id, string Name, string Type, decimal Price, bool Featured, string Status, string Summary);
 
 public sealed record AnalysisAgentInsightSummary(string Title, string Message, string Kind, decimal? Confidence, string Status, DateTime CreatedAt);
 

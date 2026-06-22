@@ -56,7 +56,7 @@ public sealed record WhatsappConversationAnalysisInput(
                 : null,
             entityKeys.Has("products")
                 ? context.Products
-                    .Select(product => new AnalysisProductSummary(product.Id, product.Name, product.Type, product.Price, product.Featured, product.Status, product.InterestOrigin, product.Summary))
+                    .Select(product => new AnalysisProductSummary(product.Id, product.Name, product.Type, product.Price, product.Featured, product.Status, product.Summary))
                     .ToArray()
                 : [],
             new AnalysisActivitySummary(

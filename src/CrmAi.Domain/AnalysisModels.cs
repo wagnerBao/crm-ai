@@ -70,7 +70,7 @@ public sealed record HistoryEventSnapshot(string Id, string Event, string? UserI
 
 public sealed record AccountSnapshot(string Id, string Name, string Segment, string City, string Uf, string Status);
 
-public sealed record ProductSnapshot(string Id, string Name, string Type, decimal Price, bool Featured, string Status, string? InterestOrigin, string Summary);
+public sealed record ProductSnapshot(string Id, string Name, string Type, decimal Price, bool Featured, string Status, string Summary);
 
 public sealed record AgentInsightSnapshot(string Id, string Title, string Message, string Kind, decimal? Confidence, string Status, DateTime CreatedAt, DateTime UpdatedAt);
 

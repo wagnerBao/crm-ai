@@ -276,7 +276,7 @@ public sealed class PostgresOpportunityContextRepository(NpgsqlDataSource dataSo
     private static async Task<IReadOnlyCollection<ProductSnapshot>> ReadProductsAsync(NpgsqlConnection connection, Guid opportunityId, CancellationToken cancellationToken)
     {
         const string sql = """
-            select id, name, type, price, featured, status, interest_origin, summary
+            select id, name, type, price, featured, status, summary
             from vw_ai_agent_product_context
             where opportunity_id = @opportunityId
             order by name
@@ -296,7 +296,6 @@ public sealed class PostgresOpportunityContextRepository(NpgsqlDataSource dataSo
                 reader.GetDecimal(reader.GetOrdinal("price")),
                 reader.GetBoolean(reader.GetOrdinal("featured")),
                 reader.GetString(reader.GetOrdinal("status")),
-                ReadNullableString(reader, "interest_origin"),
                 reader.GetString(reader.GetOrdinal("summary"))));
         }
 
