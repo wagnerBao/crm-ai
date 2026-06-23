@@ -12,13 +12,21 @@ API/worker .NET 9 para consumir eventos de oportunidade no RabbitMQ, montar o co
 
 ## RabbitMQ
 
-A fila duravel configurada e `crm.ai.risk-analysis`.
+A fila duravel de analise de oportunidade/risco configurada e `crm.ai.risk-analysis`.
 
 Ela e ligada aos exchanges fanout:
 
-- `crm.events.opportunity.activity.created`
 - `crm.events.opportunity.note.created`
 - `crm.events.opportunity.stage.changed`
+
+Eventos de atividade ficam em uma esteira separada, pela fila `crm.projections.activity-analysis`, ligada a:
+
+- `crm.events.opportunity.activity.created`
+- `crm.events.opportunity.activity.updated`
+- `crm.events.activity.created`
+- `crm.events.activity.updated`
+
+Essa separacao evita que atividades pessoais ou vinculadas diretamente ao usuario disparem o `RiskAnalysisAgent` ou alterem insights/snapshots de risco da oportunidade.
 
 URI padrao:
 
@@ -58,7 +66,7 @@ Cada processamento grava um registro em `ai_insights` com `kind = risk-analysis`
     "healthScore": 90,
     "confidenceScore": 95
   },
-  "triggerEvent": "opportunity.activity.created"
+  "triggerEvent": "opportunity.stage.changed"
 }
 ```
 

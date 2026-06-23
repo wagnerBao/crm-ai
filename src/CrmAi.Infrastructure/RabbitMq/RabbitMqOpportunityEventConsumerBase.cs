@@ -22,6 +22,7 @@ public abstract class RabbitMqOpportunityEventConsumerBase(
     protected abstract string QueueName(RabbitMqOptions options);
     protected abstract IReadOnlyCollection<string> ExchangeNames(RabbitMqOptions options);
     protected abstract Task ProcessAsync(IServiceProvider services, OpportunityEvent opportunityEvent, CancellationToken cancellationToken);
+    protected virtual bool RequiresOpportunityId => true;
 
     protected override Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -84,7 +85,7 @@ public abstract class RabbitMqOpportunityEventConsumerBase(
         try
         {
             var opportunityEvent = DeserializeEvent(args);
-            if (string.IsNullOrWhiteSpace(opportunityEvent.OpportunityId))
+            if (RequiresOpportunityId && string.IsNullOrWhiteSpace(opportunityEvent.OpportunityId))
             {
                 logger.LogWarning("Discarding RabbitMQ event without opportunityId from exchange {Exchange}.", args.Exchange);
                 _channel.BasicAck(args.DeliveryTag, multiple: false);

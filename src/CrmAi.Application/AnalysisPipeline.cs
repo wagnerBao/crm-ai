@@ -53,6 +53,11 @@ public interface IAnalysisResultStore
     Task SaveRiskAnalysisAsync(OpportunityAnalysisContext context, RiskAnalysisResult result, CancellationToken cancellationToken);
 }
 
+public interface IActivityAnalysisEventProcessor
+{
+    Task ProcessAsync(OpportunityEvent activityEvent, CancellationToken cancellationToken);
+}
+
 public interface IWhatsappConversationAnalysisAgent
 {
     Task<WhatsappConversationAnalysisResult?> AnalyzeAsync(OpportunityAnalysisContext context, CancellationToken cancellationToken);
@@ -103,6 +108,11 @@ public sealed class OpportunityAnalysisEventProcessor(
 {
     public async Task ProcessAsync(OpportunityEvent opportunityEvent, CancellationToken cancellationToken)
     {
+        if (OpportunityEventRouting.IsActivityAnalysisEvent(opportunityEvent.Type))
+        {
+            return;
+        }
+
         if (string.Equals(opportunityEvent.Type, "opportunity.meeting_audio.recording.created", StringComparison.OrdinalIgnoreCase))
         {
             await meetingAudioAnalysisService.ProcessAsync(opportunityEvent, cancellationToken);
@@ -134,4 +144,26 @@ public sealed class OpportunityAnalysisEventProcessor(
         var result = await riskAnalysisAgent.AnalyzeAsync(context, cancellationToken);
         await resultStore.SaveRiskAnalysisAsync(context, result, cancellationToken);
     }
+}
+
+public sealed class ActivityAnalysisEventProcessor : IActivityAnalysisEventProcessor
+{
+    public Task ProcessAsync(OpportunityEvent activityEvent, CancellationToken cancellationToken)
+    {
+        return Task.CompletedTask;
+    }
+}
+
+public static class OpportunityEventRouting
+{
+    private static readonly HashSet<string> ActivityAnalysisEvents = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "opportunity.activity.created",
+        "opportunity.activity.updated",
+        "activity.created",
+        "activity.updated"
+    };
+
+    public static bool IsActivityAnalysisEvent(string? eventType) =>
+        !string.IsNullOrWhiteSpace(eventType) && ActivityAnalysisEvents.Contains(eventType);
 }

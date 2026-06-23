@@ -12,6 +12,7 @@ services:
       - ConnectionStrings__CrmDatabase=Host=postgres;Port=5432;Database=crmdb;Username=crm_user;Password=crmPostgresPasS
       - RabbitMQ__Uri=amqp://admin:rabbitBrokerPasS@rabbitmq:5672/
       - RabbitMQ__OpportunityAnalysisQueue=crm.projections.opportunity-analysis
+      - RabbitMQ__ActivityAnalysisQueue=crm.projections.activity-analysis
       - RabbitMQ__DailyCheckinQueue=crm.projections.daily-checkin
       - RabbitMQ__GamificationQueue=crm.projections.gamification
       - RabbitMQ__PrefetchCount=8

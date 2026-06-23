@@ -9,6 +9,7 @@ public static class DependencyInjection
     {
         services.Configure<OpenAiRiskAnalysisOptions>(configuration.GetSection(OpenAiRiskAnalysisOptions.SectionName));
         services.AddScoped<IOpportunityAnalysisEventProcessor, OpportunityAnalysisEventProcessor>();
+        services.AddScoped<IActivityAnalysisEventProcessor, ActivityAnalysisEventProcessor>();
         services.AddSingleton<CommercialRuleAssessmentService>();
         services.AddSingleton<RiskAnalysisAgentInputBuilder>();
         services.AddHttpClient<IOpenAiRiskAnalysisClient, OpenAiResponsesRiskAnalysisClient>();
