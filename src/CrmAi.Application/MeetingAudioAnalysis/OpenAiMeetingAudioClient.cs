@@ -25,7 +25,7 @@ public sealed class OpenAiMeetingAudioClient(
         CancellationToken cancellationToken)
     {
         var configuredOptions = options.Value;
-        var apiKey = ResolveApiKey(settings, configuredOptions);
+        var apiKey = ResolveApiKey(settings);
         const string endpoint = "https://api.openai.com/v1/audio/transcriptions";
         var startedAt = DateTime.UtcNow;
         var transcriptionModel = Environment.GetEnvironmentVariable("OPENAI_TRANSCRIPTION_MODEL") ?? "gpt-4o-mini-transcribe";
@@ -43,8 +43,8 @@ public sealed class OpenAiMeetingAudioClient(
 
         if (string.IsNullOrWhiteSpace(apiKey))
         {
-            var exception = new InvalidOperationException("OpenAI API key was not configured. Set OpenAI:ApiKey or OPENAI_API_KEY.");
-            await invocationLogStore.SaveAsync(OpenAiInvocationLogBuilder.Create(
+            var exception = new OpenAiRequestException("OpenAI API key was not configured for this agent. Set ai_agent_settings.api_key.");
+            await invocationLogStore.SaveBestEffortAsync(OpenAiInvocationLogBuilder.Create(
                 settings,
                 transcriptionModel,
                 "audio.transcription",
@@ -81,7 +81,7 @@ public sealed class OpenAiMeetingAudioClient(
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            await invocationLogStore.SaveAsync(OpenAiInvocationLogBuilder.Create(
+            await invocationLogStore.SaveBestEffortAsync(OpenAiInvocationLogBuilder.Create(
                 settings,
                 transcriptionModel,
                 "audio.transcription",
@@ -100,8 +100,11 @@ public sealed class OpenAiMeetingAudioClient(
 
         if (!response.IsSuccessStatusCode)
         {
-            var exception = new InvalidOperationException($"OpenAI audio transcription failed with status {(int)response.StatusCode}: {responseBody}");
-            await invocationLogStore.SaveAsync(OpenAiInvocationLogBuilder.Create(
+            var exception = new OpenAiRequestException(
+                $"OpenAI audio transcription failed with status {(int)response.StatusCode}: {responseBody}",
+                (int)response.StatusCode,
+                responseBody);
+            await invocationLogStore.SaveBestEffortAsync(OpenAiInvocationLogBuilder.Create(
                 settings,
                 transcriptionModel,
                 "audio.transcription",
@@ -128,7 +131,7 @@ public sealed class OpenAiMeetingAudioClient(
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            await invocationLogStore.SaveAsync(OpenAiInvocationLogBuilder.Create(
+            await invocationLogStore.SaveBestEffortAsync(OpenAiInvocationLogBuilder.Create(
                 settings,
                 transcriptionModel,
                 "audio.transcription",
@@ -145,7 +148,7 @@ public sealed class OpenAiMeetingAudioClient(
             throw;
         }
 
-        await invocationLogStore.SaveAsync(OpenAiInvocationLogBuilder.Create(
+        await invocationLogStore.SaveBestEffortAsync(OpenAiInvocationLogBuilder.Create(
             settings,
             transcriptionModel,
             "audio.transcription",
@@ -169,7 +172,7 @@ public sealed class OpenAiMeetingAudioClient(
         CancellationToken cancellationToken)
     {
         var configuredOptions = options.Value;
-        var apiKey = ResolveApiKey(settings, configuredOptions);
+        var apiKey = ResolveApiKey(settings);
         var endpoint = configuredOptions.ResponsesEndpoint;
         var startedAt = DateTime.UtcNow;
         var payload = new
@@ -192,8 +195,8 @@ public sealed class OpenAiMeetingAudioClient(
 
         if (string.IsNullOrWhiteSpace(apiKey))
         {
-            var exception = new InvalidOperationException("OpenAI API key was not configured. Set OpenAI:ApiKey or OPENAI_API_KEY.");
-            await invocationLogStore.SaveAsync(OpenAiInvocationLogBuilder.Create(
+            var exception = new OpenAiRequestException("OpenAI API key was not configured for this agent. Set ai_agent_settings.api_key.");
+            await invocationLogStore.SaveBestEffortAsync(OpenAiInvocationLogBuilder.Create(
                 settings,
                 configuredOptions.Model,
                 "responses.meeting-audio-analysis",
@@ -222,7 +225,7 @@ public sealed class OpenAiMeetingAudioClient(
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            await invocationLogStore.SaveAsync(OpenAiInvocationLogBuilder.Create(
+            await invocationLogStore.SaveBestEffortAsync(OpenAiInvocationLogBuilder.Create(
                 settings,
                 configuredOptions.Model,
                 "responses.meeting-audio-analysis",
@@ -240,8 +243,11 @@ public sealed class OpenAiMeetingAudioClient(
 
         if (!response.IsSuccessStatusCode)
         {
-            var exception = new InvalidOperationException($"OpenAI meeting audio analysis failed with status {(int)response.StatusCode}: {responseBody}");
-            await invocationLogStore.SaveAsync(OpenAiInvocationLogBuilder.Create(
+            var exception = new OpenAiRequestException(
+                $"OpenAI meeting audio analysis failed with status {(int)response.StatusCode}: {responseBody}",
+                (int)response.StatusCode,
+                responseBody);
+            await invocationLogStore.SaveBestEffortAsync(OpenAiInvocationLogBuilder.Create(
                 settings,
                 configuredOptions.Model,
                 "responses.meeting-audio-analysis",
@@ -267,7 +273,7 @@ public sealed class OpenAiMeetingAudioClient(
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            await invocationLogStore.SaveAsync(OpenAiInvocationLogBuilder.Create(
+            await invocationLogStore.SaveBestEffortAsync(OpenAiInvocationLogBuilder.Create(
                 settings,
                 configuredOptions.Model,
                 "responses.meeting-audio-analysis",
@@ -283,7 +289,7 @@ public sealed class OpenAiMeetingAudioClient(
             throw;
         }
 
-        await invocationLogStore.SaveAsync(OpenAiInvocationLogBuilder.Create(
+        await invocationLogStore.SaveBestEffortAsync(OpenAiInvocationLogBuilder.Create(
             settings,
             configuredOptions.Model,
             "responses.meeting-audio-analysis",
@@ -299,13 +305,8 @@ public sealed class OpenAiMeetingAudioClient(
         return result;
     }
 
-    private static string? ResolveApiKey(AiAgentRuntimeSettings settings, OpenAiRiskAnalysisOptions configuredOptions)
-        => FirstConfiguredValue(
-            settings.ApiKey,
-            configuredOptions.ApiKey,
-            Environment.GetEnvironmentVariable("OPENAI_API_KEY", EnvironmentVariableTarget.Process),
-            Environment.GetEnvironmentVariable("OPENAI_API_KEY", EnvironmentVariableTarget.User),
-            Environment.GetEnvironmentVariable("OPENAI_API_KEY", EnvironmentVariableTarget.Machine));
+    private static string? ResolveApiKey(AiAgentRuntimeSettings settings)
+        => FirstConfiguredValue(settings.ApiKey);
 
     private static string? FirstConfiguredValue(params string?[] values)
         => values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))?.Trim();

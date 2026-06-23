@@ -11,6 +11,8 @@ public sealed class RabbitMqOptions
     public string GamificationQueue { get; init; } = "crm.projections.gamification";
     public ushort PrefetchCount { get; init; } = 1;
     public bool RequeueOnFailure { get; init; }
+    public string DeadLetterExchange { get; init; } = "crm.projections.dlx";
+    public string DeadLetterQueueSuffix { get; init; } = ".dlq";
     public int DailyCheckinSnapshotIntervalMinutes { get; init; } = 15;
     public IReadOnlyCollection<string> OpportunityAnalysisExchangeNames { get; init; } =
     [

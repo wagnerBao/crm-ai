@@ -51,3 +51,18 @@ public sealed record AiAgentInvocationLogEntry(
 {
     public int DurationMs => Math.Max(0, (int)Math.Round((CompletedAt - StartedAt).TotalMilliseconds));
 }
+
+public static class AiAgentInvocationLogStoreExtensions
+{
+    public static async Task SaveBestEffortAsync(this IAiAgentInvocationLogStore store, AiAgentInvocationLogEntry entry, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await store.SaveAsync(entry, cancellationToken);
+        }
+        catch
+        {
+            // Auditing must not cause RabbitMQ redelivery loops or duplicate OpenAI calls.
+        }
+    }
+}

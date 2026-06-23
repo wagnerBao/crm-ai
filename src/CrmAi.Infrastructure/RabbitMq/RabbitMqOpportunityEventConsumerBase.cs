@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using CrmAi.Application;
 using CrmAi.Domain;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -46,6 +47,7 @@ public abstract class RabbitMqOpportunityEventConsumerBase(
             _channel.ExchangeDeclare(exchange, ExchangeType.Fanout, durable: true, autoDelete: false);
         }
 
+        DeclareDeadLetterTopology(_channel, rabbitOptions, queueName);
         _channel.QueueDeclare(queueName, durable: true, exclusive: false, autoDelete: false);
         foreach (var exchange in exchangeNames)
         {
@@ -88,6 +90,7 @@ public abstract class RabbitMqOpportunityEventConsumerBase(
             if (RequiresOpportunityId && string.IsNullOrWhiteSpace(opportunityEvent.OpportunityId))
             {
                 logger.LogWarning("Discarding RabbitMQ event without opportunityId from exchange {Exchange}.", args.Exchange);
+                PublishToDeadLetterQueue(args, rabbitOptions, "MissingOpportunityId", "RabbitMQ event did not include opportunityId.");
                 _channel.BasicAck(args.DeliveryTag, multiple: false);
                 return;
             }
@@ -100,8 +103,90 @@ public abstract class RabbitMqOpportunityEventConsumerBase(
         catch (Exception exception)
         {
             logger.LogError(exception, "Failed to process RabbitMQ message from exchange {Exchange} in {ConsumerName}.", args.Exchange, GetType().Name);
-            _channel.BasicNack(args.DeliveryTag, multiple: false, requeue: rabbitOptions.RequeueOnFailure);
+            if (ShouldRequeue(exception, rabbitOptions, args.Redelivered))
+            {
+                _channel.BasicNack(args.DeliveryTag, multiple: false, requeue: true);
+                return;
+            }
+
+            logger.LogWarning(
+                "Dead-lettering RabbitMQ message from exchange {Exchange} in {ConsumerName} after non-retryable failure.",
+                args.Exchange,
+                GetType().Name);
+            PublishToDeadLetterQueue(args, rabbitOptions, exception.GetType().Name, exception.Message);
+            _channel.BasicAck(args.DeliveryTag, multiple: false);
         }
+    }
+
+    private static void DeclareDeadLetterTopology(IModel channel, RabbitMqOptions rabbitOptions, string queueName)
+    {
+        var deadLetterQueueName = DeadLetterQueueName(rabbitOptions, queueName);
+        channel.ExchangeDeclare(rabbitOptions.DeadLetterExchange, ExchangeType.Direct, durable: true, autoDelete: false);
+        channel.QueueDeclare(deadLetterQueueName, durable: true, exclusive: false, autoDelete: false);
+        channel.QueueBind(deadLetterQueueName, rabbitOptions.DeadLetterExchange, routingKey: queueName);
+    }
+
+    private void PublishToDeadLetterQueue(BasicDeliverEventArgs args, RabbitMqOptions rabbitOptions, string errorType, string errorMessage)
+    {
+        if (_channel is null)
+        {
+            return;
+        }
+
+        var properties = _channel.CreateBasicProperties();
+        properties.Persistent = true;
+        properties.ContentType = args.BasicProperties?.ContentType ?? "application/json";
+        properties.ContentEncoding = args.BasicProperties?.ContentEncoding;
+        properties.CorrelationId = args.BasicProperties?.CorrelationId;
+        properties.MessageId = args.BasicProperties?.MessageId ?? Guid.NewGuid().ToString();
+        properties.Type = args.BasicProperties?.Type;
+        properties.AppId = args.BasicProperties?.AppId;
+        properties.Headers = new Dictionary<string, object>
+        {
+            ["x-original-exchange"] = args.Exchange,
+            ["x-original-routing-key"] = args.RoutingKey,
+            ["x-original-consumer"] = GetType().Name,
+            ["x-error-type"] = errorType,
+            ["x-error-message"] = Truncate(errorMessage, 4096),
+            ["x-failed-at"] = DateTime.UtcNow.ToString("O"),
+            ["x-redelivered"] = args.Redelivered
+        };
+
+        _channel.BasicPublish(
+            rabbitOptions.DeadLetterExchange,
+            routingKey: QueueName(rabbitOptions),
+            basicProperties: properties,
+            body: args.Body);
+    }
+
+    private static string DeadLetterQueueName(RabbitMqOptions rabbitOptions, string queueName) =>
+        $"{queueName}{rabbitOptions.DeadLetterQueueSuffix}";
+
+    private static string Truncate(string value, int maxLength) =>
+        value.Length <= maxLength ? value : value[..maxLength];
+
+    private static bool ShouldRequeue(Exception exception, RabbitMqOptions rabbitOptions, bool redelivered)
+    {
+        if (!rabbitOptions.RequeueOnFailure || redelivered)
+        {
+            return false;
+        }
+
+        var openAiException = FindOpenAiException(exception);
+        return openAiException is null || openAiException.IsTransient;
+    }
+
+    private static OpenAiRequestException? FindOpenAiException(Exception exception)
+    {
+        for (var current = exception; current is not null; current = current.InnerException)
+        {
+            if (current is OpenAiRequestException openAiException)
+            {
+                return openAiException;
+            }
+        }
+
+        return null;
     }
 
     private static OpportunityEvent DeserializeEvent(BasicDeliverEventArgs args)
