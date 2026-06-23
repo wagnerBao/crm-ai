@@ -1,5 +1,5 @@
 using System.Net.Http.Headers;
-using System.Net.Http.Json;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.Options;
@@ -8,7 +8,8 @@ namespace CrmAi.Application;
 
 public sealed class OpenAiMeetingAudioClient(
     HttpClient httpClient,
-    IOptions<OpenAiRiskAnalysisOptions> options) : IOpenAiMeetingAudioClient
+    IOptions<OpenAiRiskAnalysisOptions> options,
+    IAiAgentInvocationLogStore invocationLogStore) : IOpenAiMeetingAudioClient
 {
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web)
     {
@@ -20,19 +21,50 @@ public sealed class OpenAiMeetingAudioClient(
         string fileName,
         string mimeType,
         byte[] content,
+        AiAgentInvocationContext invocationContext,
         CancellationToken cancellationToken)
     {
         var configuredOptions = options.Value;
         var apiKey = ResolveApiKey(settings, configuredOptions);
+        const string endpoint = "https://api.openai.com/v1/audio/transcriptions";
+        var startedAt = DateTime.UtcNow;
+        var transcriptionModel = Environment.GetEnvironmentVariable("OPENAI_TRANSCRIPTION_MODEL") ?? "gpt-4o-mini-transcribe";
+        var requestJson = JsonSerializer.Serialize(new
+        {
+            model = transcriptionModel,
+            language = "pt",
+            file = new
+            {
+                name = string.IsNullOrWhiteSpace(fileName) ? "meet-audio.webm" : fileName,
+                mimeType = NormalizeMimeType(mimeType),
+                sizeBytes = content.Length
+            }
+        }, SerializerOptions);
+
         if (string.IsNullOrWhiteSpace(apiKey))
         {
-            throw new InvalidOperationException("OpenAI API key was not configured. Set OpenAI:ApiKey or OPENAI_API_KEY.");
+            var exception = new InvalidOperationException("OpenAI API key was not configured. Set OpenAI:ApiKey or OPENAI_API_KEY.");
+            await invocationLogStore.SaveAsync(OpenAiInvocationLogBuilder.Create(
+                settings,
+                transcriptionModel,
+                "audio.transcription",
+                endpoint,
+                invocationContext,
+                startedAt,
+                null,
+                false,
+                requestJson,
+                null,
+                null,
+                exception,
+                modelOverride: transcriptionModel), cancellationToken);
+            throw exception;
         }
 
-        using var request = new HttpRequestMessage(HttpMethod.Post, "https://api.openai.com/v1/audio/transcriptions");
+        using var request = new HttpRequestMessage(HttpMethod.Post, endpoint);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
         using var form = new MultipartFormDataContent();
-        form.Add(new StringContent(Environment.GetEnvironmentVariable("OPENAI_TRANSCRIPTION_MODEL") ?? "gpt-4o-mini-transcribe"), "model");
+        form.Add(new StringContent(transcriptionModel), "model");
         form.Add(new StringContent("pt"), "language");
         form.Add(new ByteArrayContent(content)
         {
@@ -40,34 +72,107 @@ public sealed class OpenAiMeetingAudioClient(
         }, "file", string.IsNullOrWhiteSpace(fileName) ? "meet-audio.webm" : fileName);
         request.Content = form;
 
-        using var response = await httpClient.SendAsync(request, cancellationToken);
-        var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
-        if (!response.IsSuccessStatusCode)
+        HttpResponseMessage? response = null;
+        string? responseBody = null;
+        try
         {
-            throw new InvalidOperationException($"OpenAI audio transcription failed with status {(int)response.StatusCode}: {responseBody}");
+            response = await httpClient.SendAsync(request, cancellationToken);
+            responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            await invocationLogStore.SaveAsync(OpenAiInvocationLogBuilder.Create(
+                settings,
+                transcriptionModel,
+                "audio.transcription",
+                endpoint,
+                invocationContext,
+                startedAt,
+                null,
+                false,
+                requestJson,
+                null,
+                null,
+                exception,
+                modelOverride: transcriptionModel), cancellationToken);
+            throw;
         }
 
-        using var document = JsonDocument.Parse(responseBody);
-        return document.RootElement.TryGetProperty("text", out var textElement)
-            ? textElement.GetString() ?? string.Empty
-            : string.Empty;
+        if (!response.IsSuccessStatusCode)
+        {
+            var exception = new InvalidOperationException($"OpenAI audio transcription failed with status {(int)response.StatusCode}: {responseBody}");
+            await invocationLogStore.SaveAsync(OpenAiInvocationLogBuilder.Create(
+                settings,
+                transcriptionModel,
+                "audio.transcription",
+                endpoint,
+                invocationContext,
+                startedAt,
+                (int)response.StatusCode,
+                false,
+                requestJson,
+                OpenAiInvocationLogBuilder.NormalizeJsonBody(responseBody),
+                null,
+                exception,
+                modelOverride: transcriptionModel), cancellationToken);
+            throw exception;
+        }
+
+        string transcript;
+        try
+        {
+            using var document = JsonDocument.Parse(responseBody);
+            transcript = document.RootElement.TryGetProperty("text", out var textElement)
+                ? textElement.GetString() ?? string.Empty
+                : string.Empty;
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            await invocationLogStore.SaveAsync(OpenAiInvocationLogBuilder.Create(
+                settings,
+                transcriptionModel,
+                "audio.transcription",
+                endpoint,
+                invocationContext,
+                startedAt,
+                (int)response.StatusCode,
+                false,
+                requestJson,
+                OpenAiInvocationLogBuilder.NormalizeJsonBody(responseBody),
+                null,
+                exception,
+                modelOverride: transcriptionModel), cancellationToken);
+            throw;
+        }
+
+        await invocationLogStore.SaveAsync(OpenAiInvocationLogBuilder.Create(
+            settings,
+            transcriptionModel,
+            "audio.transcription",
+            endpoint,
+            invocationContext,
+            startedAt,
+            (int)response.StatusCode,
+            true,
+            requestJson,
+            OpenAiInvocationLogBuilder.NormalizeJsonBody(responseBody),
+            JsonSerializer.Serialize(new { text = transcript }, SerializerOptions),
+            modelOverride: transcriptionModel), cancellationToken);
+
+        return transcript;
     }
 
     public async Task<OpenAiMeetingAudioAnalysisResponse> AnalyzeAsync(
         AiAgentRuntimeSettings settings,
         MeetingAudioAnalysisInput input,
+        AiAgentInvocationContext invocationContext,
         CancellationToken cancellationToken)
     {
         var configuredOptions = options.Value;
         var apiKey = ResolveApiKey(settings, configuredOptions);
-        if (string.IsNullOrWhiteSpace(apiKey))
-        {
-            throw new InvalidOperationException("OpenAI API key was not configured. Set OpenAI:ApiKey or OPENAI_API_KEY.");
-        }
-
-        using var request = new HttpRequestMessage(HttpMethod.Post, configuredOptions.ResponsesEndpoint);
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
-        request.Content = JsonContent.Create(new
+        var endpoint = configuredOptions.ResponsesEndpoint;
+        var startedAt = DateTime.UtcNow;
+        var payload = new
         {
             model = string.IsNullOrWhiteSpace(settings.Model) ? configuredOptions.Model : settings.Model,
             instructions = settings.Instructions,
@@ -82,18 +187,116 @@ public sealed class OpenAiMeetingAudioClient(
                     schema = MeetingAudioAnalysisJsonSchema.Value
                 }
             }
-        }, options: SerializerOptions);
+        };
+        var requestJson = JsonSerializer.Serialize(payload, SerializerOptions);
 
-        using var response = await httpClient.SendAsync(request, cancellationToken);
-        var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
-        if (!response.IsSuccessStatusCode)
+        if (string.IsNullOrWhiteSpace(apiKey))
         {
-            throw new InvalidOperationException($"OpenAI meeting audio analysis failed with status {(int)response.StatusCode}: {responseBody}");
+            var exception = new InvalidOperationException("OpenAI API key was not configured. Set OpenAI:ApiKey or OPENAI_API_KEY.");
+            await invocationLogStore.SaveAsync(OpenAiInvocationLogBuilder.Create(
+                settings,
+                configuredOptions.Model,
+                "responses.meeting-audio-analysis",
+                endpoint,
+                invocationContext,
+                startedAt,
+                null,
+                false,
+                requestJson,
+                null,
+                null,
+                exception), cancellationToken);
+            throw exception;
         }
 
-        var outputText = ExtractOutputText(responseBody);
-        return JsonSerializer.Deserialize<OpenAiMeetingAudioAnalysisResponse>(outputText, SerializerOptions)
-            ?? throw new InvalidOperationException("OpenAI response did not match the meeting audio analysis schema.");
+        using var request = new HttpRequestMessage(HttpMethod.Post, endpoint);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+        request.Content = new StringContent(requestJson, Encoding.UTF8, "application/json");
+
+        HttpResponseMessage? response = null;
+        string? responseBody = null;
+        try
+        {
+            response = await httpClient.SendAsync(request, cancellationToken);
+            responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            await invocationLogStore.SaveAsync(OpenAiInvocationLogBuilder.Create(
+                settings,
+                configuredOptions.Model,
+                "responses.meeting-audio-analysis",
+                endpoint,
+                invocationContext,
+                startedAt,
+                null,
+                false,
+                requestJson,
+                null,
+                null,
+                exception), cancellationToken);
+            throw;
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            var exception = new InvalidOperationException($"OpenAI meeting audio analysis failed with status {(int)response.StatusCode}: {responseBody}");
+            await invocationLogStore.SaveAsync(OpenAiInvocationLogBuilder.Create(
+                settings,
+                configuredOptions.Model,
+                "responses.meeting-audio-analysis",
+                endpoint,
+                invocationContext,
+                startedAt,
+                (int)response.StatusCode,
+                false,
+                requestJson,
+                OpenAiInvocationLogBuilder.NormalizeJsonBody(responseBody),
+                null,
+                exception), cancellationToken);
+            throw exception;
+        }
+
+        string outputText;
+        OpenAiMeetingAudioAnalysisResponse result;
+        try
+        {
+            outputText = ExtractOutputText(responseBody);
+            result = JsonSerializer.Deserialize<OpenAiMeetingAudioAnalysisResponse>(outputText, SerializerOptions)
+                ?? throw new InvalidOperationException("OpenAI response did not match the meeting audio analysis schema.");
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            await invocationLogStore.SaveAsync(OpenAiInvocationLogBuilder.Create(
+                settings,
+                configuredOptions.Model,
+                "responses.meeting-audio-analysis",
+                endpoint,
+                invocationContext,
+                startedAt,
+                (int)response.StatusCode,
+                false,
+                requestJson,
+                OpenAiInvocationLogBuilder.NormalizeJsonBody(responseBody),
+                null,
+                exception), cancellationToken);
+            throw;
+        }
+
+        await invocationLogStore.SaveAsync(OpenAiInvocationLogBuilder.Create(
+            settings,
+            configuredOptions.Model,
+            "responses.meeting-audio-analysis",
+            endpoint,
+            invocationContext,
+            startedAt,
+            (int)response.StatusCode,
+            true,
+            requestJson,
+            OpenAiInvocationLogBuilder.NormalizeJsonBody(responseBody),
+            OpenAiInvocationLogBuilder.NormalizeJsonBody(outputText)), cancellationToken);
+
+        return result;
     }
 
     private static string? ResolveApiKey(AiAgentRuntimeSettings settings, OpenAiRiskAnalysisOptions configuredOptions)

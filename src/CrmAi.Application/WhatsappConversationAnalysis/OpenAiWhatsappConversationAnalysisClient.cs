@@ -1,5 +1,5 @@
 using System.Net.Http.Headers;
-using System.Net.Http.Json;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.Options;
@@ -8,7 +8,8 @@ namespace CrmAi.Application;
 
 public sealed class OpenAiResponsesWhatsappConversationAnalysisClient(
     HttpClient httpClient,
-    IOptions<OpenAiRiskAnalysisOptions> options) : IOpenAiWhatsappConversationAnalysisClient
+    IOptions<OpenAiRiskAnalysisOptions> options,
+    IAiAgentInvocationLogStore invocationLogStore) : IOpenAiWhatsappConversationAnalysisClient
 {
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web)
     {
@@ -18,18 +19,14 @@ public sealed class OpenAiResponsesWhatsappConversationAnalysisClient(
     public async Task<OpenAiWhatsappConversationAnalysisResponse> AnalyzeAsync(
         AiAgentRuntimeSettings settings,
         WhatsappConversationAnalysisInput input,
+        AiAgentInvocationContext invocationContext,
         CancellationToken cancellationToken)
     {
         var configuredOptions = options.Value;
         var apiKey = ResolveApiKey(settings, configuredOptions);
-        if (string.IsNullOrWhiteSpace(apiKey))
-        {
-            throw new InvalidOperationException("OpenAI API key was not configured. Set OpenAI:ApiKey or OPENAI_API_KEY.");
-        }
-
-        using var request = new HttpRequestMessage(HttpMethod.Post, configuredOptions.ResponsesEndpoint);
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
-        request.Content = JsonContent.Create(new
+        var endpoint = configuredOptions.ResponsesEndpoint;
+        var startedAt = DateTime.UtcNow;
+        var payload = new
         {
             model = string.IsNullOrWhiteSpace(settings.Model) ? configuredOptions.Model : settings.Model,
             instructions = settings.Instructions,
@@ -44,18 +41,116 @@ public sealed class OpenAiResponsesWhatsappConversationAnalysisClient(
                     schema = WhatsappConversationAnalysisJsonSchema.Value
                 }
             }
-        }, options: SerializerOptions);
+        };
+        var requestJson = JsonSerializer.Serialize(payload, SerializerOptions);
 
-        using var response = await httpClient.SendAsync(request, cancellationToken);
-        var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
-        if (!response.IsSuccessStatusCode)
+        if (string.IsNullOrWhiteSpace(apiKey))
         {
-            throw new InvalidOperationException($"OpenAI WhatsApp conversation analysis failed with status {(int)response.StatusCode}: {responseBody}");
+            var exception = new InvalidOperationException("OpenAI API key was not configured. Set OpenAI:ApiKey or OPENAI_API_KEY.");
+            await invocationLogStore.SaveAsync(OpenAiInvocationLogBuilder.Create(
+                settings,
+                configuredOptions.Model,
+                "responses.whatsapp-conversation-analysis",
+                endpoint,
+                invocationContext,
+                startedAt,
+                null,
+                false,
+                requestJson,
+                null,
+                null,
+                exception), cancellationToken);
+            throw exception;
         }
 
-        var outputText = ExtractOutputText(responseBody);
-        return JsonSerializer.Deserialize<OpenAiWhatsappConversationAnalysisResponse>(outputText, SerializerOptions)
-            ?? throw new InvalidOperationException("OpenAI response did not match the WhatsApp conversation analysis schema.");
+        using var request = new HttpRequestMessage(HttpMethod.Post, endpoint);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+        request.Content = new StringContent(requestJson, Encoding.UTF8, "application/json");
+
+        HttpResponseMessage? response = null;
+        string? responseBody = null;
+        try
+        {
+            response = await httpClient.SendAsync(request, cancellationToken);
+            responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            await invocationLogStore.SaveAsync(OpenAiInvocationLogBuilder.Create(
+                settings,
+                configuredOptions.Model,
+                "responses.whatsapp-conversation-analysis",
+                endpoint,
+                invocationContext,
+                startedAt,
+                null,
+                false,
+                requestJson,
+                null,
+                null,
+                exception), cancellationToken);
+            throw;
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            var exception = new InvalidOperationException($"OpenAI WhatsApp conversation analysis failed with status {(int)response.StatusCode}: {responseBody}");
+            await invocationLogStore.SaveAsync(OpenAiInvocationLogBuilder.Create(
+                settings,
+                configuredOptions.Model,
+                "responses.whatsapp-conversation-analysis",
+                endpoint,
+                invocationContext,
+                startedAt,
+                (int)response.StatusCode,
+                false,
+                requestJson,
+                OpenAiInvocationLogBuilder.NormalizeJsonBody(responseBody),
+                null,
+                exception), cancellationToken);
+            throw exception;
+        }
+
+        string outputText;
+        OpenAiWhatsappConversationAnalysisResponse result;
+        try
+        {
+            outputText = ExtractOutputText(responseBody);
+            result = JsonSerializer.Deserialize<OpenAiWhatsappConversationAnalysisResponse>(outputText, SerializerOptions)
+                ?? throw new InvalidOperationException("OpenAI response did not match the WhatsApp conversation analysis schema.");
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            await invocationLogStore.SaveAsync(OpenAiInvocationLogBuilder.Create(
+                settings,
+                configuredOptions.Model,
+                "responses.whatsapp-conversation-analysis",
+                endpoint,
+                invocationContext,
+                startedAt,
+                (int)response.StatusCode,
+                false,
+                requestJson,
+                OpenAiInvocationLogBuilder.NormalizeJsonBody(responseBody),
+                null,
+                exception), cancellationToken);
+            throw;
+        }
+
+        await invocationLogStore.SaveAsync(OpenAiInvocationLogBuilder.Create(
+            settings,
+            configuredOptions.Model,
+            "responses.whatsapp-conversation-analysis",
+            endpoint,
+            invocationContext,
+            startedAt,
+            (int)response.StatusCode,
+            true,
+            requestJson,
+            OpenAiInvocationLogBuilder.NormalizeJsonBody(responseBody),
+            OpenAiInvocationLogBuilder.NormalizeJsonBody(outputText)), cancellationToken);
+
+        return result;
     }
 
     private static string? ResolveApiKey(AiAgentRuntimeSettings settings, OpenAiRiskAnalysisOptions configuredOptions)

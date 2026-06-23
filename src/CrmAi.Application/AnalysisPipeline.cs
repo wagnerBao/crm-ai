@@ -17,6 +17,7 @@ public interface IOpenAiRiskAnalysisClient
     Task<OpenAiRiskAnalysisResponse> AnalyzeAsync(
         AiAgentRuntimeSettings settings,
         RiskAnalysisAgentInput input,
+        AiAgentInvocationContext invocationContext,
         CancellationToken cancellationToken);
 }
 
@@ -25,6 +26,7 @@ public interface IOpenAiWhatsappConversationAnalysisClient
     Task<OpenAiWhatsappConversationAnalysisResponse> AnalyzeAsync(
         AiAgentRuntimeSettings settings,
         WhatsappConversationAnalysisInput input,
+        AiAgentInvocationContext invocationContext,
         CancellationToken cancellationToken);
 }
 
@@ -35,11 +37,13 @@ public interface IOpenAiMeetingAudioClient
         string fileName,
         string mimeType,
         byte[] content,
+        AiAgentInvocationContext invocationContext,
         CancellationToken cancellationToken);
 
     Task<OpenAiMeetingAudioAnalysisResponse> AnalyzeAsync(
         AiAgentRuntimeSettings settings,
         MeetingAudioAnalysisInput input,
+        AiAgentInvocationContext invocationContext,
         CancellationToken cancellationToken);
 }
 

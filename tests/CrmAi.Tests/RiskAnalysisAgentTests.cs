@@ -157,6 +157,7 @@ public sealed class RiskAnalysisAgentTests
         public Task<OpenAiRiskAnalysisResponse> AnalyzeAsync(
             AiAgentRuntimeSettings settings,
             RiskAnalysisAgentInput input,
+            AiAgentInvocationContext invocationContext,
             CancellationToken cancellationToken)
         {
             LastInput = input;

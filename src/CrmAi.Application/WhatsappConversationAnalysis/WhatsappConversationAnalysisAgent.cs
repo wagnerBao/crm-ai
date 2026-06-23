@@ -22,7 +22,25 @@ public sealed class WhatsappConversationAnalysisAgent(
             return null;
         }
 
-        var response = await openAiClient.AnalyzeAsync(settings, input, cancellationToken);
+        var invocationContext = new AiAgentInvocationContext(
+            PlatformArea: "whatsapp",
+            CompanyId: context.Opportunity.CompanyId,
+            OpportunityId: context.Opportunity.Id,
+            WhatsappConversationId: input.Conversation.ConversationId,
+            ContactId: input.Conversation.ContactId,
+            UserId: context.TriggerEvent.UserId ?? context.Opportunity.OwnerUserId,
+            ContextEntityKeys: settings.ContextEntityKeys,
+            Metadata: new Dictionary<string, object?>
+            {
+                ["triggerEventId"] = context.TriggerEvent.EventId,
+                ["triggerEventType"] = context.TriggerEvent.Type,
+                ["messageCount"] = input.Conversation.MessageCount,
+                ["firstMessageAt"] = input.Conversation.FirstMessageAt,
+                ["latestMessageAt"] = input.Conversation.LatestMessageAt,
+                ["processedUntil"] = input.Conversation.ProcessedUntil
+            });
+
+        var response = await openAiClient.AnalyzeAsync(settings, input, invocationContext, cancellationToken);
         var dueAt = ParseDateTime(response.ActivityDueAt);
 
         return new WhatsappConversationAnalysisResult(

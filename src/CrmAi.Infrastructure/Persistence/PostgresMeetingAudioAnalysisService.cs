@@ -37,7 +37,8 @@ public sealed class PostgresMeetingAudioAnalysisService(
                 return;
             }
 
-            var transcript = await openAiClient.TranscribeAsync(settings, recording.FileName, recording.MimeType, recording.Content, cancellationToken);
+            var invocationContext = BuildInvocationContext(recording, settings);
+            var transcript = await openAiClient.TranscribeAsync(settings, recording.FileName, recording.MimeType, recording.Content, invocationContext, cancellationToken);
             if (string.IsNullOrWhiteSpace(transcript))
             {
                 await UpdateStatusAsync(parsedRecordingId, "failed", "Transcricao vazia retornada pela IA.", cancellationToken);
@@ -50,7 +51,7 @@ public sealed class PostgresMeetingAudioAnalysisService(
                 recording.OpportunityName,
                 recording.AccountName,
                 recording.ActivityTitle,
-                recording.ActivityNotes), cancellationToken);
+                recording.ActivityNotes), invocationContext, cancellationToken);
 
             await SaveAnalysisAsync(parsedRecordingId, transcript, FormatSummary(analysis), cancellationToken);
         }
@@ -178,6 +179,25 @@ public sealed class PostgresMeetingAudioAnalysisService(
         builder.Append("Proximo passo: ").Append(analysis.NextStep.Trim());
         return builder.ToString().Trim();
     }
+
+    private static AiAgentInvocationContext BuildInvocationContext(MeetingAudioRecordingPayload recording, AiAgentRuntimeSettings settings) =>
+        new(
+            PlatformArea: "meeting-audio",
+            CompanyId: recording.CompanyId,
+            OpportunityId: recording.OpportunityId,
+            MeetingAudioRecordingId: recording.Id,
+            ActivityId: recording.ActivityId,
+            AccountId: recording.AccountId,
+            ContextEntityKeys: settings.ContextEntityKeys,
+            Metadata: new Dictionary<string, object?>
+            {
+                ["meetingId"] = recording.MeetingId,
+                ["fileName"] = recording.FileName,
+                ["mimeType"] = recording.MimeType,
+                ["opportunityName"] = recording.OpportunityName,
+                ["accountName"] = recording.AccountName,
+                ["activityTitle"] = recording.ActivityTitle
+            });
 
     private static void AppendList(StringBuilder builder, string title, IReadOnlyCollection<string> items)
     {

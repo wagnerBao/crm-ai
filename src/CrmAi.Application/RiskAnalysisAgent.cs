@@ -23,7 +23,22 @@ public sealed class RiskAnalysisAgent(
                 request.SnapshotUpdate);
         }
 
-        var agentResponse = await openAiClient.AnalyzeAsync(settings, request.Input, cancellationToken);
+        var invocationContext = new AiAgentInvocationContext(
+            PlatformArea: "opportunity",
+            CompanyId: context.Opportunity.CompanyId,
+            OpportunityId: context.Opportunity.Id,
+            UserId: context.TriggerEvent.UserId ?? context.Opportunity.OwnerUserId,
+            ContextEntityKeys: settings.ContextEntityKeys,
+            Metadata: new Dictionary<string, object?>
+            {
+                ["triggerEventId"] = context.TriggerEvent.EventId,
+                ["triggerEventType"] = context.TriggerEvent.Type,
+                ["stageId"] = context.Opportunity.StageId,
+                ["pipelineId"] = context.Opportunity.PipelineId,
+                ["accountId"] = context.Opportunity.AccountId
+            });
+
+        var agentResponse = await openAiClient.AnalyzeAsync(settings, request.Input, invocationContext, cancellationToken);
         var riskScore = Math.Clamp(agentResponse.RiskScore, 0, 100);
 
         return new RiskAnalysisResult(
