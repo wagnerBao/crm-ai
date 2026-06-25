@@ -1,4 +1,6 @@
 using System.Net.Http.Headers;
+using System.Diagnostics;
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -15,6 +17,10 @@ public sealed class OpenAiMeetingAudioClient(
     {
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
     };
+    private const string DefaultTranscriptionModel = "gpt-4o-transcribe";
+    private const string DefaultFallbackTranscriptionModel = "whisper-1";
+    private const int MaxOpenAiAudioUploadBytes = 24 * 1024 * 1024;
+    private const int DefaultSegmentSeconds = 600;
 
     public async Task<string> TranscribeAsync(
         AiAgentRuntimeSettings settings,
@@ -28,7 +34,8 @@ public sealed class OpenAiMeetingAudioClient(
         var apiKey = ResolveApiKey(settings);
         const string endpoint = "https://api.openai.com/v1/audio/transcriptions";
         var startedAt = DateTime.UtcNow;
-        var transcriptionModel = Environment.GetEnvironmentVariable("OPENAI_TRANSCRIPTION_MODEL") ?? "gpt-4o-mini-transcribe";
+        var transcriptionModel = Environment.GetEnvironmentVariable("OPENAI_TRANSCRIPTION_MODEL") ?? DefaultTranscriptionModel;
+        var fallbackTranscriptionModel = Environment.GetEnvironmentVariable("OPENAI_TRANSCRIPTION_FALLBACK_MODEL") ?? DefaultFallbackTranscriptionModel;
         var requestJson = BuildTranscriptionRequestJson(transcriptionModel, fileName, mimeType, content.Length, null);
 
         if (string.IsNullOrWhiteSpace(apiKey))
@@ -51,6 +58,25 @@ public sealed class OpenAiMeetingAudioClient(
             throw exception;
         }
 
+        if (content.Length > MaxOpenAiAudioUploadBytes)
+        {
+            var segmentedTranscript = await TranscribeSegmentedAudioAsync(apiKey, endpoint, transcriptionModel, fileName, mimeType, content, cancellationToken);
+            await invocationLogStore.SaveBestEffortAsync(OpenAiInvocationLogBuilder.Create(
+                settings,
+                transcriptionModel,
+                "audio.transcription.segmented",
+                endpoint,
+                invocationContext,
+                startedAt,
+                200,
+                true,
+                BuildTranscriptionRequestJson(transcriptionModel, fileName, mimeType, content.Length, "ffmpeg_segment"),
+                null,
+                JsonSerializer.Serialize(new { text = segmentedTranscript }, SerializerOptions),
+                modelOverride: transcriptionModel), cancellationToken);
+            return segmentedTranscript;
+        }
+
         var attempt = await SendTranscriptionAttemptAsync(
             apiKey,
             endpoint,
@@ -63,24 +89,7 @@ public sealed class OpenAiMeetingAudioClient(
 
         if (!attempt.IsSuccessStatusCode && SupportsAudioChunking(transcriptionModel) && IsInputTooLarge(attempt.ResponseBody))
         {
-            var exception = new OpenAiRequestException(
-                $"OpenAI audio transcription failed with status {attempt.StatusCode}: {attempt.ResponseBody}",
-                attempt.StatusCode,
-                attempt.ResponseBody);
-            await invocationLogStore.SaveBestEffortAsync(OpenAiInvocationLogBuilder.Create(
-                settings,
-                transcriptionModel,
-                "audio.transcription",
-                endpoint,
-                invocationContext,
-                attempt.StartedAt,
-                attempt.StatusCode,
-                false,
-                attempt.RequestJson,
-                OpenAiInvocationLogBuilder.NormalizeJsonBody(attempt.ResponseBody),
-                null,
-                exception,
-                modelOverride: transcriptionModel), cancellationToken);
+            await LogTranscriptionFailureAsync(settings, transcriptionModel, endpoint, invocationContext, attempt, cancellationToken);
 
             attempt = await SendTranscriptionAttemptAsync(
                 apiKey,
@@ -91,6 +100,44 @@ public sealed class OpenAiMeetingAudioClient(
                 content,
                 "auto",
                 cancellationToken);
+        }
+
+        if (!attempt.IsSuccessStatusCode
+            && IsInputTooLarge(attempt.ResponseBody)
+            && !string.Equals(fallbackTranscriptionModel, transcriptionModel, StringComparison.OrdinalIgnoreCase))
+        {
+            await LogTranscriptionFailureAsync(settings, transcriptionModel, endpoint, invocationContext, attempt, cancellationToken);
+
+            attempt = await SendTranscriptionAttemptAsync(
+                apiKey,
+                endpoint,
+                fallbackTranscriptionModel,
+                fileName,
+                mimeType,
+                content,
+                null,
+                cancellationToken);
+            transcriptionModel = fallbackTranscriptionModel;
+        }
+
+        if (!attempt.IsSuccessStatusCode && IsLargeAudioFailure(attempt.ResponseBody))
+        {
+            await LogTranscriptionFailureAsync(settings, transcriptionModel, endpoint, invocationContext, attempt, cancellationToken);
+            var segmentedTranscript = await TranscribeSegmentedAudioAsync(apiKey, endpoint, transcriptionModel, fileName, mimeType, content, cancellationToken);
+            await invocationLogStore.SaveBestEffortAsync(OpenAiInvocationLogBuilder.Create(
+                settings,
+                transcriptionModel,
+                "audio.transcription.segmented",
+                endpoint,
+                invocationContext,
+                startedAt,
+                200,
+                true,
+                BuildTranscriptionRequestJson(transcriptionModel, fileName, mimeType, content.Length, "ffmpeg_segment"),
+                null,
+                JsonSerializer.Serialize(new { text = segmentedTranscript }, SerializerOptions),
+                modelOverride: transcriptionModel), cancellationToken);
+            return segmentedTranscript;
         }
 
         if (!attempt.IsSuccessStatusCode)
@@ -158,6 +205,34 @@ public sealed class OpenAiMeetingAudioClient(
             modelOverride: transcriptionModel), cancellationToken);
 
         return transcript;
+    }
+
+    private async Task LogTranscriptionFailureAsync(
+        AiAgentRuntimeSettings settings,
+        string transcriptionModel,
+        string endpoint,
+        AiAgentInvocationContext invocationContext,
+        TranscriptionAttempt attempt,
+        CancellationToken cancellationToken)
+    {
+        var exception = new OpenAiRequestException(
+            $"OpenAI audio transcription failed with status {attempt.StatusCode}: {attempt.ResponseBody}",
+            attempt.StatusCode,
+            attempt.ResponseBody);
+        await invocationLogStore.SaveBestEffortAsync(OpenAiInvocationLogBuilder.Create(
+            settings,
+            transcriptionModel,
+            "audio.transcription",
+            endpoint,
+            invocationContext,
+            attempt.StartedAt,
+            attempt.StatusCode,
+            false,
+            attempt.RequestJson,
+            OpenAiInvocationLogBuilder.NormalizeJsonBody(attempt.ResponseBody),
+            null,
+            exception,
+            modelOverride: transcriptionModel), cancellationToken);
     }
 
     public async Task<OpenAiMeetingAudioAnalysisResponse> AnalyzeAsync(
@@ -345,6 +420,198 @@ public sealed class OpenAiMeetingAudioClient(
         return new TranscriptionAttempt(startedAt, (int)response.StatusCode, response.IsSuccessStatusCode, requestJson, responseBody);
     }
 
+    private async Task<string> TranscribeSegmentedAudioAsync(
+        string apiKey,
+        string endpoint,
+        string transcriptionModel,
+        string fileName,
+        string mimeType,
+        byte[] content,
+        CancellationToken cancellationToken)
+    {
+        var chunks = await SplitAudioWithFfmpegAsync(fileName, mimeType, content, cancellationToken);
+        var transcripts = new List<string>();
+        foreach (var chunk in chunks)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var attempt = await SendTranscriptionAttemptAsync(
+                apiKey,
+                endpoint,
+                transcriptionModel,
+                chunk.FileName,
+                chunk.MimeType,
+                chunk.Content,
+                null,
+                cancellationToken);
+
+            if (!attempt.IsSuccessStatusCode && SupportsAudioChunking(transcriptionModel) && IsInputTooLarge(attempt.ResponseBody))
+            {
+                attempt = await SendTranscriptionAttemptAsync(
+                    apiKey,
+                    endpoint,
+                    transcriptionModel,
+                    chunk.FileName,
+                    chunk.MimeType,
+                    chunk.Content,
+                    "auto",
+                    cancellationToken);
+            }
+
+            if (!attempt.IsSuccessStatusCode)
+            {
+                throw new OpenAiRequestException(
+                    $"OpenAI segmented audio transcription failed with status {attempt.StatusCode}: {attempt.ResponseBody}",
+                    attempt.StatusCode,
+                    attempt.ResponseBody);
+            }
+
+            using var document = JsonDocument.Parse(attempt.ResponseBody);
+            var transcript = document.RootElement.TryGetProperty("text", out var textElement)
+                ? textElement.GetString() ?? string.Empty
+                : string.Empty;
+            if (!string.IsNullOrWhiteSpace(transcript))
+            {
+                transcripts.Add(transcript.Trim());
+            }
+        }
+
+        return string.Join("\n\n", transcripts).Trim();
+    }
+
+    private static async Task<IReadOnlyCollection<AudioChunk>> SplitAudioWithFfmpegAsync(
+        string fileName,
+        string mimeType,
+        byte[] content,
+        CancellationToken cancellationToken)
+    {
+        var extension = ResolveAudioExtension(fileName, mimeType);
+        var tempRoot = Path.Combine(Path.GetTempPath(), $"crm-ai-audio-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempRoot);
+        try
+        {
+            var inputPath = Path.Combine(tempRoot, $"input{extension}");
+            await File.WriteAllBytesAsync(inputPath, content, cancellationToken);
+            var outputPattern = Path.Combine(tempRoot, $"chunk-%03d{extension}");
+            var segmentSeconds = await ResolveSegmentSecondsAsync(inputPath, content.Length, cancellationToken);
+            var arguments = $"-hide_banner -loglevel error -y -i {Quote(inputPath)} -map 0:a:0 -c copy -f segment -segment_time {segmentSeconds.ToString(CultureInfo.InvariantCulture)} -reset_timestamps 1 {Quote(outputPattern)}";
+            var result = await RunProcessAsync("ffmpeg", arguments, cancellationToken);
+            if (result.ExitCode != 0)
+            {
+                arguments = $"-hide_banner -loglevel error -y -i {Quote(inputPath)} -vn -acodec libopus -b:a 32k -f segment -segment_time {segmentSeconds.ToString(CultureInfo.InvariantCulture)} -reset_timestamps 1 {Quote(outputPattern)}";
+                result = await RunProcessAsync("ffmpeg", arguments, cancellationToken);
+            }
+
+            if (result.ExitCode != 0)
+            {
+                throw new InvalidOperationException($"Nao foi possivel dividir o audio grande com ffmpeg: {result.Error}");
+            }
+
+            var chunkPaths = Directory.GetFiles(tempRoot, $"chunk-*{extension}")
+                .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+            if (chunkPaths.Length == 0)
+            {
+                throw new InvalidOperationException("O ffmpeg nao gerou partes de audio para transcricao.");
+            }
+
+            var chunks = new List<AudioChunk>(chunkPaths.Length);
+            for (var index = 0; index < chunkPaths.Length; index += 1)
+            {
+                var chunkContent = await File.ReadAllBytesAsync(chunkPaths[index], cancellationToken);
+                if (chunkContent.Length > MaxOpenAiAudioUploadBytes)
+                {
+                    throw new InvalidOperationException("Uma parte do audio ainda ficou maior que o limite de upload da OpenAI. Reduza OPENAI_TRANSCRIPTION_SEGMENT_SECONDS.");
+                }
+
+                chunks.Add(new AudioChunk($"meet-audio-part-{index + 1:000}{extension}", NormalizeMimeType(mimeType), chunkContent));
+            }
+
+            return chunks;
+        }
+        finally
+        {
+            try
+            {
+                Directory.Delete(tempRoot, recursive: true);
+            }
+            catch
+            {
+                // Temporary audio cleanup is best effort.
+            }
+        }
+    }
+
+    private static async Task<int> ResolveSegmentSecondsAsync(string inputPath, int sizeBytes, CancellationToken cancellationToken)
+    {
+        var configuredValue = Environment.GetEnvironmentVariable("OPENAI_TRANSCRIPTION_SEGMENT_SECONDS");
+        var configuredSeconds = int.TryParse(configuredValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
+            ? Math.Clamp(parsed, 30, DefaultSegmentSeconds)
+            : DefaultSegmentSeconds;
+
+        var probe = await RunProcessAsync("ffprobe", $"-v error -show_entries format=duration -of default=nw=1:nk=1 {Quote(inputPath)}", cancellationToken);
+        if (probe.ExitCode != 0 || !double.TryParse(probe.Output.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var durationSeconds) || durationSeconds <= 0)
+        {
+            return configuredSeconds;
+        }
+
+        var minimumParts = Math.Max(1, (int)Math.Ceiling(sizeBytes / (double)MaxOpenAiAudioUploadBytes));
+        var secondsBySize = (int)Math.Floor(durationSeconds / minimumParts);
+        return Math.Clamp(Math.Min(configuredSeconds, secondsBySize), 30, DefaultSegmentSeconds);
+    }
+
+    private static async Task<ProcessResult> RunProcessAsync(string fileName, string arguments, CancellationToken cancellationToken)
+    {
+        using var process = new Process
+        {
+            StartInfo = new ProcessStartInfo
+            {
+                FileName = fileName,
+                Arguments = arguments,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            }
+        };
+
+        try
+        {
+            process.Start();
+        }
+        catch (Exception exception)
+        {
+            throw new InvalidOperationException($"{fileName} nao esta disponivel no ambiente. Instale ffmpeg para processar gravacoes grandes.", exception);
+        }
+
+        var outputTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
+        var errorTask = process.StandardError.ReadToEndAsync(cancellationToken);
+        await process.WaitForExitAsync(cancellationToken);
+        return new ProcessResult(process.ExitCode, await outputTask, await errorTask);
+    }
+
+    private static string ResolveAudioExtension(string fileName, string mimeType)
+    {
+        var extension = Path.GetExtension(fileName);
+        if (!string.IsNullOrWhiteSpace(extension))
+        {
+            return extension;
+        }
+
+        return NormalizeMimeType(mimeType) switch
+        {
+            "audio/mpeg" => ".mp3",
+            "audio/mp3" => ".mp3",
+            "audio/mp4" => ".m4a",
+            "audio/m4a" => ".m4a",
+            "audio/ogg" => ".ogg",
+            "audio/wav" => ".wav",
+            "audio/webm" => ".webm",
+            _ => ".webm"
+        };
+    }
+
+    private static string Quote(string value) => $"\"{value.Replace("\"", "\\\"", StringComparison.Ordinal)}\"";
+
     private static string BuildTranscriptionRequestJson(string transcriptionModel, string fileName, string mimeType, int sizeBytes, string? chunkingStrategy) =>
         JsonSerializer.Serialize(new
         {
@@ -388,6 +655,13 @@ public sealed class OpenAiMeetingAudioClient(
         }
     }
 
+    private static bool IsLargeAudioFailure(string? responseBody) =>
+        IsInputTooLarge(responseBody)
+        || (!string.IsNullOrWhiteSpace(responseBody)
+            && (responseBody.Contains("25 MB", StringComparison.OrdinalIgnoreCase)
+                || responseBody.Contains("maximum content size", StringComparison.OrdinalIgnoreCase)
+                || responseBody.Contains("file is too large", StringComparison.OrdinalIgnoreCase)));
+
     private static string ExtractOutputText(string responseBody)
     {
         var output = JsonSerializer.Deserialize<OpenAiResponseEnvelope>(responseBody, SerializerOptions)
@@ -408,4 +682,8 @@ public sealed class OpenAiMeetingAudioClient(
     private sealed record OpenAiOutputContent(string Type, string? Text);
 
     private sealed record TranscriptionAttempt(DateTime StartedAt, int StatusCode, bool IsSuccessStatusCode, string RequestJson, string ResponseBody);
+
+    private sealed record AudioChunk(string FileName, string MimeType, byte[] Content);
+
+    private sealed record ProcessResult(int ExitCode, string Output, string Error);
 }

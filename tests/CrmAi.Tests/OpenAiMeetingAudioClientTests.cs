@@ -10,7 +10,7 @@ public sealed class OpenAiMeetingAudioClientTests
     public async Task TranscribeAsync_SendsSingleRequestWithoutChunking_WhenAudioFits()
     {
         var previousModel = Environment.GetEnvironmentVariable("OPENAI_TRANSCRIPTION_MODEL");
-        Environment.SetEnvironmentVariable("OPENAI_TRANSCRIPTION_MODEL", "gpt-4o-mini-transcribe");
+        Environment.SetEnvironmentVariable("OPENAI_TRANSCRIPTION_MODEL", null);
 
         try
         {
@@ -29,7 +29,7 @@ public sealed class OpenAiMeetingAudioClientTests
             var requestBody = Assert.Single(handler.RequestBodies);
             Assert.DoesNotContain("name=chunking_strategy", requestBody);
             Assert.Contains("name=model", requestBody);
-            Assert.Contains("gpt-4o-mini-transcribe", requestBody);
+            Assert.Contains("gpt-4o-transcribe", requestBody);
         }
         finally
         {
@@ -41,7 +41,7 @@ public sealed class OpenAiMeetingAudioClientTests
     public async Task TranscribeAsync_RetriesWithChunking_WhenOpenAiReportsInputTooLarge()
     {
         var previousModel = Environment.GetEnvironmentVariable("OPENAI_TRANSCRIPTION_MODEL");
-        Environment.SetEnvironmentVariable("OPENAI_TRANSCRIPTION_MODEL", "gpt-4o-mini-transcribe");
+        Environment.SetEnvironmentVariable("OPENAI_TRANSCRIPTION_MODEL", "gpt-4o-transcribe");
 
         try
         {
@@ -67,6 +67,46 @@ public sealed class OpenAiMeetingAudioClientTests
         finally
         {
             Environment.SetEnvironmentVariable("OPENAI_TRANSCRIPTION_MODEL", previousModel);
+        }
+    }
+
+    [Fact]
+    public async Task TranscribeAsync_FallsBackToWhisper_WhenChunkingStillExceedsInputLimit()
+    {
+        var previousModel = Environment.GetEnvironmentVariable("OPENAI_TRANSCRIPTION_MODEL");
+        var previousFallbackModel = Environment.GetEnvironmentVariable("OPENAI_TRANSCRIPTION_FALLBACK_MODEL");
+        Environment.SetEnvironmentVariable("OPENAI_TRANSCRIPTION_MODEL", "gpt-4o-transcribe");
+        Environment.SetEnvironmentVariable("OPENAI_TRANSCRIPTION_FALLBACK_MODEL", null);
+
+        try
+        {
+            var tooLarge = """{"error":{"code":"input_too_large","message":"Total number of tokens in instructions + audio is too large for this model"}}""";
+            var handler = new CapturingHandler(
+                (HttpStatusCode.BadRequest, tooLarge),
+                (HttpStatusCode.BadRequest, tooLarge),
+                (HttpStatusCode.OK, """{"text":"Transcricao via fallback"}"""));
+            var client = CreateClient(handler);
+
+            var transcript = await client.TranscribeAsync(
+                CreateSettings(),
+                "meet-audio.webm",
+                "audio/webm;codecs=opus",
+                [1, 2, 3],
+                AiAgentInvocationContext.Unknown,
+                CancellationToken.None);
+
+            Assert.Equal("Transcricao via fallback", transcript);
+            Assert.Equal(3, handler.RequestBodies.Count);
+            Assert.Contains("gpt-4o-transcribe", handler.RequestBodies[0]);
+            Assert.Contains("name=chunking_strategy", handler.RequestBodies[1]);
+            Assert.Contains("gpt-4o-transcribe", handler.RequestBodies[1]);
+            Assert.Contains("whisper-1", handler.RequestBodies[2]);
+            Assert.DoesNotContain("name=chunking_strategy", handler.RequestBodies[2]);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("OPENAI_TRANSCRIPTION_MODEL", previousModel);
+            Environment.SetEnvironmentVariable("OPENAI_TRANSCRIPTION_FALLBACK_MODEL", previousFallbackModel);
         }
     }
 

@@ -22,6 +22,9 @@ services:
       - RabbitMQ__DailyCheckinSnapshotIntervalMinutes=15
       - OpenAI__Model=gpt-4.1-mini
       - OpenAI__ResponsesEndpoint=https://api.openai.com/v1/responses
+      - OPENAI_TRANSCRIPTION_MODEL=gpt-4o-transcribe
+      - OPENAI_TRANSCRIPTION_FALLBACK_MODEL=whisper-1
+      - OPENAI_TRANSCRIPTION_SEGMENT_SECONDS=600
     deploy:
       mode: replicated
       replicas: 1
