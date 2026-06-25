@@ -1,4 +1,5 @@
 using CrmAi.Application;
+using CrmAi.Infrastructure.DailyCheckouts;
 using CrmAi.Infrastructure.DailyCheckins;
 using CrmAi.Infrastructure.Gamification;
 using CrmAi.Infrastructure.OpportunityAnalysis;
@@ -28,13 +29,16 @@ public static class DependencyInjection
         services.AddScoped<IWhatsappConversationAnalysisScheduler, PostgresWhatsappConversationAnalysisScheduler>();
         services.AddScoped<IMeetingAudioAnalysisService, PostgresMeetingAudioAnalysisService>();
         services.AddScoped<IDailyCheckinProjectionService, PostgresDailyCheckinProjectionService>();
+        services.AddScoped<IDailyCheckoutSnapshotService, PostgresDailyCheckoutSnapshotService>();
         services.AddScoped<IGamificationProjectionService, PostgresGamificationProjectionService>();
         services.AddHostedService<RabbitMqOpportunityAnalysisConsumer>();
         services.AddHostedService<RabbitMqActivityAnalysisConsumer>();
         services.AddHostedService<WhatsappConversationAnalysisHostedService>();
         services.AddHostedService<RabbitMqDailyCheckinConsumer>();
+        services.AddHostedService<RabbitMqDailyCheckoutRunConsumer>();
         services.AddHostedService<RabbitMqGamificationConsumer>();
         services.AddHostedService<DailyCheckinSnapshotHostedService>();
+        services.AddHostedService<DailyCheckoutSnapshotHostedService>();
 
         return services;
     }

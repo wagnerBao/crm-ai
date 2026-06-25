@@ -47,6 +47,15 @@ public interface IOpenAiMeetingAudioClient
         CancellationToken cancellationToken);
 }
 
+public interface IOpenAiDailyCheckoutClient
+{
+    Task<OpenAiDailyCheckoutResponse> AnalyzeAsync(
+        AiAgentRuntimeSettings settings,
+        DailyCheckoutAnalysisInput input,
+        AiAgentInvocationContext invocationContext,
+        CancellationToken cancellationToken);
+}
+
 public interface IAiAgentRuntimeSettingsRepository
 {
     Task<AiAgentRuntimeSettings> GetAsync(string agentKey, string? companyId, CancellationToken cancellationToken);
@@ -94,6 +103,12 @@ public interface IDailyCheckinProjectionService
 {
     Task ProjectAsync(OpportunityEvent opportunityEvent, CancellationToken cancellationToken);
     Task GenerateDailySnapshotsAsync(DateOnly date, CancellationToken cancellationToken);
+}
+
+public interface IDailyCheckoutSnapshotService
+{
+    Task GenerateDueSnapshotsAsync(DateTime utcNow, CancellationToken cancellationToken);
+    Task GenerateSnapshotAsync(string companyId, DateOnly? date, CancellationToken cancellationToken);
 }
 
 public interface IGamificationProjectionService

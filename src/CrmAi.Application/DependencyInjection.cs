@@ -15,6 +15,7 @@ public static class DependencyInjection
         services.AddHttpClient<IOpenAiRiskAnalysisClient, OpenAiResponsesRiskAnalysisClient>();
         services.AddHttpClient<IOpenAiWhatsappConversationAnalysisClient, OpenAiResponsesWhatsappConversationAnalysisClient>();
         services.AddHttpClient<IOpenAiMeetingAudioClient, OpenAiMeetingAudioClient>();
+        services.AddHttpClient<IOpenAiDailyCheckoutClient, OpenAiResponsesDailyCheckoutClient>();
         services.AddScoped<IRiskAnalysisAgent, RiskAnalysisAgent>();
         services.AddScoped<IWhatsappConversationAnalysisAgent, WhatsappConversationAnalysisAgent>();
 

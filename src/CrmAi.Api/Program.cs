@@ -32,6 +32,7 @@ app.MapGet("/", () => Results.Ok(new
     {
         opportunityAnalysis = builder.Configuration["RabbitMQ:OpportunityAnalysisQueue"] ?? "crm.projections.opportunity-analysis",
         dailyCheckin = builder.Configuration["RabbitMQ:DailyCheckinQueue"] ?? "crm.projections.daily-checkin",
+        dailyCheckout = builder.Configuration["RabbitMQ:DailyCheckoutQueue"] ?? "crm.projections.daily-checkout",
         gamification = builder.Configuration["RabbitMQ:GamificationQueue"] ?? "crm.projections.gamification"
     }
 }));
