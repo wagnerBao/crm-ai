@@ -29,10 +29,12 @@ public sealed class OpenAiMeetingAudioClient(
         const string endpoint = "https://api.openai.com/v1/audio/transcriptions";
         var startedAt = DateTime.UtcNow;
         var transcriptionModel = Environment.GetEnvironmentVariable("OPENAI_TRANSCRIPTION_MODEL") ?? "gpt-4o-mini-transcribe";
+        var chunkingStrategy = SupportsAudioChunking(transcriptionModel) ? "auto" : null;
         var requestJson = JsonSerializer.Serialize(new
         {
             model = transcriptionModel,
             language = "pt",
+            chunking_strategy = chunkingStrategy,
             file = new
             {
                 name = string.IsNullOrWhiteSpace(fileName) ? "meet-audio.webm" : fileName,
@@ -66,6 +68,11 @@ public sealed class OpenAiMeetingAudioClient(
         using var form = new MultipartFormDataContent();
         form.Add(new StringContent(transcriptionModel), "model");
         form.Add(new StringContent("pt"), "language");
+        if (!string.IsNullOrWhiteSpace(chunkingStrategy))
+        {
+            form.Add(new StringContent(chunkingStrategy), "chunking_strategy");
+        }
+
         form.Add(new ByteArrayContent(content)
         {
             Headers = { ContentType = new MediaTypeHeaderValue(NormalizeMimeType(mimeType)) }
@@ -316,6 +323,10 @@ public sealed class OpenAiMeetingAudioClient(
         var normalized = mimeType?.Split(';', 2)[0].Trim();
         return string.IsNullOrWhiteSpace(normalized) ? "audio/webm" : normalized;
     }
+
+    private static bool SupportsAudioChunking(string model) =>
+        model.StartsWith("gpt-4o", StringComparison.OrdinalIgnoreCase)
+        && model.Contains("transcribe", StringComparison.OrdinalIgnoreCase);
 
     private static string ExtractOutputText(string responseBody)
     {
