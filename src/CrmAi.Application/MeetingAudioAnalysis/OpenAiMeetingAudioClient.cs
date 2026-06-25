@@ -29,19 +29,7 @@ public sealed class OpenAiMeetingAudioClient(
         const string endpoint = "https://api.openai.com/v1/audio/transcriptions";
         var startedAt = DateTime.UtcNow;
         var transcriptionModel = Environment.GetEnvironmentVariable("OPENAI_TRANSCRIPTION_MODEL") ?? "gpt-4o-mini-transcribe";
-        var chunkingStrategy = SupportsAudioChunking(transcriptionModel) ? "auto" : null;
-        var requestJson = JsonSerializer.Serialize(new
-        {
-            model = transcriptionModel,
-            language = "pt",
-            chunking_strategy = chunkingStrategy,
-            file = new
-            {
-                name = string.IsNullOrWhiteSpace(fileName) ? "meet-audio.webm" : fileName,
-                mimeType = NormalizeMimeType(mimeType),
-                sizeBytes = content.Length
-            }
-        }, SerializerOptions);
+        var requestJson = BuildTranscriptionRequestJson(transcriptionModel, fileName, mimeType, content.Length, null);
 
         if (string.IsNullOrWhiteSpace(apiKey))
         {
@@ -63,65 +51,65 @@ public sealed class OpenAiMeetingAudioClient(
             throw exception;
         }
 
-        using var request = new HttpRequestMessage(HttpMethod.Post, endpoint);
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
-        using var form = new MultipartFormDataContent();
-        form.Add(new StringContent(transcriptionModel), "model");
-        form.Add(new StringContent("pt"), "language");
-        if (!string.IsNullOrWhiteSpace(chunkingStrategy))
-        {
-            form.Add(new StringContent(chunkingStrategy), "chunking_strategy");
-        }
+        var attempt = await SendTranscriptionAttemptAsync(
+            apiKey,
+            endpoint,
+            transcriptionModel,
+            fileName,
+            mimeType,
+            content,
+            null,
+            cancellationToken);
 
-        form.Add(new ByteArrayContent(content)
+        if (!attempt.IsSuccessStatusCode && SupportsAudioChunking(transcriptionModel) && IsInputTooLarge(attempt.ResponseBody))
         {
-            Headers = { ContentType = new MediaTypeHeaderValue(NormalizeMimeType(mimeType)) }
-        }, "file", string.IsNullOrWhiteSpace(fileName) ? "meet-audio.webm" : fileName);
-        request.Content = form;
-
-        HttpResponseMessage? response = null;
-        string? responseBody = null;
-        try
-        {
-            response = await httpClient.SendAsync(request, cancellationToken);
-            responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
-        }
-        catch (Exception exception) when (exception is not OperationCanceledException)
-        {
+            var exception = new OpenAiRequestException(
+                $"OpenAI audio transcription failed with status {attempt.StatusCode}: {attempt.ResponseBody}",
+                attempt.StatusCode,
+                attempt.ResponseBody);
             await invocationLogStore.SaveBestEffortAsync(OpenAiInvocationLogBuilder.Create(
                 settings,
                 transcriptionModel,
                 "audio.transcription",
                 endpoint,
                 invocationContext,
-                startedAt,
-                null,
+                attempt.StartedAt,
+                attempt.StatusCode,
                 false,
-                requestJson,
-                null,
+                attempt.RequestJson,
+                OpenAiInvocationLogBuilder.NormalizeJsonBody(attempt.ResponseBody),
                 null,
                 exception,
                 modelOverride: transcriptionModel), cancellationToken);
-            throw;
+
+            attempt = await SendTranscriptionAttemptAsync(
+                apiKey,
+                endpoint,
+                transcriptionModel,
+                fileName,
+                mimeType,
+                content,
+                "auto",
+                cancellationToken);
         }
 
-        if (!response.IsSuccessStatusCode)
+        if (!attempt.IsSuccessStatusCode)
         {
             var exception = new OpenAiRequestException(
-                $"OpenAI audio transcription failed with status {(int)response.StatusCode}: {responseBody}",
-                (int)response.StatusCode,
-                responseBody);
+                $"OpenAI audio transcription failed with status {attempt.StatusCode}: {attempt.ResponseBody}",
+                attempt.StatusCode,
+                attempt.ResponseBody);
             await invocationLogStore.SaveBestEffortAsync(OpenAiInvocationLogBuilder.Create(
                 settings,
                 transcriptionModel,
                 "audio.transcription",
                 endpoint,
                 invocationContext,
-                startedAt,
-                (int)response.StatusCode,
+                attempt.StartedAt,
+                attempt.StatusCode,
                 false,
-                requestJson,
-                OpenAiInvocationLogBuilder.NormalizeJsonBody(responseBody),
+                attempt.RequestJson,
+                OpenAiInvocationLogBuilder.NormalizeJsonBody(attempt.ResponseBody),
                 null,
                 exception,
                 modelOverride: transcriptionModel), cancellationToken);
@@ -131,7 +119,7 @@ public sealed class OpenAiMeetingAudioClient(
         string transcript;
         try
         {
-            using var document = JsonDocument.Parse(responseBody);
+            using var document = JsonDocument.Parse(attempt.ResponseBody);
             transcript = document.RootElement.TryGetProperty("text", out var textElement)
                 ? textElement.GetString() ?? string.Empty
                 : string.Empty;
@@ -144,11 +132,11 @@ public sealed class OpenAiMeetingAudioClient(
                 "audio.transcription",
                 endpoint,
                 invocationContext,
-                startedAt,
-                (int)response.StatusCode,
+                attempt.StartedAt,
+                attempt.StatusCode,
                 false,
-                requestJson,
-                OpenAiInvocationLogBuilder.NormalizeJsonBody(responseBody),
+                attempt.RequestJson,
+                OpenAiInvocationLogBuilder.NormalizeJsonBody(attempt.ResponseBody),
                 null,
                 exception,
                 modelOverride: transcriptionModel), cancellationToken);
@@ -161,11 +149,11 @@ public sealed class OpenAiMeetingAudioClient(
             "audio.transcription",
             endpoint,
             invocationContext,
-            startedAt,
-            (int)response.StatusCode,
+            attempt.StartedAt,
+            attempt.StatusCode,
             true,
-            requestJson,
-            OpenAiInvocationLogBuilder.NormalizeJsonBody(responseBody),
+            attempt.RequestJson,
+            OpenAiInvocationLogBuilder.NormalizeJsonBody(attempt.ResponseBody),
             JsonSerializer.Serialize(new { text = transcript }, SerializerOptions),
             modelOverride: transcriptionModel), cancellationToken);
 
@@ -324,9 +312,81 @@ public sealed class OpenAiMeetingAudioClient(
         return string.IsNullOrWhiteSpace(normalized) ? "audio/webm" : normalized;
     }
 
+    private async Task<TranscriptionAttempt> SendTranscriptionAttemptAsync(
+        string apiKey,
+        string endpoint,
+        string transcriptionModel,
+        string fileName,
+        string mimeType,
+        byte[] content,
+        string? chunkingStrategy,
+        CancellationToken cancellationToken)
+    {
+        var startedAt = DateTime.UtcNow;
+        var requestJson = BuildTranscriptionRequestJson(transcriptionModel, fileName, mimeType, content.Length, chunkingStrategy);
+        using var request = new HttpRequestMessage(HttpMethod.Post, endpoint);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+        using var form = new MultipartFormDataContent();
+        form.Add(new StringContent(transcriptionModel), "model");
+        form.Add(new StringContent("pt"), "language");
+        if (!string.IsNullOrWhiteSpace(chunkingStrategy))
+        {
+            form.Add(new StringContent(chunkingStrategy), "chunking_strategy");
+        }
+
+        form.Add(new ByteArrayContent(content)
+        {
+            Headers = { ContentType = new MediaTypeHeaderValue(NormalizeMimeType(mimeType)) }
+        }, "file", string.IsNullOrWhiteSpace(fileName) ? "meet-audio.webm" : fileName);
+        request.Content = form;
+
+        using var response = await httpClient.SendAsync(request, cancellationToken);
+        var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
+        return new TranscriptionAttempt(startedAt, (int)response.StatusCode, response.IsSuccessStatusCode, requestJson, responseBody);
+    }
+
+    private static string BuildTranscriptionRequestJson(string transcriptionModel, string fileName, string mimeType, int sizeBytes, string? chunkingStrategy) =>
+        JsonSerializer.Serialize(new
+        {
+            model = transcriptionModel,
+            language = "pt",
+            chunking_strategy = chunkingStrategy,
+            file = new
+            {
+                name = string.IsNullOrWhiteSpace(fileName) ? "meet-audio.webm" : fileName,
+                mimeType = NormalizeMimeType(mimeType),
+                sizeBytes
+            }
+        }, SerializerOptions);
+
     private static bool SupportsAudioChunking(string model) =>
         model.StartsWith("gpt-4o", StringComparison.OrdinalIgnoreCase)
         && model.Contains("transcribe", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsInputTooLarge(string? responseBody)
+    {
+        if (string.IsNullOrWhiteSpace(responseBody))
+        {
+            return false;
+        }
+
+        if (responseBody.Contains("input_too_large", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(responseBody);
+            return document.RootElement.TryGetProperty("error", out var error)
+                && error.TryGetProperty("message", out var message)
+                && message.GetString()?.Contains("too large", StringComparison.OrdinalIgnoreCase) == true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
 
     private static string ExtractOutputText(string responseBody)
     {
@@ -346,4 +406,6 @@ public sealed class OpenAiMeetingAudioClient(
     private sealed record OpenAiOutputItem(IReadOnlyCollection<OpenAiOutputContent> Content);
 
     private sealed record OpenAiOutputContent(string Type, string? Text);
+
+    private sealed record TranscriptionAttempt(DateTime StartedAt, int StatusCode, bool IsSuccessStatusCode, string RequestJson, string ResponseBody);
 }
