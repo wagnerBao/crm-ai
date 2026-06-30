@@ -1,0 +1,79 @@
+name: Build and Deploy
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+
+env:
+  IMAGE_NAME: wagnerbao/crm-ai
+  SERVICE_NAME: crm-ai_crmai
+
+concurrency:
+  group: deploy-${{ github.ref_name }}-${{ github.repository }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ github.ref_name == 'main' && 'production' || 'test' }}
+
+    steps:
+      - name: Baixar codigo
+        uses: actions/checkout@v4
+
+      - name: Definir tags da imagem
+        run: |
+          set -e
+
+          {
+            echo "DOCKER_TAGS<<EOF"
+            echo "$IMAGE_NAME:$GITHUB_SHA"
+            echo "$IMAGE_NAME:$GITHUB_REF_NAME"
+            if [ "$GITHUB_REF_NAME" = "main" ]; then
+              echo "$IMAGE_NAME:latest"
+            else
+              echo "$IMAGE_NAME:test"
+            fi
+            echo "EOF"
+          } >> "$GITHUB_ENV"
+
+      - name: Login no Docker Hub
+        uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Configurar Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build e push da imagem
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ env.DOCKER_TAGS }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Configurar SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "${{ secrets.IP_DO_SEU_SERVIDOR }}" >> ~/.ssh/known_hosts
+
+      - name: Atualizar servico no Docker Swarm
+        run: |
+          ssh -i ~/.ssh/id_ed25519 ${{ secrets.SSH_USER }}@${{ secrets.IP_DO_SEU_SERVIDOR }} << EOF
+            set -e
+
+            echo '${{ secrets.DOCKERHUB_TOKEN }}' | docker login -u '${{ secrets.DOCKERHUB_USERNAME }}' --password-stdin
+
+            docker service update \
+              --with-registry-auth \
+              --image ${{ env.IMAGE_NAME }}:${{ github.sha }} \
+              ${{ env.SERVICE_NAME }}
+          EOF
