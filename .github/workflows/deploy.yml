@@ -67,8 +67,11 @@ jobs:
 
       - name: Atualizar servico no Docker Swarm
         run: |
-          ssh -i ~/.ssh/id_ed25519 ${{ secrets.SSH_USER }}@${{ secrets.IP_DO_SEU_SERVIDOR }} << EOF
-            set -e
+          ssh -i ~/.ssh/id_ed25519 ${{ secrets.SSH_USER }}@${{ secrets.IP_DO_SEU_SERVIDOR }} 'bash -s' << 'EOF'
+            set -Eeuo pipefail
+
+            SERVICE_NAME='${{ env.SERVICE_NAME }}'
+            IMAGE_NAME='${{ env.IMAGE_NAME }}:${{ github.sha }}'
 
             echo "Espaco em disco antes da limpeza:"
             df -h /
@@ -84,8 +87,25 @@ jobs:
 
             echo '${{ secrets.DOCKERHUB_TOKEN }}' | docker login -u '${{ secrets.DOCKERHUB_USERNAME }}' --password-stdin
 
-            docker service update \
+            echo "Atualizando servico $SERVICE_NAME para a imagem $IMAGE_NAME"
+            if ! docker service update \
+              --detach=false \
               --with-registry-auth \
-              --image ${{ env.IMAGE_NAME }}:${{ github.sha }} \
-              ${{ env.SERVICE_NAME }}
+              --update-failure-action rollback \
+              --image "$IMAGE_NAME" \
+              "$SERVICE_NAME"; then
+              echo "::group::Status detalhado do servico"
+              docker service ps "$SERVICE_NAME" --no-trunc || true
+              echo "::endgroup::"
+
+              echo "::group::Logs recentes do servico"
+              docker service logs --raw --tail 200 "$SERVICE_NAME" || true
+              echo "::endgroup::"
+
+              exit 1
+            fi
+
+            echo "::group::Status final do servico"
+            docker service ps "$SERVICE_NAME" --no-trunc || true
+            echo "::endgroup::"
           EOF
