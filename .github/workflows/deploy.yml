@@ -70,6 +70,18 @@ jobs:
           ssh -i ~/.ssh/id_ed25519 ${{ secrets.SSH_USER }}@${{ secrets.IP_DO_SEU_SERVIDOR }} << EOF
             set -e
 
+            echo "Espaco em disco antes da limpeza:"
+            df -h /
+            docker system df || true
+
+            docker container prune -f || true
+            docker image prune -af || true
+            docker builder prune -af || true
+
+            echo "Espaco em disco depois da limpeza:"
+            df -h /
+            docker system df || true
+
             echo '${{ secrets.DOCKERHUB_TOKEN }}' | docker login -u '${{ secrets.DOCKERHUB_USERNAME }}' --password-stdin
 
             docker service update \
