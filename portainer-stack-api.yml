@@ -36,7 +36,7 @@ services:
       labels:
         - "traefik.enable=true"
         - "traefik.docker.network=network_public"
-        - "traefik.http.routers.crmai.rule=Host(`crmai.brokerchat.com.br`)"
+        - "traefik.http.routers.crmai.rule=Host(`crmai.skoposws.com.br`)"
         - "traefik.http.routers.crmai.entrypoints=websecure"
         - "traefik.http.routers.crmai.priority=1"
         - "traefik.http.routers.crmai.tls.certresolver=letsencryptresolver"
