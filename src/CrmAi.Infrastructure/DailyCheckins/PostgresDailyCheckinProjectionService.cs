@@ -78,7 +78,7 @@ public sealed class PostgresDailyCheckinProjectionService(NpgsqlDataSource dataS
             .Where(user => user.GroupId is null || groupIds.Contains(user.GroupId))
             .Select(user =>
             {
-                var results = goals.Select(goal =>
+                var results = goals.Where(goal => AppliesToGroup(goal, user.GroupId)).Select(goal =>
                 {
                     var actual = (goal.Unit, goal.Period) switch
                     {
@@ -95,7 +95,7 @@ public sealed class PostgresDailyCheckinProjectionService(NpgsqlDataSource dataS
                         _ => 0
                     };
                     var percent = goal.Target > 0 ? (int)Math.Round(actual / (decimal)goal.Target * 100, MidpointRounding.AwayFromZero) : 0;
-                    return new DailyCheckinGoalResultDto(goal.Id, goal.Name, goal.Period, goal.Target, goal.Unit, goal.Animation, goal.ActivityChannel, actual, percent, percent >= 100);
+                    return new DailyCheckinGoalResultDto(goal.Id, goal.Name, goal.Period, goal.Target, goal.Unit, goal.Animation, goal.ActivityChannel, goal.GroupId, goal.GroupName, actual, percent, percent >= 100);
                 }).ToArray();
 
                 var dailyPercent = AveragePercent(results.Where(x => x.Period == "daily"));
@@ -108,7 +108,7 @@ public sealed class PostgresDailyCheckinProjectionService(NpgsqlDataSource dataS
             .ToArray();
 
         var achieved = scores.SelectMany(x => x.Results).Count(x => x.Achieved);
-        var total = scores.Length * goals.Count;
+        var total = scores.Sum(x => x.Results.Count);
         var totals = new DailyCheckinTotalsDto(achieved, total, total > 0 ? (int)Math.Round(achieved / (decimal)total * 100, MidpointRounding.AwayFromZero) : 0);
 
         return new DailyCheckinSnapshotDto(date, DateTime.UtcNow, goals, groups, users, scores, totals, visibleGroupIds, rotationSeconds, []);
@@ -207,7 +207,7 @@ public sealed class PostgresDailyCheckinProjectionService(NpgsqlDataSource dataS
             .ToArray();
 
         var achieved = updatedScores.SelectMany(x => x.Results).Count(x => x.Achieved);
-        var total = updatedScores.Length * snapshot.Goals.Count;
+        var total = updatedScores.Sum(x => x.Results.Count);
         var totals = new DailyCheckinTotalsDto(achieved, total, total > 0 ? (int)Math.Round(achieved / (decimal)total * 100, MidpointRounding.AwayFromZero) : 0);
 
         return AddProcessedEvent(snapshot with
@@ -446,10 +446,24 @@ public sealed class PostgresDailyCheckinProjectionService(NpgsqlDataSource dataS
     private static async Task<IReadOnlyCollection<DailyCheckinGoalDto>> ReadGoalsAsync(NpgsqlConnection connection, CancellationToken cancellationToken)
     {
         const string sql = """
-            select id, name, period, target, unit, animation, activity_channel, is_active, sort_order, created_at, updated_at
-            from daily_checkin_metrics
-            where is_active = true
-            order by sort_order, name
+            select
+                m.id,
+                m.name,
+                m.period,
+                m.target,
+                m.unit,
+                m.animation,
+                m.activity_channel,
+                m.group_id,
+                g.name as group_name,
+                m.is_active,
+                m.sort_order,
+                m.created_at,
+                m.updated_at
+            from daily_checkin_metrics m
+            left join user_groups g on g.id = m.group_id
+            where m.is_active = true
+            order by m.sort_order, m.name
             """;
 
         await using var command = new NpgsqlCommand(sql, connection);
@@ -465,6 +479,8 @@ public sealed class PostgresDailyCheckinProjectionService(NpgsqlDataSource dataS
                 reader.GetString(reader.GetOrdinal("unit")),
                 reader.GetString(reader.GetOrdinal("animation")),
                 ReadNullableString(reader, "activity_channel"),
+                ReadNullableGuid(reader, "group_id"),
+                ReadNullableString(reader, "group_name"),
                 reader.GetBoolean(reader.GetOrdinal("is_active")),
                 reader.GetInt32(reader.GetOrdinal("sort_order")),
                 reader.GetDateTime(reader.GetOrdinal("created_at")),
@@ -673,6 +689,10 @@ public sealed class PostgresDailyCheckinProjectionService(NpgsqlDataSource dataS
         var ordinal = reader.GetOrdinal(name);
         return reader.IsDBNull(ordinal) ? null : reader.GetString(ordinal);
     }
+
+    private static bool AppliesToGroup(DailyCheckinGoalDto goal, string? groupId) =>
+        string.IsNullOrWhiteSpace(goal.GroupId) ||
+        (!string.IsNullOrWhiteSpace(groupId) && string.Equals(goal.GroupId, groupId, StringComparison.OrdinalIgnoreCase));
 
     private sealed record DailyCheckinEventDelta(string UserId, string Unit, string? ActivityChannel, DateOnly Date, int Amount);
 

@@ -60,7 +60,7 @@ public sealed class PostgresDailyCheckoutSnapshotService(
     {
         var dayStartUtc = ToUtc(date.ToDateTime(TimeOnly.MinValue), timeZone);
         var dayEndUtc = ToUtc(date.AddDays(1).ToDateTime(TimeOnly.MinValue), timeZone);
-        var context = await BuildContextAsync(connection, setting, date, dayStartUtc, dayEndUtc, cancellationToken);
+        var context = await BuildContextAsync(connection, setting, date, timeZone, dayStartUtc, dayEndUtc, cancellationToken);
         var ai = await AnalyzeBestEffortAsync(setting, context, cancellationToken);
         var payload = BuildPayload(date, setting, context, ai);
         await UpsertSnapshotAsync(connection, setting.CompanyId, date, payload, cancellationToken);
@@ -129,10 +129,13 @@ public sealed class PostgresDailyCheckoutSnapshotService(
         NpgsqlConnection connection,
         DailyCheckoutSettingsSnapshot setting,
         DateOnly date,
+        TimeZoneInfo timeZone,
         DateTime dayStartUtc,
         DateTime dayEndUtc,
         CancellationToken cancellationToken)
     {
+        var monthStartUtc = ToUtc(new DateTime(date.Year, date.Month, 1), timeZone);
+        var monthEndUtc = ToUtc(new DateTime(date.Year, date.Month, 1).AddMonths(1), timeZone);
         var totals = await ReadOneAsync(connection, """
             with latest_scores as (
                 select distinct on (opportunity_id)
@@ -172,10 +175,22 @@ public sealed class PostgresDailyCheckoutSnapshotService(
             """, setting.CompanyId, dayStartUtc, dayEndUtc, cancellationToken);
 
         var performance = await ReadRowsAsync(connection, """
-            with goal_target as (
-                select coalesce(sum(target), 0)::int as planned
-                from daily_checkin_metrics
-                where company_id = @companyId and is_active = true and period = 'daily'
+            with active_users as (
+                select id, name, role, group_id
+                from users
+                where company_id = @companyId and is_active = true
+            ),
+            user_targets as (
+                select
+                    u.id as user_id,
+                    coalesce(sum(m.target), 0)::int as planned
+                from active_users u
+                left join daily_checkin_metrics m
+                    on m.company_id = @companyId
+                   and m.is_active = true
+                   and m.period = 'daily'
+                   and (m.group_id is null or m.group_id = u.group_id)
+                group by u.id
             ),
             executed as (
                 select owner_user_id as user_id, count(*)::int as amount
@@ -202,17 +217,17 @@ public sealed class PostgresDailyCheckoutSnapshotService(
                 u.id::text as id,
                 u.name,
                 coalesce(g.name, u.role, 'Sem grupo') as "group",
-                gt.planned,
+                ut.planned,
                 coalesce(ue.executed, 0)::int as executed,
-                case when gt.planned = 0 then 0 else round(coalesce(ue.executed, 0)::numeric / gt.planned * 100, 1) end as percent
-            from users u
-            cross join goal_target gt
+                case when ut.planned = 0 then 0 else round(coalesce(ue.executed, 0)::numeric / ut.planned * 100, 1) end as percent
+            from active_users u
+            join user_targets ut on ut.user_id = u.id
             left join user_groups g on g.id = u.group_id
             left join user_execution ue on ue.user_id = u.id
-            where u.company_id = @companyId and u.is_active = true
             order by percent desc, u.name
             """, setting.CompanyId, dayStartUtc, dayEndUtc, cancellationToken);
 
+        var checkoutMetrics = await ReadCheckoutMetricRowsAsync(connection, setting.CompanyId, dayStartUtc, dayEndUtc, monthStartUtc, monthEndUtc, cancellationToken);
         var opened = await ReadOpportunityRowsAsync(connection, setting.CompanyId, dayStartUtc, dayEndUtc, "o.created_at >= @startsAt and o.created_at < @endsAt", "o.created_at desc", cancellationToken);
         var won = await ReadOpportunityRowsAsync(connection, setting.CompanyId, dayStartUtc, dayEndUtc, "o.status = 'won' and o.updated_at >= @startsAt and o.updated_at < @endsAt", "o.updated_at desc", cancellationToken);
         var lost = await ReadOpportunityRowsAsync(connection, setting.CompanyId, dayStartUtc, dayEndUtc, "o.status = 'lost' and o.updated_at >= @startsAt and o.updated_at < @endsAt", "o.updated_at desc", cancellationToken);
@@ -223,11 +238,15 @@ public sealed class PostgresDailyCheckoutSnapshotService(
         var totalPlanned = performance.Sum(row => Convert.ToInt32(row.GetValueOrDefault("planned") ?? 0));
         var totalExecuted = performance.Sum(row => Convert.ToInt32(row.GetValueOrDefault("executed") ?? 0));
         var goalPercent = totalPlanned == 0 ? 0 : Math.Round(totalExecuted / (decimal)totalPlanned * 100, 1);
+        var checkoutPlanned = checkoutMetrics.Sum(row => Convert.ToInt32(row.GetValueOrDefault("target") ?? 0));
+        var checkoutExecuted = checkoutMetrics.Sum(row => Convert.ToInt32(row.GetValueOrDefault("actual") ?? 0));
+        var checkoutGoalPercent = checkoutPlanned == 0 ? 0 : Math.Round(checkoutExecuted / (decimal)checkoutPlanned * 100, 1);
         var averageQuality = Convert.ToDecimal(totals.GetValueOrDefault("averageQuality") ?? 0m);
 
         var metrics = new object[]
         {
-            new { key = "goalPercent", title = "Meta do dia", value = goalPercent, suffix = "%", description = $"{totalExecuted} executado / {totalPlanned} planejado" },
+            new { key = "goalPercent", title = "Meta individual do check-in", value = goalPercent, suffix = "%", description = $"{totalExecuted} executado / {totalPlanned} planejado" },
+            new { key = "checkoutGoalPercent", title = "Metas operacionais do checkout", value = checkoutGoalPercent, suffix = "%", description = $"{checkoutExecuted} realizado / {checkoutPlanned} planejado" },
             new { key = "contactsDone", title = "Contatos realizados", value = totalExecuted, description = "Atividades, notas e oportunidades do recorte" },
             new { key = "movedOpportunities", title = "Oportunidades movidas", value = totals.GetValueOrDefault("movedToday") ?? 0, description = "Atualizacoes reais do dia" },
             new { key = "movedValue", title = "Valor potencial movimentado", value = totals.GetValueOrDefault("movedValue") ?? 0, prefix = "R$", description = "Pipeline com atualizacao no recorte" },
@@ -246,6 +265,7 @@ public sealed class PostgresDailyCheckoutSnapshotService(
             lost,
             focus,
             performance,
+            checkoutMetrics,
             lowEffectiveness,
             filters = new
             {
@@ -273,6 +293,123 @@ public sealed class PostgresDailyCheckoutSnapshotService(
         };
 
         return new DailyCheckoutAnalysisInput(date, setting, totals, metrics, charts, tables, updated.Cast<object>().Take(30).ToArray(), focus.Cast<object>().Take(30).ToArray(), lowEffectiveness);
+    }
+
+    private static async Task<List<Dictionary<string, object?>>> ReadCheckoutMetricRowsAsync(
+        NpgsqlConnection connection,
+        string? companyId,
+        DateTime startsAt,
+        DateTime endsAt,
+        DateTime monthStartsAt,
+        DateTime monthEndsAt,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            with metrics as (
+                select
+                    m.id,
+                    m.name,
+                    m.period,
+                    m.target,
+                    m.unit,
+                    m.group_id,
+                    g.name as group_name,
+                    m.activity_channel,
+                    case when m.period = 'monthly' then @monthStartsAt else @startsAt end as starts_at,
+                    case when m.period = 'monthly' then @monthEndsAt else @endsAt end as ends_at
+                from daily_checkout_metrics m
+                left join user_groups g on g.id = m.group_id
+                where m.company_id = @companyId
+                  and m.is_active = true
+                order by m.sort_order, m.name
+            )
+            select
+                m.id::text as id,
+                m.name,
+                m.period,
+                m.unit,
+                m.group_id::text as groupId,
+                m.group_name as groupName,
+                m.target,
+                coalesce(results.actual, 0)::int as actual,
+                case when m.target = 0 then 0 else round(coalesce(results.actual, 0)::numeric / m.target * 100, 1) end as percent
+            from metrics m
+            left join lateral (
+                select count(*)::int as actual
+                from (
+                    select 1
+                    from activities a
+                    left join users u on u.id = a.owner_user_id
+                    where m.unit = 'activity'
+                      and a.company_id = @companyId
+                      and a.status = 'done'
+                      and a.date_at >= m.starts_at
+                      and a.date_at < m.ends_at
+                      and (m.activity_channel is null or lower(a.channel) = lower(m.activity_channel))
+                      and (m.group_id is null or u.group_id = m.group_id)
+                    union all
+                    select 1
+                    from opportunities o
+                    left join users u on u.id = o.owner_user_id
+                    where m.unit = 'opportunity'
+                      and o.company_id = @companyId
+                      and o.created_at >= m.starts_at
+                      and o.created_at < m.ends_at
+                      and (m.group_id is null or u.group_id = m.group_id)
+                    union all
+                    select 1
+                    from opportunities o
+                    left join users u on u.id = o.owner_user_id
+                    where m.unit = 'opportunity_won'
+                      and o.company_id = @companyId
+                      and o.status = 'won'
+                      and o.updated_at >= m.starts_at
+                      and o.updated_at < m.ends_at
+                      and (m.group_id is null or u.group_id = m.group_id)
+                    union all
+                    select 1
+                    from opportunities o
+                    left join users u on u.id = o.owner_user_id
+                    where m.unit = 'opportunity_updated'
+                      and o.company_id = @companyId
+                      and o.updated_at >= m.starts_at
+                      and o.updated_at < m.ends_at
+                      and o.updated_at > o.created_at
+                      and (m.group_id is null or u.group_id = m.group_id)
+                    union all
+                    select 1
+                    from notes n
+                    left join users u on u.id = n.author_user_id
+                    where m.unit = 'note'
+                      and n.company_id = @companyId
+                      and n.created_at >= m.starts_at
+                      and n.created_at < m.ends_at
+                      and (m.group_id is null or u.group_id = m.group_id)
+                ) facts
+            ) results on true
+            """;
+
+        await using var command = new NpgsqlCommand(sql, connection);
+        AddCompanyParameter(command, companyId);
+        command.Parameters.AddWithValue("startsAt", NpgsqlDbType.TimestampTz, startsAt);
+        command.Parameters.AddWithValue("endsAt", NpgsqlDbType.TimestampTz, endsAt);
+        command.Parameters.AddWithValue("monthStartsAt", NpgsqlDbType.TimestampTz, monthStartsAt);
+        command.Parameters.AddWithValue("monthEndsAt", NpgsqlDbType.TimestampTz, monthEndsAt);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+
+        var rows = new List<Dictionary<string, object?>>();
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var row = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+            for (var index = 0; index < reader.FieldCount; index++)
+            {
+                row[reader.GetName(index)] = reader.IsDBNull(index) ? null : NormalizeValue(reader.GetValue(index));
+            }
+
+            rows.Add(row);
+        }
+
+        return rows;
     }
 
     private static async Task<List<Dictionary<string, object?>>> ReadOpportunityRowsAsync(
