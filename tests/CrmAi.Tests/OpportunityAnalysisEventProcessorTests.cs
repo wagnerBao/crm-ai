@@ -5,6 +5,105 @@ namespace CrmAi.Tests;
 
 public sealed class OpportunityAnalysisEventProcessorTests
 {
+    [Fact]
+    public async Task ProcessAsync_SchedulesWhatsappConversationAnalysis_ForWhatsappMessageEvents()
+    {
+        var contextRepository = new CountingOpportunityContextRepository();
+        var riskAgent = new CountingRiskAnalysisAgent();
+        var resultStore = new CountingAnalysisResultStore();
+        var scheduler = new CountingWhatsappConversationAnalysisScheduler();
+        var processor = new OpportunityAnalysisEventProcessor(
+            contextRepository,
+            riskAgent,
+            resultStore,
+            new NullWhatsappConversationAnalysisAgent(),
+            new CountingWhatsappConversationActionStore(),
+            scheduler,
+            new NullMeetingAudioAnalysisService());
+        var opportunityEvent = CreateEvent("opportunity.whatsapp.message.created");
+
+        await processor.ProcessAsync(opportunityEvent, CancellationToken.None);
+
+        Assert.Equal(1, scheduler.ScheduleCalls);
+        Assert.Same(opportunityEvent, scheduler.LastScheduledEvent);
+        Assert.Equal(0, contextRepository.Calls);
+        Assert.Equal(0, riskAgent.Calls);
+        Assert.Equal(0, resultStore.Calls);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_AppliesWhatsappResultAndRunsRiskAnalysis_ForWhatsappConversationBatchEvents()
+    {
+        var initialContext = CreateContext(CreateEvent("opportunity.whatsapp.conversation.batch"));
+        var refreshedContext = initialContext with
+        {
+            Activities =
+            [
+                new ActivitySnapshot(Guid.NewGuid().ToString(), "Conversa WhatsApp analisada pelo Agente Skopos", "Agente Skopos", "whatsapp", "done", DateTime.UtcNow, "Resumo", "Resumo mais recente", null, DateTime.UtcNow, DateTime.UtcNow)
+            ]
+        };
+        var contextRepository = new CountingOpportunityContextRepository(initialContext, refreshedContext);
+        var riskAgent = new CountingRiskAnalysisAgent();
+        var resultStore = new CountingAnalysisResultStore();
+        var whatsappAgent = new StubWhatsappConversationAnalysisAgent(new WhatsappConversationAnalysisResult(
+            "Cliente pediu retorno com proposta.",
+            true,
+            "Cliente quer receber proposta atualizada.",
+            true,
+            "Enviar proposta",
+            "Retornar com valores atualizados.",
+            null,
+            88,
+            ["Houve proximo passo comercial claro."]));
+        var actionStore = new CountingWhatsappConversationActionStore();
+        var processor = new OpportunityAnalysisEventProcessor(
+            contextRepository,
+            riskAgent,
+            resultStore,
+            whatsappAgent,
+            actionStore,
+            new CountingWhatsappConversationAnalysisScheduler(),
+            new NullMeetingAudioAnalysisService());
+
+        await processor.ProcessAsync(initialContext.TriggerEvent, CancellationToken.None);
+
+        Assert.Equal(2, contextRepository.Calls);
+        Assert.Equal(1, whatsappAgent.Calls);
+        Assert.Equal(1, actionStore.Calls);
+        Assert.Same(initialContext, actionStore.LastContext);
+        Assert.Equal(1, riskAgent.Calls);
+        Assert.Same(refreshedContext, riskAgent.LastContext);
+        Assert.Equal(1, resultStore.Calls);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_RunsRiskAnalysisWithoutApplyingWhatsappStore_WhenWhatsappAgentReturnsNull()
+    {
+        var context = CreateContext(CreateEvent("opportunity.whatsapp.conversation.batch"));
+        var contextRepository = new CountingOpportunityContextRepository(context);
+        var riskAgent = new CountingRiskAnalysisAgent();
+        var resultStore = new CountingAnalysisResultStore();
+        var whatsappAgent = new StubWhatsappConversationAnalysisAgent(null);
+        var actionStore = new CountingWhatsappConversationActionStore();
+        var processor = new OpportunityAnalysisEventProcessor(
+            contextRepository,
+            riskAgent,
+            resultStore,
+            whatsappAgent,
+            actionStore,
+            new CountingWhatsappConversationAnalysisScheduler(),
+            new NullMeetingAudioAnalysisService());
+
+        await processor.ProcessAsync(context.TriggerEvent, CancellationToken.None);
+
+        Assert.Equal(1, contextRepository.Calls);
+        Assert.Equal(1, whatsappAgent.Calls);
+        Assert.Equal(0, actionStore.Calls);
+        Assert.Equal(1, riskAgent.Calls);
+        Assert.Same(context, riskAgent.LastContext);
+        Assert.Equal(1, resultStore.Calls);
+    }
+
     [Theory]
     [InlineData("opportunity.activity.created")]
     [InlineData("opportunity.activity.updated")]
@@ -20,8 +119,8 @@ public sealed class OpportunityAnalysisEventProcessorTests
             riskAgent,
             resultStore,
             new NullWhatsappConversationAnalysisAgent(),
-            new NullWhatsappConversationActionStore(),
-            new NullWhatsappConversationAnalysisScheduler(),
+            new CountingWhatsappConversationActionStore(),
+            new CountingWhatsappConversationAnalysisScheduler(),
             new NullMeetingAudioAnalysisService());
 
         await processor.ProcessAsync(
@@ -41,22 +140,31 @@ public sealed class OpportunityAnalysisEventProcessorTests
 
     private sealed class CountingOpportunityContextRepository : IOpportunityContextRepository
     {
+        private readonly Queue<OpportunityAnalysisContext?> _contexts;
+
+        public CountingOpportunityContextRepository(params OpportunityAnalysisContext?[] contexts)
+        {
+            _contexts = new Queue<OpportunityAnalysisContext?>(contexts);
+        }
+
         public int Calls { get; private set; }
 
         public Task<OpportunityAnalysisContext?> GetForAnalysisAsync(OpportunityEvent triggerEvent, CancellationToken cancellationToken)
         {
             Calls++;
-            return Task.FromResult<OpportunityAnalysisContext?>(null);
+            return Task.FromResult(_contexts.Count == 0 ? null : _contexts.Dequeue());
         }
     }
 
     private sealed class CountingRiskAnalysisAgent : IRiskAnalysisAgent
     {
         public int Calls { get; private set; }
+        public OpportunityAnalysisContext? LastContext { get; private set; }
 
         public Task<RiskAnalysisResult> AnalyzeAsync(OpportunityAnalysisContext context, CancellationToken cancellationToken)
         {
             Calls++;
+            LastContext = context;
             return Task.FromResult(new RiskAnalysisResult(
                 RiskLevel.Low,
                 0,
@@ -69,10 +177,12 @@ public sealed class OpportunityAnalysisEventProcessorTests
     private sealed class CountingAnalysisResultStore : IAnalysisResultStore
     {
         public int Calls { get; private set; }
+        public OpportunityAnalysisContext? LastContext { get; private set; }
 
         public Task SaveRiskAnalysisAsync(OpportunityAnalysisContext context, RiskAnalysisResult result, CancellationToken cancellationToken)
         {
             Calls++;
+            LastContext = context;
             return Task.CompletedTask;
         }
     }
@@ -83,15 +193,41 @@ public sealed class OpportunityAnalysisEventProcessorTests
             Task.FromResult<WhatsappConversationAnalysisResult?>(null);
     }
 
-    private sealed class NullWhatsappConversationActionStore : IWhatsappConversationActionStore
+    private sealed class StubWhatsappConversationAnalysisAgent(WhatsappConversationAnalysisResult? result) : IWhatsappConversationAnalysisAgent
     {
-        public Task ApplyAsync(OpportunityAnalysisContext context, WhatsappConversationAnalysisResult result, CancellationToken cancellationToken) =>
-            Task.CompletedTask;
+        public int Calls { get; private set; }
+
+        public Task<WhatsappConversationAnalysisResult?> AnalyzeAsync(OpportunityAnalysisContext context, CancellationToken cancellationToken)
+        {
+            Calls++;
+            return Task.FromResult(result);
+        }
     }
 
-    private sealed class NullWhatsappConversationAnalysisScheduler : IWhatsappConversationAnalysisScheduler
+    private sealed class CountingWhatsappConversationActionStore : IWhatsappConversationActionStore
     {
-        public Task ScheduleAsync(OpportunityEvent opportunityEvent, CancellationToken cancellationToken) => Task.CompletedTask;
+        public int Calls { get; private set; }
+        public OpportunityAnalysisContext? LastContext { get; private set; }
+
+        public Task ApplyAsync(OpportunityAnalysisContext context, WhatsappConversationAnalysisResult result, CancellationToken cancellationToken)
+        {
+            Calls++;
+            LastContext = context;
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class CountingWhatsappConversationAnalysisScheduler : IWhatsappConversationAnalysisScheduler
+    {
+        public int ScheduleCalls { get; private set; }
+        public OpportunityEvent? LastScheduledEvent { get; private set; }
+
+        public Task ScheduleAsync(OpportunityEvent opportunityEvent, CancellationToken cancellationToken)
+        {
+            ScheduleCalls++;
+            LastScheduledEvent = opportunityEvent;
+            return Task.CompletedTask;
+        }
 
         public Task<IReadOnlyCollection<OpportunityEvent>> ClaimDueAsync(int limit, CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyCollection<OpportunityEvent>>([]);
@@ -104,5 +240,38 @@ public sealed class OpportunityAnalysisEventProcessorTests
     private sealed class NullMeetingAudioAnalysisService : IMeetingAudioAnalysisService
     {
         public Task ProcessAsync(OpportunityEvent opportunityEvent, CancellationToken cancellationToken) => Task.CompletedTask;
+    }
+
+    private static OpportunityEvent CreateEvent(string type) =>
+        new(
+            Guid.NewGuid().ToString(),
+            type,
+            DateTime.UtcNow,
+            Guid.NewGuid().ToString(),
+            Guid.NewGuid().ToString(),
+            new Dictionary<string, object?>
+            {
+                ["conversationId"] = Guid.NewGuid().ToString(),
+                ["contactId"] = Guid.NewGuid().ToString(),
+                ["text"] = "Cliente pediu proposta atualizada."
+            });
+
+    private static OpportunityAnalysisContext CreateContext(OpportunityEvent triggerEvent)
+    {
+        var pipelineId = Guid.NewGuid().ToString();
+        var stageId = Guid.NewGuid().ToString();
+        return new OpportunityAnalysisContext(
+            new OpportunitySnapshot(triggerEvent.OpportunityId, Guid.NewGuid().ToString(), "Oportunidade WhatsApp", pipelineId, stageId, null, triggerEvent.UserId, 1000m, "active", false, DateTime.UtcNow.AddDays(-3), DateTime.UtcNow, null),
+            new PipelineStageSnapshot(stageId, "Negociacao", 1),
+            [],
+            [],
+            [],
+            [],
+            [],
+            null,
+            [],
+            [],
+            [],
+            triggerEvent);
     }
 }

@@ -16,6 +16,7 @@ public sealed class RabbitMqOptions
         "crm.events.opportunity.meeting_audio.recording.created",
         "crm.events.opportunity.note.created",
         "crm.events.opportunity.whatsapp.message.created",
+        "crm.events.opportunity.whatsapp.conversation.batch",
         "crm.events.opportunity.stage.changed",
         "crm.events.opportunity.pipeline.changed",
         "crm.events.opportunity.updated"
