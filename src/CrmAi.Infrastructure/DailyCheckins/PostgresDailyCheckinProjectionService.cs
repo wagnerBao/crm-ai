@@ -61,12 +61,12 @@ public sealed class PostgresDailyCheckinProjectionService(NpgsqlDataSource dataS
 
         var dailyActivities = await CountActivitiesByUserAndChannelAsync(connection, dayStart, dayEnd, userIds, cancellationToken);
         var monthlyActivities = await CountActivitiesByUserAndChannelAsync(connection, monthStart, monthEnd, userIds, cancellationToken);
-        var dailyOpportunities = await CountOpportunitiesByUserAsync(connection, dayStart, dayEnd, userIds, cancellationToken);
-        var monthlyOpportunities = await CountOpportunitiesByUserAsync(connection, monthStart, monthEnd, userIds, cancellationToken);
-        var dailyWonOpportunities = await CountWonOpportunitiesByUserAsync(connection, dayStart, dayEnd, userIds, cancellationToken);
-        var monthlyWonOpportunities = await CountWonOpportunitiesByUserAsync(connection, monthStart, monthEnd, userIds, cancellationToken);
-        var dailyUpdatedOpportunities = await CountUpdatedOpportunitiesByUserAsync(connection, dayStart, dayEnd, userIds, cancellationToken);
-        var monthlyUpdatedOpportunities = await CountUpdatedOpportunitiesByUserAsync(connection, monthStart, monthEnd, userIds, cancellationToken);
+        var dailyOpportunities = await CountOpportunitiesByUserAndPipelineAsync(connection, dayStart, dayEnd, userIds, cancellationToken);
+        var monthlyOpportunities = await CountOpportunitiesByUserAndPipelineAsync(connection, monthStart, monthEnd, userIds, cancellationToken);
+        var dailyWonOpportunities = await CountWonOpportunitiesByUserAndPipelineAsync(connection, dayStart, dayEnd, userIds, cancellationToken);
+        var monthlyWonOpportunities = await CountWonOpportunitiesByUserAndPipelineAsync(connection, monthStart, monthEnd, userIds, cancellationToken);
+        var dailyUpdatedOpportunities = await CountUpdatedOpportunitiesByUserAndPipelineAsync(connection, dayStart, dayEnd, userIds, cancellationToken);
+        var monthlyUpdatedOpportunities = await CountUpdatedOpportunitiesByUserAndPipelineAsync(connection, monthStart, monthEnd, userIds, cancellationToken);
         var dailyNotes = await CountNotesByUserAsync(connection, dayStart, dayEnd, userIds, cancellationToken);
         var monthlyNotes = await CountNotesByUserAsync(connection, monthStart, monthEnd, userIds, cancellationToken);
         var visibleGroupIds = await ReadVisibleGroupIdsAsync(connection, cancellationToken);
@@ -84,18 +84,18 @@ public sealed class PostgresDailyCheckinProjectionService(NpgsqlDataSource dataS
                     {
                         ("activity", "daily") => GetActivityCount(dailyActivities, user.Id, goal.ActivityChannel),
                         ("activity", "monthly") => GetActivityCount(monthlyActivities, user.Id, goal.ActivityChannel),
-                        ("opportunity", "daily") => dailyOpportunities.GetValueOrDefault(user.Id),
-                        ("opportunity", "monthly") => monthlyOpportunities.GetValueOrDefault(user.Id),
-                        ("opportunity_won", "daily") => dailyWonOpportunities.GetValueOrDefault(user.Id),
-                        ("opportunity_won", "monthly") => monthlyWonOpportunities.GetValueOrDefault(user.Id),
-                        ("opportunity_updated", "daily") => dailyUpdatedOpportunities.GetValueOrDefault(user.Id),
-                        ("opportunity_updated", "monthly") => monthlyUpdatedOpportunities.GetValueOrDefault(user.Id),
+                        ("opportunity", "daily") => GetOpportunityCount(dailyOpportunities, user.Id, goal.PipelineId),
+                        ("opportunity", "monthly") => GetOpportunityCount(monthlyOpportunities, user.Id, goal.PipelineId),
+                        ("opportunity_won", "daily") => GetOpportunityCount(dailyWonOpportunities, user.Id, goal.PipelineId),
+                        ("opportunity_won", "monthly") => GetOpportunityCount(monthlyWonOpportunities, user.Id, goal.PipelineId),
+                        ("opportunity_updated", "daily") => GetOpportunityCount(dailyUpdatedOpportunities, user.Id, goal.PipelineId),
+                        ("opportunity_updated", "monthly") => GetOpportunityCount(monthlyUpdatedOpportunities, user.Id, goal.PipelineId),
                         ("note", "daily") => dailyNotes.GetValueOrDefault(user.Id),
                         ("note", "monthly") => monthlyNotes.GetValueOrDefault(user.Id),
                         _ => 0
                     };
                     var percent = goal.Target > 0 ? (int)Math.Round(actual / (decimal)goal.Target * 100, MidpointRounding.AwayFromZero) : 0;
-                    return new DailyCheckinGoalResultDto(goal.Id, goal.Name, goal.Period, goal.Target, goal.Unit, goal.Animation, goal.ActivityChannel, goal.GroupId, goal.GroupName, actual, percent, percent >= 100);
+                    return new DailyCheckinGoalResultDto(goal.Id, goal.Name, goal.Period, goal.Target, goal.Unit, goal.Animation, goal.ActivityChannel, goal.GroupId, goal.GroupName, goal.PipelineId, goal.PipelineName, actual, percent, percent >= 100);
                 }).ToArray();
 
                 var dailyPercent = AveragePercent(results.Where(x => x.Period == "daily"));
@@ -263,6 +263,12 @@ public sealed class PostgresDailyCheckinProjectionService(NpgsqlDataSource dataS
             return false;
         }
 
+        if (IsOpportunityUnit(result.Unit) &&
+            !PipelineMatches(result.PipelineId, delta.PipelineId))
+        {
+            return false;
+        }
+
         return result.Period switch
         {
             "daily" => snapshotDate == delta.Date,
@@ -280,6 +286,15 @@ public sealed class PostgresDailyCheckinProjectionService(NpgsqlDataSource dataS
 
         return string.Equals(goalChannel.Trim(), eventChannel?.Trim(), StringComparison.OrdinalIgnoreCase);
     }
+
+    private static bool PipelineMatches(string? goalPipelineId, string? eventPipelineId) =>
+        string.IsNullOrWhiteSpace(goalPipelineId) ||
+        string.Equals(goalPipelineId.Trim(), eventPipelineId?.Trim(), StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsOpportunityUnit(string unit) =>
+        string.Equals(unit, "opportunity", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(unit, "opportunity_won", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(unit, "opportunity_updated", StringComparison.OrdinalIgnoreCase);
 
     private static bool HasProcessedEvent(DailyCheckinSnapshotDto snapshot, string eventId) =>
         (snapshot.ProcessedEventIds ?? []).Contains(eventId, StringComparer.OrdinalIgnoreCase);
@@ -303,7 +318,7 @@ public sealed class PostgresDailyCheckinProjectionService(NpgsqlDataSource dataS
             case "opportunity.created":
                 if (!string.IsNullOrWhiteSpace(opportunityEvent.UserId))
                 {
-                    yield return new DailyCheckinEventDelta(opportunityEvent.UserId, "opportunity", null, DateOnly.FromDateTime(opportunityEvent.OccurredAt.ToUniversalTime()), 1);
+                    yield return new DailyCheckinEventDelta(opportunityEvent.UserId, "opportunity", null, GetString(opportunityEvent, "pipelineId"), DateOnly.FromDateTime(opportunityEvent.OccurredAt.ToUniversalTime()), 1);
                 }
                 break;
 
@@ -312,11 +327,12 @@ public sealed class PostgresDailyCheckinProjectionService(NpgsqlDataSource dataS
                     if (!string.IsNullOrWhiteSpace(opportunityEvent.UserId))
                     {
                         var date = DateOnly.FromDateTime(opportunityEvent.OccurredAt.ToUniversalTime());
-                        yield return new DailyCheckinEventDelta(opportunityEvent.UserId, "opportunity_updated", null, date, 1);
+                        var pipelineId = GetString(opportunityEvent, "newPipelineId") ?? GetString(opportunityEvent, "pipelineId");
+                        yield return new DailyCheckinEventDelta(opportunityEvent.UserId, "opportunity_updated", null, pipelineId, date, 1);
 
                         if (!IsWon(GetString(opportunityEvent, "oldStatus")) && IsWon(GetString(opportunityEvent, "newStatus")))
                         {
-                            yield return new DailyCheckinEventDelta(opportunityEvent.UserId, "opportunity_won", null, date, 1);
+                            yield return new DailyCheckinEventDelta(opportunityEvent.UserId, "opportunity_won", null, pipelineId, date, 1);
                         }
                     }
                     break;
@@ -327,7 +343,7 @@ public sealed class PostgresDailyCheckinProjectionService(NpgsqlDataSource dataS
                     var userId = GetString(opportunityEvent, "authorUserId") ?? opportunityEvent.UserId;
                     if (!string.IsNullOrWhiteSpace(userId))
                     {
-                        yield return new DailyCheckinEventDelta(userId, "note", null, DateOnly.FromDateTime(opportunityEvent.OccurredAt.ToUniversalTime()), 1);
+                        yield return new DailyCheckinEventDelta(userId, "note", null, null, DateOnly.FromDateTime(opportunityEvent.OccurredAt.ToUniversalTime()), 1);
                     }
                     break;
                 }
@@ -338,7 +354,7 @@ public sealed class PostgresDailyCheckinProjectionService(NpgsqlDataSource dataS
                     var status = GetString(opportunityEvent, "status");
                     if (!string.IsNullOrWhiteSpace(userId) && IsDone(status))
                     {
-                        yield return new DailyCheckinEventDelta(userId, "activity", GetString(opportunityEvent, "channel"), GetEventDate(opportunityEvent, "dateAt"), 1);
+                        yield return new DailyCheckinEventDelta(userId, "activity", GetString(opportunityEvent, "channel"), null, GetEventDate(opportunityEvent, "dateAt"), 1);
                     }
                     break;
                 }
@@ -356,12 +372,12 @@ public sealed class PostgresDailyCheckinProjectionService(NpgsqlDataSource dataS
 
                     if (!string.IsNullOrWhiteSpace(oldUserId) && IsDone(oldStatus))
                     {
-                        yield return new DailyCheckinEventDelta(oldUserId, "activity", oldChannel, oldDate, -1);
+                        yield return new DailyCheckinEventDelta(oldUserId, "activity", oldChannel, null, oldDate, -1);
                     }
 
                     if (!string.IsNullOrWhiteSpace(newUserId) && IsDone(newStatus))
                     {
-                        yield return new DailyCheckinEventDelta(newUserId, "activity", newChannel, newDate, 1);
+                        yield return new DailyCheckinEventDelta(newUserId, "activity", newChannel, null, newDate, 1);
                     }
                     break;
                 }
@@ -456,12 +472,15 @@ public sealed class PostgresDailyCheckinProjectionService(NpgsqlDataSource dataS
                 m.activity_channel,
                 m.group_id,
                 g.name as group_name,
+                m.pipeline_id,
+                p.name as pipeline_name,
                 m.is_active,
                 m.sort_order,
                 m.created_at,
                 m.updated_at
             from daily_checkin_metrics m
             left join user_groups g on g.id = m.group_id
+            left join pipelines p on p.id = m.pipeline_id
             where m.is_active = true
             order by m.sort_order, m.name
             """;
@@ -481,6 +500,8 @@ public sealed class PostgresDailyCheckinProjectionService(NpgsqlDataSource dataS
                 ReadNullableString(reader, "activity_channel"),
                 ReadNullableGuid(reader, "group_id"),
                 ReadNullableString(reader, "group_name"),
+                ReadNullableGuid(reader, "pipeline_id"),
+                ReadNullableString(reader, "pipeline_name"),
                 reader.GetBoolean(reader.GetOrdinal("is_active")),
                 reader.GetInt32(reader.GetOrdinal("sort_order")),
                 reader.GetDateTime(reader.GetOrdinal("created_at")),
@@ -591,36 +612,36 @@ public sealed class PostgresDailyCheckinProjectionService(NpgsqlDataSource dataS
         return counts;
     }
 
-    private static async Task<Dictionary<string, int>> CountOpportunitiesByUserAsync(NpgsqlConnection connection, DateTime startsAt, DateTime endsAt, string[] userIds, CancellationToken cancellationToken) =>
-        await CountByUserAsync(connection, """
-            select owner_user_id as user_id, count(*)::int as total
+    private static async Task<Dictionary<(string UserId, string PipelineId), int>> CountOpportunitiesByUserAndPipelineAsync(NpgsqlConnection connection, DateTime startsAt, DateTime endsAt, string[] userIds, CancellationToken cancellationToken) =>
+        await CountOpportunityByUserAndPipelineAsync(connection, """
+            select owner_user_id as user_id, pipeline_id, count(*)::int as total
             from opportunities
             where owner_user_id = any(@userIds)
               and created_at >= @startsAt
               and created_at < @endsAt
-            group by owner_user_id
+            group by owner_user_id, pipeline_id
             """, startsAt, endsAt, userIds, cancellationToken);
 
-    private static async Task<Dictionary<string, int>> CountWonOpportunitiesByUserAsync(NpgsqlConnection connection, DateTime startsAt, DateTime endsAt, string[] userIds, CancellationToken cancellationToken) =>
-        await CountByUserAsync(connection, """
-            select owner_user_id as user_id, count(*)::int as total
+    private static async Task<Dictionary<(string UserId, string PipelineId), int>> CountWonOpportunitiesByUserAndPipelineAsync(NpgsqlConnection connection, DateTime startsAt, DateTime endsAt, string[] userIds, CancellationToken cancellationToken) =>
+        await CountOpportunityByUserAndPipelineAsync(connection, """
+            select owner_user_id as user_id, pipeline_id, count(*)::int as total
             from opportunities
             where owner_user_id = any(@userIds)
               and lower(status) = 'won'
               and updated_at >= @startsAt
               and updated_at < @endsAt
-            group by owner_user_id
+            group by owner_user_id, pipeline_id
             """, startsAt, endsAt, userIds, cancellationToken);
 
-    private static async Task<Dictionary<string, int>> CountUpdatedOpportunitiesByUserAsync(NpgsqlConnection connection, DateTime startsAt, DateTime endsAt, string[] userIds, CancellationToken cancellationToken) =>
-        await CountByUserAsync(connection, """
-            select owner_user_id as user_id, count(*)::int as total
+    private static async Task<Dictionary<(string UserId, string PipelineId), int>> CountUpdatedOpportunitiesByUserAndPipelineAsync(NpgsqlConnection connection, DateTime startsAt, DateTime endsAt, string[] userIds, CancellationToken cancellationToken) =>
+        await CountOpportunityByUserAndPipelineAsync(connection, """
+            select owner_user_id as user_id, pipeline_id, count(*)::int as total
             from opportunities
             where owner_user_id = any(@userIds)
               and updated_at >= @startsAt
               and updated_at < @endsAt
               and updated_at > created_at
-            group by owner_user_id
+            group by owner_user_id, pipeline_id
             """, startsAt, endsAt, userIds, cancellationToken);
 
     private static async Task<Dictionary<string, int>> CountNotesByUserAsync(NpgsqlConnection connection, DateTime startsAt, DateTime endsAt, string[] userIds, CancellationToken cancellationToken) =>
@@ -651,6 +672,24 @@ public sealed class PostgresDailyCheckinProjectionService(NpgsqlDataSource dataS
         return counts;
     }
 
+    private static async Task<Dictionary<(string UserId, string PipelineId), int>> CountOpportunityByUserAndPipelineAsync(NpgsqlConnection connection, string sql, DateTime startsAt, DateTime endsAt, string[] userIds, CancellationToken cancellationToken)
+    {
+        if (userIds.Length == 0)
+        {
+            return [];
+        }
+
+        await using var command = CreateRangeCommand(connection, sql, startsAt, endsAt, userIds);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var counts = new Dictionary<(string UserId, string PipelineId), int>();
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            counts[(reader.GetGuid(reader.GetOrdinal("user_id")).ToString(), reader.GetGuid(reader.GetOrdinal("pipeline_id")).ToString())] = reader.GetInt32(reader.GetOrdinal("total"));
+        }
+
+        return counts;
+    }
+
     private static NpgsqlCommand CreateRangeCommand(NpgsqlConnection connection, string sql, DateTime startsAt, DateTime endsAt, string[] userIds)
     {
         var command = new NpgsqlCommand(sql, connection);
@@ -665,6 +704,16 @@ public sealed class PostgresDailyCheckinProjectionService(NpgsqlDataSource dataS
         if (!string.IsNullOrWhiteSpace(activityChannel))
         {
             return counts.GetValueOrDefault((userId, activityChannel.Trim().ToLowerInvariant()));
+        }
+
+        return counts.Where(x => x.Key.UserId == userId).Sum(x => x.Value);
+    }
+
+    private static int GetOpportunityCount(IReadOnlyDictionary<(string UserId, string PipelineId), int> counts, string userId, string? pipelineId)
+    {
+        if (!string.IsNullOrWhiteSpace(pipelineId))
+        {
+            return counts.GetValueOrDefault((userId, pipelineId.Trim()));
         }
 
         return counts.Where(x => x.Key.UserId == userId).Sum(x => x.Value);
@@ -694,7 +743,7 @@ public sealed class PostgresDailyCheckinProjectionService(NpgsqlDataSource dataS
         string.IsNullOrWhiteSpace(goal.GroupId) ||
         (!string.IsNullOrWhiteSpace(groupId) && string.Equals(goal.GroupId, groupId, StringComparison.OrdinalIgnoreCase));
 
-    private sealed record DailyCheckinEventDelta(string UserId, string Unit, string? ActivityChannel, DateOnly Date, int Amount);
+    private sealed record DailyCheckinEventDelta(string UserId, string Unit, string? ActivityChannel, string? PipelineId, DateOnly Date, int Amount);
 
     private sealed record DailyCheckinSnapshotKey(DateOnly Date, string? GroupId);
 }
