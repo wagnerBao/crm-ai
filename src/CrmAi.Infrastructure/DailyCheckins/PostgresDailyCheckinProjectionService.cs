@@ -461,7 +461,11 @@ public sealed class PostgresDailyCheckinProjectionService(NpgsqlDataSource dataS
 
     private static async Task<IReadOnlyCollection<DailyCheckinGoalDto>> ReadGoalsAsync(NpgsqlConnection connection, CancellationToken cancellationToken)
     {
-        const string sql = """
+        var hasPipelineScope = await ColumnExistsAsync(connection, "daily_checkin_metrics", "pipeline_id", cancellationToken);
+        var pipelineIdSelect = hasPipelineScope ? "m.pipeline_id" : "null::uuid as pipeline_id";
+        var pipelineNameSelect = hasPipelineScope ? "p.name as pipeline_name" : "null::text as pipeline_name";
+        var pipelineJoin = hasPipelineScope ? "left join pipelines p on p.id = m.pipeline_id" : string.Empty;
+        var sql = $$"""
             select
                 m.id,
                 m.name,
@@ -472,15 +476,15 @@ public sealed class PostgresDailyCheckinProjectionService(NpgsqlDataSource dataS
                 m.activity_channel,
                 m.group_id,
                 g.name as group_name,
-                m.pipeline_id,
-                p.name as pipeline_name,
+                {{pipelineIdSelect}},
+                {{pipelineNameSelect}},
                 m.is_active,
                 m.sort_order,
                 m.created_at,
                 m.updated_at
             from daily_checkin_metrics m
             left join user_groups g on g.id = m.group_id
-            left join pipelines p on p.id = m.pipeline_id
+            {{pipelineJoin}}
             where m.is_active = true
             order by m.sort_order, m.name
             """;
@@ -509,6 +513,24 @@ public sealed class PostgresDailyCheckinProjectionService(NpgsqlDataSource dataS
         }
 
         return goals;
+    }
+
+    private static async Task<bool> ColumnExistsAsync(NpgsqlConnection connection, string tableName, string columnName, CancellationToken cancellationToken)
+    {
+        const string sql = """
+            select exists (
+                select 1
+                from information_schema.columns
+                where table_schema = any (current_schemas(false))
+                  and table_name = @tableName
+                  and column_name = @columnName
+            )
+            """;
+
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("tableName", tableName);
+        command.Parameters.AddWithValue("columnName", columnName);
+        return await command.ExecuteScalarAsync(cancellationToken) is bool exists && exists;
     }
 
     private static async Task<IReadOnlyCollection<DailyCheckinGroupDto>> ReadGroupsAsync(NpgsqlConnection connection, CancellationToken cancellationToken)

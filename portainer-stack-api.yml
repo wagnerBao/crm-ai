@@ -16,7 +16,7 @@ services:
       - RabbitMQ__DailyCheckinQueue=crm.projections.daily-checkin
       - RabbitMQ__DailyCheckoutQueue=crm.projections.daily-checkout
       - RabbitMQ__GamificationQueue=crm.projections.gamification
-      - RabbitMQ__PrefetchCount=8
+      - RabbitMQ__PrefetchCount=2
       - RabbitMQ__RequeueOnFailure=false
       - RabbitMQ__DeadLetterExchange=crm.projections.dlx
       - RabbitMQ__DeadLetterQueueSuffix=.dlq
