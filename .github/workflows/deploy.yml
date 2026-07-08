@@ -61,8 +61,10 @@ jobs:
       - name: Configurar SSH
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          printf '%s\n' "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          perl -0pi -e 's/\\n/\n/g; s/\r\n?/\n/g' ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
+          ssh-keygen -y -f ~/.ssh/id_ed25519 > /dev/null
           ssh-keyscan -H "${{ secrets.IP_DO_SEU_SERVIDOR }}" >> ~/.ssh/known_hosts
 
       - name: Atualizar servico no Docker Swarm
