@@ -102,6 +102,34 @@ public sealed record WhatsappConversationAnalysisInput(
             analyzedAt);
     }
 
+    public static WhatsappConversationAnalysisInput FromContactEvent(OpportunityEvent opportunityEvent)
+    {
+        var data = opportunityEvent.Data;
+        return new WhatsappConversationAnalysisInput(
+            null,
+            new AnalysisWhatsappConversation(
+                GetString(data, "conversationId") ?? string.Empty,
+                GetString(data, "contactId"),
+                GetInt(data, "messageCount"),
+                GetDateTime(data, "firstMessageAt"),
+                GetDateTime(data, "latestMessageAt"),
+                GetDateTime(data, "processedUntil")),
+            null,
+            [],
+            new AnalysisActivitySummary(0, 0, []),
+            [],
+            string.IsNullOrWhiteSpace(GetString(data, "contactName"))
+                ? []
+                : [new AnalysisContactSummary(GetString(data, "contactName")!, string.Empty, "active", GetString(data, "ownerUserId"))],
+            [],
+            [],
+            [],
+            GetString(data, "previousSummary"),
+            GetString(data, "text") ?? string.Empty,
+            GetString(data, "additionalContext"),
+            DateTime.UtcNow);
+    }
+
     private static string? GetString(IReadOnlyDictionary<string, object?> data, string key) =>
         data.TryGetValue(key, out var value) ? value?.ToString() : null;
 

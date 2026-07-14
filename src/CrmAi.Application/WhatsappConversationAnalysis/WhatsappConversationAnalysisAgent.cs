@@ -40,6 +40,45 @@ public sealed class WhatsappConversationAnalysisAgent(
                 ["processedUntil"] = input.Conversation.ProcessedUntil
             });
 
+        return await AnalyzeCoreAsync(settings, input, invocationContext, cancellationToken);
+    }
+
+    public async Task<WhatsappConversationAnalysisResult?> AnalyzeContactAsync(OpportunityEvent opportunityEvent, CancellationToken cancellationToken)
+    {
+        var companyId = GetString(opportunityEvent, "companyId");
+        var settings = await agentSettingsRepository.GetAsync(AgentKey, companyId, cancellationToken);
+        var input = WhatsappConversationAnalysisInput.FromContactEvent(opportunityEvent);
+        if (string.IsNullOrWhiteSpace(input.NewTranscript) || !settings.IsActive)
+        {
+            return null;
+        }
+
+        var invocationContext = new AiAgentInvocationContext(
+            PlatformArea: "whatsapp",
+            CompanyId: companyId,
+            OpportunityId: null,
+            WhatsappConversationId: input.Conversation.ConversationId,
+            ContactId: input.Conversation.ContactId,
+            UserId: opportunityEvent.UserId ?? GetString(opportunityEvent, "ownerUserId"),
+            ContextEntityKeys: settings.ContextEntityKeys,
+            Metadata: new Dictionary<string, object?>
+            {
+                ["triggerEventId"] = opportunityEvent.EventId,
+                ["triggerEventType"] = opportunityEvent.Type,
+                ["scope"] = "contact",
+                ["messageCount"] = input.Conversation.MessageCount,
+                ["latestMessageAt"] = input.Conversation.LatestMessageAt
+            });
+
+        return await AnalyzeCoreAsync(settings, input, invocationContext, cancellationToken);
+    }
+
+    private async Task<WhatsappConversationAnalysisResult> AnalyzeCoreAsync(
+        AiAgentRuntimeSettings settings,
+        WhatsappConversationAnalysisInput input,
+        AiAgentInvocationContext invocationContext,
+        CancellationToken cancellationToken)
+    {
         var response = await openAiClient.AnalyzeAsync(settings, input, invocationContext, cancellationToken);
         var dueAt = ParseDateTime(response.ActivityDueAt);
 
@@ -54,6 +93,9 @@ public sealed class WhatsappConversationAnalysisAgent(
             ConfidenceScore: Math.Clamp(response.ConfidenceScore, 0, 100),
             Reasons: Clean(response.Reasons));
     }
+
+    private static string? GetString(OpportunityEvent opportunityEvent, string key) =>
+        opportunityEvent.Data.TryGetValue(key, out var value) ? value?.ToString() : null;
 
     private static DateTime? ParseDateTime(string? value)
     {

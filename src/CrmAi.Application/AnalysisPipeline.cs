@@ -74,11 +74,15 @@ public interface IActivityAnalysisEventProcessor
 public interface IWhatsappConversationAnalysisAgent
 {
     Task<WhatsappConversationAnalysisResult?> AnalyzeAsync(OpportunityAnalysisContext context, CancellationToken cancellationToken);
+    Task<WhatsappConversationAnalysisResult?> AnalyzeContactAsync(OpportunityEvent opportunityEvent, CancellationToken cancellationToken)
+        => Task.FromResult<WhatsappConversationAnalysisResult?>(null);
 }
 
 public interface IWhatsappConversationActionStore
 {
     Task ApplyAsync(OpportunityAnalysisContext context, WhatsappConversationAnalysisResult result, CancellationToken cancellationToken);
+    Task ApplyContactAsync(OpportunityEvent opportunityEvent, WhatsappConversationAnalysisResult result, CancellationToken cancellationToken)
+        => Task.CompletedTask;
 }
 
 public interface IWhatsappConversationAnalysisScheduler
@@ -141,6 +145,23 @@ public sealed class OpportunityAnalysisEventProcessor(
         if (string.Equals(opportunityEvent.Type, "opportunity.whatsapp.message.created", StringComparison.OrdinalIgnoreCase))
         {
             await whatsappConversationAnalysisScheduler.ScheduleAsync(opportunityEvent, cancellationToken);
+            return;
+        }
+
+        var isWhatsappBatch = string.Equals(
+            opportunityEvent.Type,
+            "opportunity.whatsapp.conversation.batch",
+            StringComparison.OrdinalIgnoreCase);
+        var hasOpportunity = Guid.TryParse(opportunityEvent.OpportunityId, out var batchOpportunityId)
+            && batchOpportunityId != Guid.Empty;
+        if (isWhatsappBatch && !hasOpportunity)
+        {
+            var contactResult = await whatsappConversationAnalysisAgent.AnalyzeContactAsync(opportunityEvent, cancellationToken);
+            if (contactResult is not null)
+            {
+                await whatsappConversationActionStore.ApplyContactAsync(opportunityEvent, contactResult, cancellationToken);
+            }
+
             return;
         }
 

@@ -68,6 +68,88 @@ public sealed class PostgresWhatsappConversationActionStore(NpgsqlDataSource dat
         await CompleteQueuedRunAsync(connection, runId, conversationId, result.ConversationSummary, cancellationToken);
     }
 
+    public async Task ApplyContactAsync(OpportunityEvent opportunityEvent, WhatsappConversationAnalysisResult result, CancellationToken cancellationToken)
+    {
+        var runId = GetGuid(opportunityEvent, "runId");
+        var conversationId = GetGuid(opportunityEvent, "conversationId");
+        var contactId = GetGuid(opportunityEvent, "contactId");
+        var companyId = GetGuid(opportunityEvent, "companyId");
+        var accountId = GetGuid(opportunityEvent, "accountId");
+        var userId = GetGuid(opportunityEvent, "ownerUserId")
+            ?? (Guid.TryParse(opportunityEvent.UserId, out var parsedUserId) ? parsedUserId : null);
+
+        if (runId is null || conversationId is null || contactId is null || companyId is null)
+        {
+            throw new InvalidOperationException("Contact-only WhatsApp analysis requires runId, conversationId, contactId and companyId.");
+        }
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        if (await IsRunCompletedAsync(connection, runId.Value, cancellationToken))
+        {
+            return;
+        }
+
+        var note = BuildContactAnalysisNote(opportunityEvent, result, runId.Value);
+        await InsertContactNoteAsync(connection, accountId, contactId.Value, userId, companyId.Value, note, cancellationToken);
+        await CompleteQueuedRunAsync(connection, runId, conversationId, result.ConversationSummary, cancellationToken);
+    }
+
+    private static async Task<bool> IsRunCompletedAsync(NpgsqlConnection connection, Guid runId, CancellationToken cancellationToken)
+    {
+        const string sql = "select coalesce((select status = 'completed' from whatsapp_conversation_analysis_runs where id = @runId), false)";
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("runId", runId);
+        return (bool)(await command.ExecuteScalarAsync(cancellationToken) ?? false);
+    }
+
+    private static async Task InsertContactNoteAsync(
+        NpgsqlConnection connection,
+        Guid? accountId,
+        Guid contactId,
+        Guid? userId,
+        Guid companyId,
+        string text,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            insert into notes (id, opportunity_id, account_id, contact_id, author_user_id, text, company_id, created_at, updated_at)
+            values (@id, null, @accountId, @contactId, @userId, @text, @companyId, now(), now())
+            """;
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("id", Guid.NewGuid());
+        command.Parameters.Add("accountId", NpgsqlDbType.Uuid).Value = accountId is null ? DBNull.Value : accountId.Value;
+        command.Parameters.AddWithValue("contactId", contactId);
+        command.Parameters.Add("userId", NpgsqlDbType.Uuid).Value = userId is null ? DBNull.Value : userId.Value;
+        command.Parameters.AddWithValue("text", text);
+        command.Parameters.AddWithValue("companyId", companyId);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static string BuildContactAnalysisNote(OpportunityEvent opportunityEvent, WhatsappConversationAnalysisResult result, Guid runId)
+    {
+        var lines = new List<string>
+        {
+            "Análise do Agent Skopos - WhatsApp",
+            "",
+            result.ConversationSummary
+        };
+        if (result.ShouldCreateNote && !string.IsNullOrWhiteSpace(result.NoteText))
+        {
+            lines.Add("");
+            lines.Add(result.NoteText);
+        }
+        if (result.Reasons.Count > 0)
+        {
+            lines.Add("");
+            lines.Add("Motivos:");
+            lines.AddRange(result.Reasons.Select(reason => "- " + reason));
+        }
+        lines.Add("");
+        lines.Add($"Confiança: {result.ConfidenceScore}%");
+        lines.Add($"[agent_skopos_run:{runId}]");
+        return string.Join("\n", lines);
+    }
+
     private static async Task<bool> WasProcessedAsync(NpgsqlConnection connection, string eventId, CancellationToken cancellationToken)
     {
         const string sql = """
