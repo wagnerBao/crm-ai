@@ -54,15 +54,16 @@ public sealed class PostgresWhatsappConversationActionStore(NpgsqlDataSource dat
             context,
             result,
             cancellationToken);
-        await InsertHistoryAsync(
-            connection,
-            opportunityId,
-            userId,
-            companyId,
-            activityWasCreated
-                ? "Atividade Agente Skopos criada a partir do WhatsApp"
-                : "Atividade Agente Skopos atualizada a partir do WhatsApp",
-            cancellationToken);
+        if (activityWasCreated)
+        {
+            await InsertHistoryAsync(
+                connection,
+                opportunityId,
+                userId,
+                companyId,
+                "Atividade criada automaticamente pelo Agent Skopos a partir do WhatsApp",
+                cancellationToken);
+        }
 
         await InsertInsightAsync(connection, opportunityId, companyId, context, result, cancellationToken);
         await CompleteQueuedRunAsync(connection, runId, conversationId, result.ConversationSummary, cancellationToken);
@@ -91,6 +92,16 @@ public sealed class PostgresWhatsappConversationActionStore(NpgsqlDataSource dat
 
         var note = BuildContactAnalysisNote(opportunityEvent, result, runId.Value);
         await InsertContactNoteAsync(connection, accountId, contactId.Value, userId, companyId.Value, note, cancellationToken);
+        await CreateContactOnlyWhatsappActivityIfMissingAsync(
+            connection,
+            accountId,
+            contactId.Value,
+            userId,
+            companyId.Value,
+            conversationId.Value,
+            opportunityEvent,
+            result,
+            cancellationToken);
         await CompleteQueuedRunAsync(connection, runId, conversationId, result.ConversationSummary, cancellationToken);
     }
 
@@ -229,6 +240,11 @@ public sealed class PostgresWhatsappConversationActionStore(NpgsqlDataSource dat
         CancellationToken cancellationToken)
     {
         var activityDate = ResolveActivityDate(context);
+        if (contactId is not null && await HasDailyWhatsappActivityAsync(connection, contactId.Value, activityDate.Date, cancellationToken))
+        {
+            return false;
+        }
+
         var marker = conversationId is null ? $"[whatsapp_event_id:{context.TriggerEvent.EventId}]" : $"[whatsapp_conversation_id:{conversationId}]";
         var notesBlock = BuildActivityNotesBlock(context, result, marker);
         var completedNotes = Truncate(result.ConversationSummary, 2000);
@@ -295,6 +311,87 @@ public sealed class PostgresWhatsappConversationActionStore(NpgsqlDataSource dat
         command.Parameters.AddWithValue("companyId", companyId is null ? DBNull.Value : companyId.Value);
         await command.ExecuteNonQueryAsync(cancellationToken);
         return true;
+    }
+
+    private static async Task<bool> HasDailyWhatsappActivityAsync(
+        NpgsqlConnection connection,
+        Guid contactId,
+        DateTime activityDate,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            select exists (
+                select 1
+                from activities
+                where contact_id = @contactId
+                  and channel = @channel
+                  and date_at::date = @activityDate
+            )
+            """;
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("contactId", contactId);
+        command.Parameters.AddWithValue("channel", WhatsappChannel);
+        command.Parameters.Add("activityDate", NpgsqlDbType.Date).Value = DateOnly.FromDateTime(activityDate);
+        return (bool)(await command.ExecuteScalarAsync(cancellationToken) ?? false);
+    }
+
+    private static async Task<bool> CreateContactOnlyWhatsappActivityIfMissingAsync(
+        NpgsqlConnection connection,
+        Guid? accountId,
+        Guid contactId,
+        Guid? userId,
+        Guid companyId,
+        Guid conversationId,
+        OpportunityEvent opportunityEvent,
+        WhatsappConversationAnalysisResult result,
+        CancellationToken cancellationToken)
+    {
+        var activityDate = (GetDateTime(opportunityEvent, "latestMessageAt") ?? opportunityEvent.OccurredAt).ToUniversalTime();
+        if (await HasDailyWhatsappActivityAsync(connection, contactId, activityDate.Date, cancellationToken))
+        {
+            return false;
+        }
+
+        const string sql = """
+            insert into activities
+                (id, opportunity_id, account_id, contact_id, owner_user_id, title, activity_type, channel,
+                 status, date_at, notes, completion_notes, completed_notes, company_id, created_at, updated_at)
+            select
+                @id, null, @accountId, @contactId, @userId, @title, @activityType, @channel,
+                'done', @dateAt, @notes, @summary, @summary, @companyId, now(), now()
+            where not exists (
+                select 1
+                from activities
+                where contact_id = @contactId
+                  and channel = @channel
+                  and date_at::date = @activityDate
+            )
+            returning id
+            """;
+
+        var notes = string.Join("\n", new[]
+        {
+            "Atividade criada automaticamente pelo Agent Skopos após análise da conversa do WhatsApp.",
+            $"[whatsapp_conversation_id:{conversationId}]",
+            $"[agent_skopos_event:{opportunityEvent.EventId}]",
+            "",
+            "Resumo da conversa:",
+            result.ConversationSummary
+        });
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("id", Guid.NewGuid());
+        command.Parameters.Add("accountId", NpgsqlDbType.Uuid).Value = accountId is null ? DBNull.Value : accountId.Value;
+        command.Parameters.AddWithValue("contactId", contactId);
+        command.Parameters.Add("userId", NpgsqlDbType.Uuid).Value = userId is null ? DBNull.Value : userId.Value;
+        command.Parameters.AddWithValue("title", "Contato WhatsApp registrado automaticamente pelo Agent Skopos");
+        command.Parameters.AddWithValue("activityType", SkoposActivityType);
+        command.Parameters.AddWithValue("channel", WhatsappChannel);
+        command.Parameters.AddWithValue("dateAt", activityDate);
+        command.Parameters.Add("activityDate", NpgsqlDbType.Date).Value = DateOnly.FromDateTime(activityDate);
+        command.Parameters.AddWithValue("notes", notes);
+        command.Parameters.AddWithValue("summary", Truncate(result.ConversationSummary, 2000));
+        command.Parameters.AddWithValue("companyId", companyId);
+        return await command.ExecuteScalarAsync(cancellationToken) is Guid;
     }
 
     private static async Task<Guid?> FindDailySkoposActivityAsync(
