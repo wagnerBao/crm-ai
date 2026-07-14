@@ -553,6 +553,16 @@ public sealed class PostgresWhatsappConversationActionStore(NpgsqlDataSource dat
         }
 
         const string sql = """
+            update whatsapp_conversation_analysis_runs previous
+            set status = 'superseded',
+                updated_at = now()
+            from whatsapp_conversation_analysis_runs current_run
+            where current_run.id = @runId
+              and previous.id <> current_run.id
+              and previous.conversation_id = current_run.conversation_id
+              and previous.last_message_id = current_run.last_message_id
+              and previous.status = 'completed';
+
             update whatsapp_conversation_analysis_runs
             set status = 'completed',
                 summary = @summary,
