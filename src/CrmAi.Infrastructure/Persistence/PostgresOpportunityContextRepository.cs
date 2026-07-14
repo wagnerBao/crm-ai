@@ -5,7 +5,7 @@ using NpgsqlTypes;
 
 namespace CrmAi.Infrastructure.Persistence;
 
-public sealed class PostgresOpportunityContextRepository(NpgsqlDataSource dataSource) : IOpportunityContextRepository
+public sealed class PostgresOpportunityContextRepository(NpgsqlDataSource dataSource, IAiAgentRuntimeSettingsRepository settingsRepository) : IOpportunityContextRepository
 {
     public async Task<OpportunityAnalysisContext?> GetForAnalysisAsync(OpportunityEvent triggerEvent, CancellationToken cancellationToken)
     {
@@ -22,17 +22,25 @@ public sealed class PostgresOpportunityContextRepository(NpgsqlDataSource dataSo
             return null;
         }
 
+        var riskSettings = await settingsRepository.GetAsync("risk-analysis", opportunity.CompanyId, cancellationToken);
+        var enabled = riskSettings.ContextEntityKeys.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (string.Equals(triggerEvent.Type, "opportunity.whatsapp.conversation.batch", StringComparison.OrdinalIgnoreCase))
+        {
+            var whatsappSettings = await settingsRepository.GetAsync("whatsapp-conversation-analysis", opportunity.CompanyId, cancellationToken);
+            enabled.UnionWith(whatsappSettings.ContextEntityKeys);
+        }
+
         var stage = await ReadStageAsync(connection, Guid.Parse(opportunity.StageId), cancellationToken)
             ?? new PipelineStageSnapshot(opportunity.StageId, "Fase atual", 0);
-        var notes = await ReadNotesAsync(connection, opportunityId, cancellationToken);
-        var activities = await ReadActivitiesAsync(connection, opportunityId, cancellationToken);
-        var contacts = await ReadContactsAsync(connection, opportunityId, cancellationToken);
-        var users = await ReadUsersAsync(connection, opportunityId, opportunity.OwnerUserId, cancellationToken);
-        var history = await ReadHistoryAsync(connection, opportunityId, cancellationToken);
-        var account = await ReadAccountAsync(connection, opportunityId, cancellationToken);
-        var products = await ReadProductsAsync(connection, opportunityId, cancellationToken);
-        var insights = await ReadAgentInsightsAsync(connection, opportunityId, cancellationToken);
-        var metricRules = await ReadMetricRulesAsync(connection, opportunity.CompanyId, cancellationToken);
+        var notes = enabled.Contains("notes") ? await ReadNotesAsync(connection, opportunityId, cancellationToken) : [];
+        var activities = enabled.Contains("activities") ? await ReadActivitiesAsync(connection, opportunityId, cancellationToken) : [];
+        var contacts = enabled.Contains("contacts") ? await ReadContactsAsync(connection, opportunityId, cancellationToken) : [];
+        var users = enabled.Contains("users") ? await ReadUsersAsync(connection, opportunityId, opportunity.OwnerUserId, cancellationToken) : [];
+        var history = enabled.Contains("history") ? await ReadHistoryAsync(connection, opportunityId, cancellationToken) : [];
+        var account = enabled.Contains("account") ? await ReadAccountAsync(connection, opportunityId, cancellationToken) : null;
+        var products = enabled.Contains("products") ? await ReadProductsAsync(connection, opportunityId, cancellationToken) : [];
+        var insights = enabled.Contains("agent_insights") ? await ReadAgentInsightsAsync(connection, opportunityId, cancellationToken) : [];
+        var metricRules = enabled.Contains("commercial_rules") ? await ReadMetricRulesAsync(connection, opportunity.CompanyId, cancellationToken) : [];
 
         return new OpportunityAnalysisContext(opportunity, stage, notes, activities, contacts, users, history, account, products, insights, metricRules, triggerEvent);
     }

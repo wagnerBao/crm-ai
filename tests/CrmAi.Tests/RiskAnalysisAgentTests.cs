@@ -6,6 +6,39 @@ namespace CrmAi.Tests;
 public sealed class RiskAnalysisAgentTests
 {
     [Fact]
+    public void Build_DoesNotTreatEmptyEntitySelectionAsAllEntities()
+    {
+        var now = new DateTime(2026, 7, 14, 12, 0, 0, DateTimeKind.Utc);
+        var context = CreateContext(now, [PendingActivity(now.AddDays(-1))], [new NoteSnapshot(Guid.NewGuid().ToString(), "Nota confidencial", null, now)], []);
+        var builder = new RiskAnalysisAgentInputBuilder(new CommercialRuleAssessmentService());
+
+        var input = builder.Build(context, []).Input;
+
+        Assert.Null(input.Opportunity);
+        Assert.Null(input.Account);
+        Assert.Empty(input.Activities.RecentItems);
+        Assert.Empty(input.RecentNotes);
+        Assert.Empty(input.Contacts);
+        Assert.Empty(input.Products);
+        Assert.Empty(input.RelatedAgentInsights);
+    }
+
+    [Fact]
+    public void Build_IncludesOnlyExplicitlySelectedEntityBlocks()
+    {
+        var now = new DateTime(2026, 7, 14, 12, 0, 0, DateTimeKind.Utc);
+        var context = CreateContext(now, [PendingActivity(now.AddDays(-1))], [new NoteSnapshot(Guid.NewGuid().ToString(), "Nota permitida", null, now)], []);
+        var builder = new RiskAnalysisAgentInputBuilder(new CommercialRuleAssessmentService());
+
+        var input = builder.Build(context, ["notes"]).Input;
+
+        Assert.Single(input.RecentNotes);
+        Assert.Null(input.Opportunity);
+        Assert.Empty(input.Activities.RecentItems);
+        Assert.Empty(input.Contacts);
+    }
+
+    [Fact]
     public async Task AnalyzeAsync_UsesOpenAiAgentResponse_ForRiskResult()
     {
         var now = new DateTime(2026, 05, 06, 12, 0, 0, DateTimeKind.Utc);

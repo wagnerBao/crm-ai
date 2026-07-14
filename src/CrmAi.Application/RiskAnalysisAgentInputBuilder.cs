@@ -172,6 +172,6 @@ public sealed class RiskAnalysisAgentInputBuilder(CommercialRuleAssessmentServic
     {
         private readonly HashSet<string> _keys = (keys ?? []).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-        public bool Has(string key) => _keys.Count == 0 || _keys.Contains(key);
+        public bool Has(string key) => _keys.Contains(key);
     }
 }

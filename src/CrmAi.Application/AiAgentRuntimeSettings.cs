@@ -16,5 +16,5 @@ public sealed record AiAgentRuntimeSettings(
             .Where(value => !string.IsNullOrWhiteSpace(value)));
 
     public bool HasContext(string key) =>
-        ContextEntityKeys.Count == 0 || ContextEntityKeys.Contains(key, StringComparer.OrdinalIgnoreCase);
+        ContextEntityKeys.Contains(key, StringComparer.OrdinalIgnoreCase);
 }
