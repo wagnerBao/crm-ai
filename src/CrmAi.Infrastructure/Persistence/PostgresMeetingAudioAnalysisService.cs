@@ -46,12 +46,17 @@ public sealed class PostgresMeetingAudioAnalysisService(
             }
 
             await UpdateTranscriptAsync(parsedRecordingId, transcript, "analyzing", cancellationToken);
+            var selectedContext = await LoadSelectedContextAsync(recording, settings.ContextEntityKeys, cancellationToken);
             var analysis = await openAiClient.AnalyzeAsync(settings, new MeetingAudioAnalysisInput(
                 transcript,
-                recording.OpportunityName,
-                recording.AccountName,
-                recording.ActivityTitle,
-                recording.ActivityNotes), invocationContext, cancellationToken);
+                settings.ContextEntityKeys.Contains("opportunity") ? recording.OpportunityName : null,
+                settings.ContextEntityKeys.Contains("account") ? recording.AccountName : null,
+                settings.ContextEntityKeys.Contains("activities") ? recording.ActivityTitle : null,
+                settings.ContextEntityKeys.Contains("activities") ? recording.ActivityNotes : null,
+                selectedContext.Notes,
+                selectedContext.Contacts,
+                selectedContext.Activities,
+                selectedContext.AgentInsights), invocationContext, cancellationToken);
 
             await SaveAnalysisAsync(parsedRecordingId, transcript, FormatSummary(analysis), cancellationToken);
         }
@@ -61,6 +66,35 @@ public sealed class PostgresMeetingAudioAnalysisService(
             throw;
         }
     }
+
+    private async Task<MeetingSelectedContext> LoadSelectedContextAsync(MeetingAudioRecordingPayload recording, IReadOnlyCollection<string> keys, CancellationToken cancellationToken)
+    {
+        if (!Guid.TryParse(recording.OpportunityId, out var opportunityId)) return new([], [], [], []);
+        var enabled = keys.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+
+        async Task<string[]> ReadAsync(string sql)
+        {
+            await using var command = new NpgsqlCommand(sql, connection);
+            command.Parameters.AddWithValue("opportunityId", opportunityId);
+            var values = new List<string>();
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken)) values.Add(reader.GetString(0));
+            return values.ToArray();
+        }
+
+        var notes = enabled.Contains("notes")
+            ? await ReadAsync("select text from notes where opportunity_id = @opportunityId order by created_at desc limit 20") : [];
+        var contacts = enabled.Contains("contacts")
+            ? await ReadAsync("select concat_ws(' | ', name, role, email, phone) from vw_ai_agent_contact_context where opportunity_id = @opportunityId order by name limit 30") : [];
+        var activities = enabled.Contains("activities")
+            ? await ReadAsync("select concat_ws(' | ', title, activity_type, channel, status, date_at::text, notes) from activities where opportunity_id = @opportunityId order by date_at desc limit 30") : [];
+        var insights = enabled.Contains("agent_insights")
+            ? await ReadAsync("select concat_ws(' | ', title, message, kind, status) from vw_ai_agent_insight_context where opportunity_id = @opportunityId order by updated_at desc limit 20") : [];
+        return new(notes, contacts, activities, insights);
+    }
+
+    private sealed record MeetingSelectedContext(string[] Notes, string[] Contacts, string[] Activities, string[] AgentInsights);
 
     private async Task<MeetingAudioRecordingPayload?> LoadRecordingAsync(Guid recordingId, CancellationToken cancellationToken)
     {

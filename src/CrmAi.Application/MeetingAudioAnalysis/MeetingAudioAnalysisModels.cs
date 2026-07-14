@@ -5,7 +5,11 @@ public sealed record MeetingAudioAnalysisInput(
     string? OpportunityName,
     string? AccountName,
     string? ActivityTitle,
-    string? ActivityNotes);
+    string? ActivityNotes,
+    IReadOnlyCollection<string>? Notes = null,
+    IReadOnlyCollection<string>? Contacts = null,
+    IReadOnlyCollection<string>? Activities = null,
+    IReadOnlyCollection<string>? AgentInsights = null);
 
 public sealed record MeetingAudioAnalysisResult(
     string Summary,
@@ -33,4 +37,3 @@ public sealed record MeetingAudioRecordingPayload(
     string? ActivityTitle,
     string? ActivityNotes,
     string? CompanyId);
-

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using CrmAi.Application;
 using CrmAi.Domain;
 using Microsoft.Extensions.Logging;
@@ -61,16 +62,16 @@ public sealed class PostgresDailyCheckoutSnapshotService(
         var dayStartUtc = ToUtc(date.ToDateTime(TimeOnly.MinValue), timeZone);
         var dayEndUtc = ToUtc(date.AddDays(1).ToDateTime(TimeOnly.MinValue), timeZone);
         var context = await BuildContextAsync(connection, setting, date, timeZone, dayStartUtc, dayEndUtc, cancellationToken);
-        var ai = await AnalyzeBestEffortAsync(setting, context, cancellationToken);
+        var agentSettings = await settingsRepository.GetAsync(AgentKey, setting.CompanyId, cancellationToken);
+        var ai = await AnalyzeBestEffortAsync(setting, agentSettings, FilterContext(context, agentSettings.ContextEntityKeys), cancellationToken);
         var payload = BuildPayload(date, setting, context, ai);
         await UpsertSnapshotAsync(connection, setting.CompanyId, date, payload, cancellationToken);
     }
 
-    private async Task<OpenAiDailyCheckoutResponse?> AnalyzeBestEffortAsync(DailyCheckoutSettingsSnapshot setting, DailyCheckoutAnalysisInput input, CancellationToken cancellationToken)
+    private async Task<OpenAiDailyCheckoutResponse?> AnalyzeBestEffortAsync(DailyCheckoutSettingsSnapshot setting, AiAgentRuntimeSettings agentSettings, DailyCheckoutAnalysisInput input, CancellationToken cancellationToken)
     {
         try
         {
-            var agentSettings = await settingsRepository.GetAsync(AgentKey, setting.CompanyId, cancellationToken);
             if (!agentSettings.IsActive)
             {
                 return null;
@@ -91,6 +92,42 @@ public sealed class PostgresDailyCheckoutSnapshotService(
             logger.LogWarning(exception, "Daily checkout AI analysis failed. Snapshot will use deterministic fallback.");
             return null;
         }
+    }
+
+    internal static DailyCheckoutAnalysisInput FilterContext(DailyCheckoutAnalysisInput input, IReadOnlyCollection<string> keys)
+    {
+        var enabled = keys.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var tables = JsonSerializer.SerializeToNode(input.Tables, SerializerOptions) as JsonObject ?? [];
+        if (!enabled.Contains("opportunities"))
+        {
+            foreach (var name in new[] { "opened", "won", "lost", "focus" }) tables.Remove(name);
+        }
+        if (!enabled.Contains("users"))
+        {
+            tables.Remove("performance");
+            tables.Remove("lowEffectiveness");
+        }
+        if (!enabled.Contains("daily_metrics")) tables.Remove("checkoutMetrics");
+        if (!enabled.Contains("groups") && tables["filters"] is JsonObject filters) filters.Remove("groups");
+
+        var charts = JsonSerializer.SerializeToNode(input.Charts, SerializerOptions) as JsonObject ?? [];
+        if (!enabled.Contains("activities")) charts.Remove("activityChannels");
+        if (!enabled.Contains("opportunities"))
+        {
+            charts.Remove("opportunityPulse");
+            charts.Remove("riskMap");
+        }
+
+        return input with
+        {
+            Totals = enabled.Contains("daily_metrics") ? input.Totals : new { },
+            Metrics = enabled.Contains("daily_metrics") ? input.Metrics : [],
+            Charts = charts,
+            Tables = tables,
+            UpdatedOpportunities = enabled.Contains("opportunities") ? input.UpdatedOpportunities : [],
+            RiskItems = enabled.Contains("opportunities") ? input.RiskItems : [],
+            LowEffectiveness = enabled.Contains("users") ? input.LowEffectiveness : []
+        };
     }
 
     private static object BuildPayload(DateOnly date, DailyCheckoutSettingsSnapshot setting, DailyCheckoutAnalysisInput context, OpenAiDailyCheckoutResponse? ai)
