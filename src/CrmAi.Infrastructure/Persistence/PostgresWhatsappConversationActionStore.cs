@@ -65,6 +65,7 @@ public sealed class PostgresWhatsappConversationActionStore(NpgsqlDataSource dat
                 cancellationToken);
         }
 
+        await InsertAgentSuggestionsAsync(connection, companyId, contactId, conversationId, runId, opportunityId, result, cancellationToken);
         await InsertInsightAsync(connection, opportunityId, companyId, context, result, cancellationToken);
         await CompleteQueuedRunAsync(connection, runId, conversationId, result.ConversationSummary, cancellationToken);
     }
@@ -102,6 +103,7 @@ public sealed class PostgresWhatsappConversationActionStore(NpgsqlDataSource dat
             opportunityEvent,
             result,
             cancellationToken);
+        await InsertAgentSuggestionsAsync(connection, companyId, contactId, conversationId, runId, null, result, cancellationToken);
         await CompleteQueuedRunAsync(connection, runId, conversationId, result.ConversationSummary, cancellationToken);
     }
 
@@ -138,15 +140,12 @@ public sealed class PostgresWhatsappConversationActionStore(NpgsqlDataSource dat
 
     private static string BuildContactAnalysisNote(OpportunityEvent opportunityEvent, WhatsappConversationAnalysisResult result, Guid runId)
     {
-        var lines = new List<string>
-        {
-            "Análise do Agent Skopos - WhatsApp",
-            "",
-            result.ConversationSummary
-        };
+        var lines = new List<string> { "Análise do Agent Skopos - WhatsApp", "" };
+        AppendAnalysisSections(lines, result);
         if (result.ShouldCreateNote && !string.IsNullOrWhiteSpace(result.NoteText))
         {
             lines.Add("");
+            lines.Add("Nota sugerida:");
             lines.Add(result.NoteText);
         }
         if (result.Reasons.Count > 0)
@@ -159,6 +158,30 @@ public sealed class PostgresWhatsappConversationActionStore(NpgsqlDataSource dat
         lines.Add($"Confiança: {result.ConfidenceScore}%");
         lines.Add($"[agent_skopos_run:{runId}]");
         return string.Join("\n", lines);
+    }
+
+    private static void AppendAnalysisSections(List<string> lines, WhatsappConversationAnalysisResult result)
+    {
+        lines.Add("Resumo:");
+        lines.Add(result.ConversationSummary);
+        if (!string.IsNullOrWhiteSpace(result.CommercialObservations))
+        {
+            lines.Add("");
+            lines.Add("Observações comerciais:");
+            lines.Add(result.CommercialObservations);
+        }
+        if (result.NextSteps is { Count: > 0 })
+        {
+            lines.Add("");
+            lines.Add("Próximos passos:");
+            lines.AddRange(result.NextSteps.Select(item => "- " + item));
+        }
+        if (result.Insights is { Count: > 0 })
+        {
+            lines.Add("");
+            lines.Add("Outros insights:");
+            lines.AddRange(result.Insights.Select(item => "- " + item));
+        }
     }
 
     private static async Task<bool> WasProcessedAsync(NpgsqlConnection connection, string eventId, CancellationToken cancellationToken)
@@ -369,15 +392,15 @@ public sealed class PostgresWhatsappConversationActionStore(NpgsqlDataSource dat
             returning id
             """;
 
-        var notes = string.Join("\n", new[]
+        var notesLines = new List<string>
         {
             "Atividade criada automaticamente pelo Agent Skopos após análise da conversa do WhatsApp.",
             $"[whatsapp_conversation_id:{conversationId}]",
             $"[agent_skopos_event:{opportunityEvent.EventId}]",
-            "",
-            "Resumo da conversa:",
-            result.ConversationSummary
-        });
+            ""
+        };
+        AppendAnalysisSections(notesLines, result);
+        var notes = string.Join("\n", notesLines);
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue("id", Guid.NewGuid());
         command.Parameters.Add("accountId", NpgsqlDbType.Uuid).Value = accountId is null ? DBNull.Value : accountId.Value;
@@ -450,10 +473,9 @@ public sealed class PostgresWhatsappConversationActionStore(NpgsqlDataSource dat
         {
             marker,
             $"Atualizacao em {analyzedAt:yyyy-MM-dd HH:mm} UTC",
-            "",
-            "Resumo:",
-            result.ConversationSummary
+            ""
         };
+        AppendAnalysisSections(lines, result);
 
         if (result.ShouldCreateActivity && !string.IsNullOrWhiteSpace(result.ActivityTitle))
         {
@@ -488,6 +510,109 @@ public sealed class PostgresWhatsappConversationActionStore(NpgsqlDataSource dat
         }
 
         return string.Join("\n", lines).Trim();
+    }
+
+    private static async Task InsertAgentSuggestionsAsync(
+        NpgsqlConnection connection,
+        Guid? companyId,
+        Guid? contactId,
+        Guid? conversationId,
+        Guid? runId,
+        Guid? currentOpportunityId,
+        WhatsappConversationAnalysisResult result,
+        CancellationToken cancellationToken)
+    {
+        if (companyId is null || contactId is null || runId is null)
+        {
+            return;
+        }
+
+        if (result.ShouldCreateActivity && !string.IsNullOrWhiteSpace(result.ActivityTitle))
+        {
+            var description = string.IsNullOrWhiteSpace(result.ActivityNotes) ? result.ActivityTitle : result.ActivityNotes;
+            var payload = JsonSerializer.Serialize(new
+            {
+                activityType = "follow-up",
+                channel = "whatsapp",
+                dueAt = result.ActivityDueAt,
+                notes = result.ActivityNotes
+            }, SerializerOptions);
+            await InsertAgentSuggestionAsync(connection, companyId.Value, contactId.Value, conversationId, runId.Value,
+                "activity", result.ActivityTitle!, description!, result.ActivityDueAt, payload, cancellationToken);
+        }
+
+        if (result.ShouldCreateOpportunity && !string.IsNullOrWhiteSpace(result.OpportunityTitle)
+            && !await HasOpenOpportunityAsync(connection, contactId.Value, currentOpportunityId, cancellationToken))
+        {
+            var description = string.IsNullOrWhiteSpace(result.OpportunityDescription)
+                ? result.OpportunityTitle
+                : result.OpportunityDescription;
+            var payload = JsonSerializer.Serialize(new { origin = "WhatsApp", description = result.OpportunityDescription }, SerializerOptions);
+            await InsertAgentSuggestionAsync(connection, companyId.Value, contactId.Value, conversationId, runId.Value,
+                "opportunity", result.OpportunityTitle!, description!, null, payload, cancellationToken);
+        }
+    }
+
+    private static async Task InsertAgentSuggestionAsync(
+        NpgsqlConnection connection,
+        Guid companyId,
+        Guid contactId,
+        Guid? conversationId,
+        Guid runId,
+        string type,
+        string title,
+        string description,
+        DateTime? dueAt,
+        string payload,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            insert into ai_agent_suggestions
+                (id, company_id, agent_key, suggestion_type, status, contact_id, conversation_id, run_id,
+                 title, description, suggested_due_at, payload, created_at, updated_at)
+            values
+                (@id, @companyId, 'whatsapp-conversation-analysis', @type, 'pending', @contactId, @conversationId, @runId,
+                 @title, @description, @dueAt, @payload, now(), now())
+            on conflict (run_id, suggestion_type) where run_id is not null do nothing;
+            """;
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("id", Guid.NewGuid());
+        command.Parameters.AddWithValue("companyId", companyId);
+        command.Parameters.AddWithValue("type", type);
+        command.Parameters.AddWithValue("contactId", contactId);
+        command.Parameters.Add("conversationId", NpgsqlDbType.Uuid).Value = conversationId is null ? DBNull.Value : conversationId.Value;
+        command.Parameters.AddWithValue("runId", runId);
+        command.Parameters.AddWithValue("title", Truncate(title, 300));
+        command.Parameters.AddWithValue("description", Truncate(description, 3000));
+        command.Parameters.Add("dueAt", NpgsqlDbType.TimestampTz).Value = dueAt is null ? DBNull.Value : dueAt.Value;
+        command.Parameters.Add("payload", NpgsqlDbType.Jsonb).Value = payload;
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task<bool> HasOpenOpportunityAsync(
+        NpgsqlConnection connection,
+        Guid contactId,
+        Guid? currentOpportunityId,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            select exists (
+                select 1
+                from opportunities opportunity
+                where opportunity.status = 'active'
+                  and (
+                    opportunity.id = @currentOpportunityId
+                    or exists (
+                        select 1 from opportunity_contacts link
+                        where link.opportunity_id = opportunity.id and link.contact_id = @contactId
+                    )
+                  )
+            );
+            """;
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("contactId", contactId);
+        command.Parameters.Add("currentOpportunityId", NpgsqlDbType.Uuid).Value = currentOpportunityId is null ? DBNull.Value : currentOpportunityId.Value;
+        return (bool)(await command.ExecuteScalarAsync(cancellationToken) ?? false);
     }
 
     private static async Task InsertHistoryAsync(NpgsqlConnection connection, Guid opportunityId, Guid? userId, Guid? companyId, string message, CancellationToken cancellationToken)
@@ -526,7 +651,11 @@ public sealed class PostgresWhatsappConversationActionStore(NpgsqlDataSource dat
             context.TriggerEvent.Data,
             result.ShouldCreateNote,
             result.ShouldCreateActivity,
+            result.ShouldCreateOpportunity,
             result.ConversationSummary,
+            result.CommercialObservations,
+            result.NextSteps,
+            result.Insights,
             result.Reasons
         };
 

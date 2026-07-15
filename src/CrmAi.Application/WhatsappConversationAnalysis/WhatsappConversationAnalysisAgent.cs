@@ -84,12 +84,18 @@ public sealed class WhatsappConversationAnalysisAgent(
 
         return new WhatsappConversationAnalysisResult(
             ConversationSummary: CleanText(response.ConversationSummary, input.PreviousSummary ?? input.NewTranscript),
+            CommercialObservations: CleanNullableText(response.CommercialObservations),
+            NextSteps: CleanOptional(response.NextSteps),
+            Insights: CleanOptional(response.Insights),
             ShouldCreateNote: response.ShouldCreateNote,
             NoteText: CleanNullableText(response.NoteText),
             ShouldCreateActivity: response.ShouldCreateActivity,
             ActivityTitle: CleanNullableText(response.ActivityTitle),
             ActivityNotes: CleanNullableText(response.ActivityNotes),
             ActivityDueAt: dueAt,
+            ShouldCreateOpportunity: response.ShouldCreateOpportunity,
+            OpportunityTitle: CleanNullableText(response.OpportunityTitle),
+            OpportunityDescription: CleanNullableText(response.OpportunityDescription),
             ConfidenceScore: Math.Clamp(response.ConfidenceScore, 0, 100),
             Reasons: Clean(response.Reasons));
     }
@@ -122,5 +128,12 @@ public sealed class WhatsappConversationAnalysisAgent(
             .Select(value => value.Trim())
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .DefaultIfEmpty("Conversa analisada e consolidada.")
+            .ToArray();
+
+    private static IReadOnlyCollection<string> CleanOptional(IReadOnlyCollection<string>? values)
+        => (values ?? [])
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => value.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
 }

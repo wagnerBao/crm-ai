@@ -110,7 +110,13 @@ public sealed record WhatsappConversationAnalysisResult(
     string? ActivityNotes,
     DateTime? ActivityDueAt,
     int ConfidenceScore,
-    IReadOnlyCollection<string> Reasons);
+    IReadOnlyCollection<string> Reasons,
+    string? CommercialObservations = null,
+    IReadOnlyCollection<string>? NextSteps = null,
+    IReadOnlyCollection<string>? Insights = null,
+    bool ShouldCreateOpportunity = false,
+    string? OpportunityTitle = null,
+    string? OpportunityDescription = null);
 
 public enum RiskLevel
 {
