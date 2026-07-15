@@ -37,7 +37,7 @@ public sealed class PostgresWhatsappConversationActionStore(NpgsqlDataSource dat
             await UpdateConversationSummaryAsync(connection, conversationId.Value, result.ConversationSummary, cancellationToken);
         }
 
-        var activityWasCreated = await UpsertDailySkoposActivityAsync(
+        var activityWasCreated = await InsertSkoposAnalysisActivityAsync(
             connection,
             opportunityId,
             accountId,
@@ -85,7 +85,7 @@ public sealed class PostgresWhatsappConversationActionStore(NpgsqlDataSource dat
             return;
         }
 
-        await UpsertContactOnlyWhatsappActivityAsync(
+        await InsertContactOnlyWhatsappActivityAsync(
             connection,
             accountId,
             contactId.Value,
@@ -171,7 +171,7 @@ public sealed class PostgresWhatsappConversationActionStore(NpgsqlDataSource dat
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
-    private static async Task<bool> UpsertDailySkoposActivityAsync(
+    private static async Task<bool> InsertSkoposAnalysisActivityAsync(
         NpgsqlConnection connection,
         Guid opportunityId,
         Guid? accountId,
@@ -184,55 +184,35 @@ public sealed class PostgresWhatsappConversationActionStore(NpgsqlDataSource dat
         CancellationToken cancellationToken)
     {
         var activityDate = ResolveActivityDate(context);
-        var marker = conversationId is null ? $"[whatsapp_event_id:{context.TriggerEvent.EventId}]" : $"[whatsapp_conversation_id:{conversationId}]";
+        var eventMarker = $"[agent_skopos_event:{context.TriggerEvent.EventId}]";
+        var marker = conversationId is null
+            ? $"[whatsapp_event_id:{context.TriggerEvent.EventId}]\n{eventMarker}"
+            : $"[whatsapp_conversation_id:{conversationId}]\n{eventMarker}";
         var notesBlock = BuildActivityNotesBlock(context, result, marker);
         var completedNotes = Truncate(result.ConversationSummary, 2000);
 
-        var existingActivityId = await FindDailySkoposActivityAsync(
-            connection,
-            opportunityId,
-            contactId,
-            conversationId,
-            activityDate.Date,
-            marker,
-            cancellationToken);
-
-        if (existingActivityId is not null)
-        {
-            const string updateSql = """
-                update activities
-                set notes = @notesBlock,
-                    completion_notes = @completedNotes,
-                    status = 'done',
-                    updated_at = now()
-                where id = @activityId;
-
-                update opportunities
-                set last_activity_at = greatest(coalesce(last_activity_at, @activityDate), @activityDate),
-                    updated_at = now()
-                where id = @opportunityId;
-                """;
-
-            await using var updateCommand = new NpgsqlCommand(updateSql, connection);
-            updateCommand.Parameters.AddWithValue("activityId", existingActivityId.Value);
-            updateCommand.Parameters.AddWithValue("opportunityId", opportunityId);
-            updateCommand.Parameters.AddWithValue("activityDate", activityDate);
-            updateCommand.Parameters.AddWithValue("notesBlock", notesBlock);
-            updateCommand.Parameters.AddWithValue("completedNotes", completedNotes);
-            await updateCommand.ExecuteNonQueryAsync(cancellationToken);
-            return false;
-        }
-
         const string insertSql = """
+            with inserted as (
             insert into activities
                 (id, opportunity_id, account_id, contact_id, owner_user_id, title, activity_type, channel, status, date_at, notes, completion_notes, company_id, created_at, updated_at)
-            values
-                (@id, @opportunityId, @accountId, @contactId, @userId, @title, @activityType, @channel, 'done', @dateAt, @notes, @completedNotes, @companyId, now(), now());
+            select
+                @id, @opportunityId, @accountId, @contactId, @userId, @title, @activityType, @channel, 'done', @dateAt, @notes, @completedNotes, @companyId, now(), now()
+            where not exists (
+                select 1 from activities
+                where opportunity_id = @opportunityId
+                  and notes like @eventMarker
+            )
+            returning id
+            ), updated as (
 
             update opportunities
             set last_activity_at = greatest(coalesce(last_activity_at, @dateAt), @dateAt),
                 updated_at = now()
-            where id = @opportunityId;
+            where id = @opportunityId
+              and exists (select 1 from inserted)
+            returning id
+            )
+            select id from inserted;
             """;
 
         await using var command = new NpgsqlCommand(insertSql, connection);
@@ -246,13 +226,13 @@ public sealed class PostgresWhatsappConversationActionStore(NpgsqlDataSource dat
         command.Parameters.AddWithValue("channel", WhatsappChannel);
         command.Parameters.AddWithValue("dateAt", activityDate);
         command.Parameters.AddWithValue("notes", notesBlock);
+        command.Parameters.AddWithValue("eventMarker", $"%{eventMarker}%");
         command.Parameters.AddWithValue("completedNotes", completedNotes);
         command.Parameters.AddWithValue("companyId", companyId is null ? DBNull.Value : companyId.Value);
-        await command.ExecuteNonQueryAsync(cancellationToken);
-        return true;
+        return await command.ExecuteScalarAsync(cancellationToken) is Guid;
     }
 
-    private static async Task<bool> UpsertContactOnlyWhatsappActivityAsync(
+    private static async Task<bool> InsertContactOnlyWhatsappActivityAsync(
         NpgsqlConnection connection,
         Guid? accountId,
         Guid contactId,
@@ -265,34 +245,18 @@ public sealed class PostgresWhatsappConversationActionStore(NpgsqlDataSource dat
     {
         var activityDate = (GetDateTime(opportunityEvent, "latestMessageAt") ?? opportunityEvent.OccurredAt).ToUniversalTime();
         const string sql = """
-            with existing as (
-                select id
-                from activities
-                where contact_id = @contactId
-                  and opportunity_id is null
-                  and activity_type = @activityType
-                  and channel = @channel
-                  and date_at::date = @activityDate
-                  and notes like @conversationMarker
-                order by updated_at desc
-                limit 1
-            ), updated as (
-                update activities
-                set notes = @notes,
-                    completion_notes = @summary,
-                    completed_notes = @summary,
-                    status = 'done',
-                    updated_at = now()
-                where id = (select id from existing)
-                returning id
-            )
             insert into activities
                 (id, opportunity_id, account_id, contact_id, owner_user_id, title, activity_type, channel,
                  status, date_at, notes, completion_notes, completed_notes, company_id, created_at, updated_at)
             select
                 @id, null, @accountId, @contactId, @userId, @title, @activityType, @channel,
                 'done', @dateAt, @notes, @summary, @summary, @companyId, now(), now()
-            where not exists (select 1 from updated)
+            where not exists (
+                select 1 from activities
+                where contact_id = @contactId
+                  and opportunity_id is null
+                  and notes like @eventMarker
+            )
             returning id
             """;
 
@@ -314,51 +278,11 @@ public sealed class PostgresWhatsappConversationActionStore(NpgsqlDataSource dat
         command.Parameters.AddWithValue("activityType", SkoposActivityType);
         command.Parameters.AddWithValue("channel", WhatsappChannel);
         command.Parameters.AddWithValue("dateAt", activityDate);
-        command.Parameters.Add("activityDate", NpgsqlDbType.Date).Value = DateOnly.FromDateTime(activityDate);
-        command.Parameters.AddWithValue("conversationMarker", $"%[whatsapp_conversation_id:{conversationId}]%");
         command.Parameters.AddWithValue("notes", notes);
+        command.Parameters.AddWithValue("eventMarker", $"%[agent_skopos_event:{opportunityEvent.EventId}]%");
         command.Parameters.AddWithValue("summary", Truncate(result.ConversationSummary, 2000));
         command.Parameters.AddWithValue("companyId", companyId);
         return await command.ExecuteScalarAsync(cancellationToken) is Guid;
-    }
-
-    private static async Task<Guid?> FindDailySkoposActivityAsync(
-        NpgsqlConnection connection,
-        Guid opportunityId,
-        Guid? contactId,
-        Guid? conversationId,
-        DateTime activityDate,
-        string marker,
-        CancellationToken cancellationToken)
-    {
-        const string sql = """
-            select id
-            from activities
-            where opportunity_id = @opportunityId
-              and activity_type = @activityType
-              and channel = @channel
-              and date_at::date = @activityDate
-              and (@contactId is null or contact_id = @contactId)
-              and (
-                  notes like @markerPattern
-                  or (@conversationId is null and notes like @fallbackPattern)
-              )
-            order by updated_at desc
-            limit 1
-            """;
-
-        await using var command = new NpgsqlCommand(sql, connection);
-        command.Parameters.AddWithValue("opportunityId", opportunityId);
-        command.Parameters.Add("contactId", NpgsqlDbType.Uuid).Value = contactId is null ? DBNull.Value : contactId.Value;
-        command.Parameters.Add("conversationId", NpgsqlDbType.Uuid).Value = conversationId is null ? DBNull.Value : conversationId.Value;
-        command.Parameters.Add("activityDate", NpgsqlDbType.Date).Value = DateOnly.FromDateTime(activityDate);
-        command.Parameters.AddWithValue("activityType", SkoposActivityType);
-        command.Parameters.AddWithValue("channel", WhatsappChannel);
-        command.Parameters.AddWithValue("markerPattern", $"%{marker}%");
-        command.Parameters.AddWithValue("fallbackPattern", "%[whatsapp_event_id:%");
-
-        var value = await command.ExecuteScalarAsync(cancellationToken);
-        return value is Guid id ? id : null;
     }
 
     private static DateTime ResolveActivityDate(OpportunityAnalysisContext context)
