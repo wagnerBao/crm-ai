@@ -8,7 +8,7 @@ namespace CrmAi.Infrastructure.Persistence;
 
 public sealed class PostgresWhatsappConversationActionStore(NpgsqlDataSource dataSource) : IWhatsappConversationActionStore
 {
-    private const string SkoposActivityType = "Agente Skopos";
+    private const string SkoposActivityType = "agent-skopos";
     private const string WhatsappChannel = "whatsapp";
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
 
@@ -302,7 +302,7 @@ public sealed class PostgresWhatsappConversationActionStore(NpgsqlDataSource dat
         command.Parameters.AddWithValue("accountId", accountId is null ? DBNull.Value : accountId.Value);
         command.Parameters.AddWithValue("contactId", contactId is null ? DBNull.Value : contactId.Value);
         command.Parameters.AddWithValue("userId", userId is null ? DBNull.Value : userId.Value);
-        command.Parameters.AddWithValue("title", "Conversa WhatsApp analisada pelo Agente Skopos");
+        command.Parameters.AddWithValue("title", "Conversa WhatsApp analisada pelo Agent Skopos");
         command.Parameters.AddWithValue("activityType", SkoposActivityType);
         command.Parameters.AddWithValue("channel", WhatsappChannel);
         command.Parameters.AddWithValue("dateAt", activityDate);
@@ -383,7 +383,7 @@ public sealed class PostgresWhatsappConversationActionStore(NpgsqlDataSource dat
         command.Parameters.Add("accountId", NpgsqlDbType.Uuid).Value = accountId is null ? DBNull.Value : accountId.Value;
         command.Parameters.AddWithValue("contactId", contactId);
         command.Parameters.Add("userId", NpgsqlDbType.Uuid).Value = userId is null ? DBNull.Value : userId.Value;
-        command.Parameters.AddWithValue("title", "Contato WhatsApp registrado automaticamente pelo Agent Skopos");
+        command.Parameters.AddWithValue("title", "Conversa WhatsApp analisada pelo Agent Skopos");
         command.Parameters.AddWithValue("activityType", SkoposActivityType);
         command.Parameters.AddWithValue("channel", WhatsappChannel);
         command.Parameters.AddWithValue("dateAt", activityDate);
