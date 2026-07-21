@@ -12,11 +12,30 @@ public sealed class PostgresAiAgentRuntimeSettingsRepository(NpgsqlDataSource da
     public async Task<AiAgentRuntimeSettings> GetAsync(string agentKey, string? companyId, CancellationToken cancellationToken)
     {
         const string sql = """
-            select agent_key, is_active, provider, model, api_key, system_prompt, debounce_minutes, context_instructions, context_entity_keys::text
-            from ai_agent_settings
-            where agent_key = @agentKey
-              and (@companyId::uuid is null or company_id = @companyId::uuid or company_id is null)
-            order by case when company_id = @companyId::uuid then 0 else 1 end, updated_at desc
+            select settings.agent_key,
+                   settings.is_active,
+                   settings.provider,
+                   settings.model,
+                   coalesce(
+                       nullif(btrim(settings.api_key), ''),
+                       (
+                           select nullif(btrim(global_settings.api_key), '')
+                           from ai_agent_settings global_settings
+                           where global_settings.agent_key = settings.agent_key
+                             and global_settings.company_id is null
+                             and nullif(btrim(global_settings.api_key), '') is not null
+                           order by global_settings.updated_at desc
+                           limit 1
+                       )
+                   ) as api_key,
+                   settings.system_prompt,
+                   settings.debounce_minutes,
+                   settings.context_instructions,
+                   settings.context_entity_keys::text
+            from ai_agent_settings settings
+            where settings.agent_key = @agentKey
+              and (@companyId::uuid is null or settings.company_id = @companyId::uuid or settings.company_id is null)
+            order by case when settings.company_id = @companyId::uuid then 0 else 1 end, settings.updated_at desc
             limit 1
             """;
 

@@ -28,7 +28,7 @@ public sealed class RabbitMqDailyCheckoutRunConsumer(
     private IConnection? _connection;
     private IModel? _channel;
 
-    protected override Task ExecuteAsync(CancellationToken stoppingToken)
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         var rabbitOptions = options.Value;
         var factory = new ConnectionFactory
@@ -39,6 +39,28 @@ public sealed class RabbitMqDailyCheckoutRunConsumer(
             NetworkRecoveryInterval = TimeSpan.FromSeconds(10)
         };
 
+        while (!stoppingToken.IsCancellationRequested)
+        {
+            try
+            {
+                StartConsumer(factory, rabbitOptions, stoppingToken);
+                await Task.Delay(Timeout.InfiniteTimeSpan, stoppingToken);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                break;
+            }
+            catch (Exception exception)
+            {
+                DisposeRabbitResources();
+                logger.LogWarning(exception, "RabbitMQ daily checkout consumer could not start. Retrying in 10 seconds.");
+                await Task.Delay(TimeSpan.FromSeconds(10), stoppingToken);
+            }
+        }
+    }
+
+    private void StartConsumer(ConnectionFactory factory, RabbitMqOptions rabbitOptions, CancellationToken stoppingToken)
+    {
         _connection = factory.CreateConnection("crm-ai-daily-checkout");
         _channel = _connection.CreateModel();
 
@@ -51,15 +73,20 @@ public sealed class RabbitMqDailyCheckoutRunConsumer(
 
         _channel.BasicConsume(rabbitOptions.DailyCheckoutQueue, autoAck: false, consumer);
         logger.LogInformation("RabbitMQ daily checkout consumer started on queue {QueueName}.", rabbitOptions.DailyCheckoutQueue);
-
-        return Task.CompletedTask;
     }
 
     public override void Dispose()
     {
-        _channel?.Dispose();
-        _connection?.Dispose();
+        DisposeRabbitResources();
         base.Dispose();
+    }
+
+    private void DisposeRabbitResources()
+    {
+        _channel?.Dispose();
+        _channel = null;
+        _connection?.Dispose();
+        _connection = null;
     }
 
     private async Task HandleMessageAsync(BasicDeliverEventArgs args, RabbitMqOptions rabbitOptions, CancellationToken cancellationToken)
