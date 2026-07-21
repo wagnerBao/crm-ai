@@ -100,7 +100,7 @@ public interface IWhatsappConversationAnalysisScheduler
 
 public interface IMeetingAudioAnalysisService
 {
-    Task ProcessAsync(OpportunityEvent opportunityEvent, CancellationToken cancellationToken);
+    Task<bool> ProcessAsync(OpportunityEvent opportunityEvent, CancellationToken cancellationToken);
 }
 
 public interface IOpportunityAnalysisEventProcessor
@@ -143,8 +143,11 @@ public sealed class OpportunityAnalysisEventProcessor(
 
         if (string.Equals(opportunityEvent.Type, "opportunity.meeting_audio.recording.created", StringComparison.OrdinalIgnoreCase))
         {
-            await meetingAudioAnalysisService.ProcessAsync(opportunityEvent, cancellationToken);
-            return;
+            var transcriptionUpdated = await meetingAudioAnalysisService.ProcessAsync(opportunityEvent, cancellationToken);
+            if (!transcriptionUpdated)
+            {
+                return;
+            }
         }
 
         if (string.Equals(opportunityEvent.Type, "opportunity.whatsapp.message.created", StringComparison.OrdinalIgnoreCase))
@@ -191,11 +194,21 @@ public sealed class OpportunityAnalysisEventProcessor(
     }
 }
 
-public sealed class ActivityAnalysisEventProcessor : IActivityAnalysisEventProcessor
+public sealed class ActivityAnalysisEventProcessor(
+    IOpportunityContextRepository contextRepository,
+    IRiskAnalysisAgent riskAnalysisAgent,
+    IAnalysisResultStore resultStore) : IActivityAnalysisEventProcessor
 {
-    public Task ProcessAsync(OpportunityEvent activityEvent, CancellationToken cancellationToken)
+    public async Task ProcessAsync(OpportunityEvent activityEvent, CancellationToken cancellationToken)
     {
-        return Task.CompletedTask;
+        var context = await contextRepository.GetForAnalysisAsync(activityEvent, cancellationToken);
+        if (context is null)
+        {
+            return;
+        }
+
+        var result = await riskAnalysisAgent.AnalyzeAsync(context, cancellationToken);
+        await resultStore.SaveRiskAnalysisAsync(context, result, cancellationToken);
     }
 }
 

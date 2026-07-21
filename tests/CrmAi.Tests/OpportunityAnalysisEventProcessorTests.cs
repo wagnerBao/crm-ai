@@ -138,6 +138,54 @@ public sealed class OpportunityAnalysisEventProcessorTests
         Assert.Equal(0, resultStore.Calls);
     }
 
+    [Theory]
+    [InlineData("opportunity.activity.created")]
+    [InlineData("opportunity.activity.updated")]
+    [InlineData("activity.created")]
+    [InlineData("activity.updated")]
+    public async Task ActivityProcessor_RunsOpportunityRiskAnalysis_ForActivityEvents(string eventType)
+    {
+        var activityEvent = CreateEvent(eventType);
+        var context = CreateContext(activityEvent);
+        var contextRepository = new CountingOpportunityContextRepository(context);
+        var riskAgent = new CountingRiskAnalysisAgent();
+        var resultStore = new CountingAnalysisResultStore();
+        var processor = new ActivityAnalysisEventProcessor(contextRepository, riskAgent, resultStore);
+
+        await processor.ProcessAsync(activityEvent, CancellationToken.None);
+
+        Assert.Equal(1, contextRepository.Calls);
+        Assert.Equal(1, riskAgent.Calls);
+        Assert.Equal(1, resultStore.Calls);
+        Assert.Same(context, riskAgent.LastContext);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_RunsOpportunityRiskAnalysis_AfterMeetingAudioTranscription()
+    {
+        var meetingEvent = CreateEvent("opportunity.meeting_audio.recording.created");
+        var context = CreateContext(meetingEvent);
+        var contextRepository = new CountingOpportunityContextRepository(context);
+        var riskAgent = new CountingRiskAnalysisAgent();
+        var resultStore = new CountingAnalysisResultStore();
+        var meetingService = new CountingMeetingAudioAnalysisService();
+        var processor = new OpportunityAnalysisEventProcessor(
+            contextRepository,
+            riskAgent,
+            resultStore,
+            new NullWhatsappConversationAnalysisAgent(),
+            new CountingWhatsappConversationActionStore(),
+            new CountingWhatsappConversationAnalysisScheduler(),
+            meetingService);
+
+        await processor.ProcessAsync(meetingEvent, CancellationToken.None);
+
+        Assert.Equal(1, meetingService.Calls);
+        Assert.Equal(1, contextRepository.Calls);
+        Assert.Equal(1, riskAgent.Calls);
+        Assert.Equal(1, resultStore.Calls);
+    }
+
     private sealed class CountingOpportunityContextRepository : IOpportunityContextRepository
     {
         private readonly Queue<OpportunityAnalysisContext?> _contexts;
@@ -239,7 +287,18 @@ public sealed class OpportunityAnalysisEventProcessorTests
 
     private sealed class NullMeetingAudioAnalysisService : IMeetingAudioAnalysisService
     {
-        public Task ProcessAsync(OpportunityEvent opportunityEvent, CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task<bool> ProcessAsync(OpportunityEvent opportunityEvent, CancellationToken cancellationToken) => Task.FromResult(false);
+    }
+
+    private sealed class CountingMeetingAudioAnalysisService : IMeetingAudioAnalysisService
+    {
+        public int Calls { get; private set; }
+
+        public Task<bool> ProcessAsync(OpportunityEvent opportunityEvent, CancellationToken cancellationToken)
+        {
+            Calls++;
+            return Task.FromResult(true);
+        }
     }
 
     private static OpportunityEvent CreateEvent(string type) =>

@@ -13,18 +13,18 @@ public sealed class PostgresMeetingAudioAnalysisService(
 {
     private const string AgentKey = "meeting-service-analysis";
 
-    public async Task ProcessAsync(OpportunityEvent opportunityEvent, CancellationToken cancellationToken)
+    public async Task<bool> ProcessAsync(OpportunityEvent opportunityEvent, CancellationToken cancellationToken)
     {
         var recordingId = GetString(opportunityEvent.Data, "recordingId");
         if (string.IsNullOrWhiteSpace(recordingId) || !Guid.TryParse(recordingId, out var parsedRecordingId))
         {
-            return;
+            return false;
         }
 
         var recording = await LoadRecordingAsync(parsedRecordingId, cancellationToken);
         if (recording is null)
         {
-            return;
+            return false;
         }
 
         try
@@ -34,7 +34,7 @@ public sealed class PostgresMeetingAudioAnalysisService(
             if (!settings.IsActive)
             {
                 await UpdateStatusAsync(parsedRecordingId, "skipped", "Agent de analise do atendimento inativo.", cancellationToken);
-                return;
+                return false;
             }
 
             var invocationContext = BuildInvocationContext(recording, settings);
@@ -42,7 +42,7 @@ public sealed class PostgresMeetingAudioAnalysisService(
             if (string.IsNullOrWhiteSpace(transcript))
             {
                 await UpdateStatusAsync(parsedRecordingId, "failed", "Transcricao vazia retornada pela IA.", cancellationToken);
-                return;
+                return false;
             }
 
             await UpdateTranscriptAsync(parsedRecordingId, transcript, "analyzing", cancellationToken);
@@ -59,6 +59,7 @@ public sealed class PostgresMeetingAudioAnalysisService(
                 selectedContext.AgentInsights), invocationContext, cancellationToken);
 
             await SaveAnalysisAsync(parsedRecordingId, transcript, FormatSummary(analysis), cancellationToken);
+            return true;
         }
         catch (Exception exception)
         {

@@ -39,6 +39,28 @@ public sealed class RiskAnalysisAgentTests
     }
 
     [Fact]
+    public void Build_IncludesMeetingAudioAnalysis_WhenActivitiesContextIsSelected()
+    {
+        var now = new DateTime(2026, 7, 14, 12, 0, 0, DateTimeKind.Utc);
+        var audioAnalysis = new MeetingAudioAnalysisSnapshot(
+            Guid.NewGuid().ToString(),
+            Guid.NewGuid().ToString(),
+            "Cliente apresentou objecao sobre prazo.",
+            "Objecao de prazo; proximo passo e revisar o cronograma.",
+            now,
+            now);
+        var context = CreateContext(now, [], [], [], meetingAudioAnalyses: [audioAnalysis]);
+        var builder = new RiskAnalysisAgentInputBuilder(new CommercialRuleAssessmentService());
+
+        var input = builder.Build(context, ["activities"]).Input;
+
+        var meeting = Assert.Single(input.MeetingAudioAnalyses!);
+        Assert.Equal(audioAnalysis.ActivityId, meeting.ActivityId);
+        Assert.Contains("objecao", meeting.Transcript, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("proximo passo", meeting.Summary, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task AnalyzeAsync_UsesOpenAiAgentResponse_ForRiskResult()
     {
         var now = new DateTime(2026, 05, 06, 12, 0, 0, DateTimeKind.Utc);
@@ -158,7 +180,8 @@ public sealed class RiskAnalysisAgentTests
         IReadOnlyCollection<ActivitySnapshot> activities,
         IReadOnlyCollection<NoteSnapshot> notes,
         IReadOnlyCollection<HistoryEventSnapshot> history,
-        IReadOnlyCollection<CommercialAnalysisMetricRuleSnapshot>? metricRules = null)
+        IReadOnlyCollection<CommercialAnalysisMetricRuleSnapshot>? metricRules = null,
+        IReadOnlyCollection<MeetingAudioAnalysisSnapshot>? meetingAudioAnalyses = null)
     {
         var pipelineId = Guid.NewGuid().ToString();
         var stageId = Guid.NewGuid().ToString();
@@ -174,7 +197,8 @@ public sealed class RiskAnalysisAgentTests
             [],
             [],
             metricRules ?? [],
-            new OpportunityEvent(Guid.NewGuid().ToString(), "opportunity.activity.created", now, Guid.NewGuid().ToString(), null, new Dictionary<string, object?>()));
+            new OpportunityEvent(Guid.NewGuid().ToString(), "opportunity.activity.created", now, Guid.NewGuid().ToString(), null, new Dictionary<string, object?>()),
+            meetingAudioAnalyses);
     }
 
     private static ActivitySnapshot PendingActivity(DateTime date)

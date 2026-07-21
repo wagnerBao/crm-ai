@@ -20,7 +20,8 @@ public sealed record OpportunityAnalysisContext(
     IReadOnlyCollection<ProductSnapshot> Products,
     IReadOnlyCollection<AgentInsightSnapshot> AgentInsights,
     IReadOnlyCollection<CommercialAnalysisMetricRuleSnapshot> MetricRules,
-    OpportunityEvent TriggerEvent);
+    OpportunityEvent TriggerEvent,
+    IReadOnlyCollection<MeetingAudioAnalysisSnapshot>? MeetingAudioAnalyses = null);
 
 public sealed record OpportunitySnapshot(
     string Id,
@@ -52,6 +53,14 @@ public sealed record ActivitySnapshot(
     string? CompletedNotes,
     string? OwnerUserId,
     DateTime CreatedAt,
+    DateTime UpdatedAt);
+
+public sealed record MeetingAudioAnalysisSnapshot(
+    string Id,
+    string? ActivityId,
+    string Transcript,
+    string Summary,
+    DateTime? TranscribedAt,
     DateTime UpdatedAt);
 
 public sealed record ContactSnapshot(

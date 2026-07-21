@@ -24,7 +24,8 @@ public sealed record RiskAnalysisAgentInput(
     IReadOnlyCollection<AnalysisHistoryEventSummary> RecentHistoryEvents,
     IReadOnlyCollection<AnalysisAgentInsightSummary> RelatedAgentInsights,
     AnalysisTriggerEventSummary TriggerEvent,
-    CommercialRuleAssessment CommercialRuleAssessment);
+    CommercialRuleAssessment CommercialRuleAssessment,
+    IReadOnlyCollection<AnalysisMeetingAudioSummary>? MeetingAudioAnalyses = null);
 
 public sealed record AnalysisOpportunitySummary(
     string Id,
@@ -63,6 +64,13 @@ public sealed record AnalysisActivityItem(
     string? Notes,
     string? CompletedNotes,
     string? OwnerUserId);
+
+public sealed record AnalysisMeetingAudioSummary(
+    string? ActivityId,
+    string Transcript,
+    string Summary,
+    DateTime? TranscribedAt,
+    DateTime UpdatedAt);
 
 public sealed record AnalysisNoteSummary(string Text, string? AuthorUserId, DateTime CreatedAt);
 

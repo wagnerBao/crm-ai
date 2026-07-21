@@ -403,12 +403,25 @@ public sealed class PostgresWhatsappConversationAnalysisScheduler(
         }
 
         const string sql = """
-            select direction, coalesce(sender_name, sender, direction) as sender_name, message_type, text, message_at
-            from whatsapp_messages
-            where conversation_id = @conversationId
-              and status <> 'deleted'
-              and (@after::timestamptz is null or message_at > @after::timestamptz)
-            order by message_at desc
+            select message.direction,
+                   coalesce(message.sender_name, message.sender, message.direction) as sender_name,
+                   message.message_type,
+                   coalesce(nullif(message.text, ''), transcription.transcript) as text,
+                   message.message_at
+            from whatsapp_messages message
+            left join lateral (
+                select audio.transcript
+                from whatsapp_message_audio_transcriptions audio
+                where audio.whatsapp_message_id = message.id
+                  and audio.status = 'ready'
+                  and nullif(audio.transcript, '') is not null
+                order by audio.updated_at desc
+                limit 1
+            ) transcription on true
+            where message.conversation_id = @conversationId
+              and message.status <> 'deleted'
+              and (@after::timestamptz is null or message.message_at > @after::timestamptz)
+            order by message.message_at desc
             limit 30
             """;
 

@@ -41,8 +41,11 @@ public sealed class PostgresOpportunityContextRepository(NpgsqlDataSource dataSo
         var products = enabled.Contains("products") ? await ReadProductsAsync(connection, opportunityId, cancellationToken) : [];
         var insights = enabled.Contains("agent_insights") ? await ReadAgentInsightsAsync(connection, opportunityId, cancellationToken) : [];
         var metricRules = enabled.Contains("commercial_rules") ? await ReadMetricRulesAsync(connection, opportunity.CompanyId, cancellationToken) : [];
+        var meetingAudioAnalyses = enabled.Contains("activities")
+            ? await ReadMeetingAudioAnalysesAsync(connection, opportunityId, cancellationToken)
+            : [];
 
-        return new OpportunityAnalysisContext(opportunity, stage, notes, activities, contacts, users, history, account, products, insights, metricRules, triggerEvent);
+        return new OpportunityAnalysisContext(opportunity, stage, notes, activities, contacts, users, history, account, products, insights, metricRules, triggerEvent, meetingAudioAnalyses);
     }
 
     private static async Task<OpportunitySnapshot?> ReadOpportunityAsync(NpgsqlConnection connection, Guid opportunityId, CancellationToken cancellationToken)
@@ -155,6 +158,39 @@ public sealed class PostgresOpportunityContextRepository(NpgsqlDataSource dataSo
         }
 
         return activities;
+    }
+
+    private static async Task<IReadOnlyCollection<MeetingAudioAnalysisSnapshot>> ReadMeetingAudioAnalysesAsync(
+        NpgsqlConnection connection,
+        Guid opportunityId,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            select id, activity_id, transcript, summary, transcribed_at, updated_at
+            from meeting_audio_recordings
+            where opportunity_id = @opportunityId
+              and status in ('ready', 'summary_saved')
+              and (nullif(transcript, '') is not null or nullif(summary, '') is not null)
+            order by updated_at desc
+            limit 10
+            """;
+
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("opportunityId", opportunityId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var analyses = new List<MeetingAudioAnalysisSnapshot>();
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            analyses.Add(new MeetingAudioAnalysisSnapshot(
+                ReadGuid(reader, "id"),
+                ReadNullableGuid(reader, "activity_id"),
+                ReadNullableString(reader, "transcript") ?? string.Empty,
+                ReadNullableString(reader, "summary") ?? string.Empty,
+                ReadNullableDateTime(reader, "transcribed_at"),
+                reader.GetDateTime(reader.GetOrdinal("updated_at"))));
+        }
+
+        return analyses;
     }
 
     private static async Task<string> ResolveActivityCompletionNotesExpressionAsync(NpgsqlConnection connection, CancellationToken cancellationToken)

@@ -136,7 +136,20 @@ public sealed class RiskAnalysisAgentInputBuilder(CommercialRuleAssessmentServic
                 .Select(insight => new AnalysisAgentInsightSummary(insight.Title, insight.Message, insight.Kind, insight.Confidence, insight.Status, insight.CreatedAt.ToUniversalTime()))
                 .ToArray() : [],
             new AnalysisTriggerEventSummary(context.TriggerEvent.Type, context.TriggerEvent.OccurredAt.ToUniversalTime(), context.TriggerEvent.UserId),
-            commercialRuleAssessment);
+            commercialRuleAssessment,
+            entityKeys.Has("activities") ? (context.MeetingAudioAnalyses ?? [])
+                .OrderByDescending(analysis => analysis.UpdatedAt)
+                .Take(5)
+                .Select(analysis => new AnalysisMeetingAudioSummary(
+                    analysis.ActivityId,
+                    Truncate(analysis.Transcript, 6000),
+                    Truncate(analysis.Summary, 4000),
+                    analysis.TranscribedAt?.ToUniversalTime(),
+                    analysis.UpdatedAt.ToUniversalTime()))
+                .ToArray() : []);
+
+    private static string Truncate(string value, int maximumLength) =>
+        value.Length <= maximumLength ? value : value[..maximumLength];
 
     private static DateTime? GetLatestInteraction(OpportunityAnalysisContext context)
     {
