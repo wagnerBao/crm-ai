@@ -4,7 +4,8 @@ namespace CrmAi.Application;
 
 public sealed class WhatsappConversationAnalysisAgent(
     IOpenAiWhatsappConversationAnalysisClient openAiClient,
-    IAiAgentRuntimeSettingsRepository agentSettingsRepository) : IWhatsappConversationAnalysisAgent
+    IAiAgentRuntimeSettingsRepository agentSettingsRepository,
+    IWhatsappSuggestionContextRepository suggestionContextRepository) : IWhatsappConversationAnalysisAgent
 {
     private const string AgentKey = "whatsapp-conversation-analysis";
 
@@ -21,6 +22,16 @@ public sealed class WhatsappConversationAnalysisAgent(
         {
             return null;
         }
+
+        var semanticContext = await suggestionContextRepository.GetAsync(
+            context.Opportunity.CompanyId,
+            input.Conversation.ContactId,
+            cancellationToken);
+        input = input with
+        {
+            ExistingSuggestions = semanticContext.ExistingSuggestions,
+            ExistingOpenOpportunities = semanticContext.ExistingOpenOpportunities
+        };
 
         var invocationContext = new AiAgentInvocationContext(
             PlatformArea: "whatsapp",
@@ -52,6 +63,16 @@ public sealed class WhatsappConversationAnalysisAgent(
         {
             return null;
         }
+
+        var semanticContext = await suggestionContextRepository.GetAsync(
+            companyId,
+            input.Conversation.ContactId,
+            cancellationToken);
+        input = input with
+        {
+            ExistingSuggestions = semanticContext.ExistingSuggestions,
+            ExistingOpenOpportunities = semanticContext.ExistingOpenOpportunities
+        };
 
         var invocationContext = new AiAgentInvocationContext(
             PlatformArea: "whatsapp",
@@ -96,6 +117,14 @@ public sealed class WhatsappConversationAnalysisAgent(
             ShouldCreateOpportunity: response.ShouldCreateOpportunity,
             OpportunityTitle: CleanNullableText(response.OpportunityTitle),
             OpportunityDescription: CleanNullableText(response.OpportunityDescription),
+            ActivityMatchingSuggestionId: ValidateSuggestionMatch(
+                response.ActivityMatchingSuggestionId, "activity", input.ExistingSuggestions),
+            ActivityIntentKey: CleanIntentKey(response.ActivityIntentKey),
+            OpportunityMatchingSuggestionId: ValidateSuggestionMatch(
+                response.OpportunityMatchingSuggestionId, "opportunity", input.ExistingSuggestions),
+            OpportunityIntentKey: CleanIntentKey(response.OpportunityIntentKey),
+            MatchingOpenOpportunityId: ValidateOpenOpportunityMatch(
+                response.MatchingOpenOpportunityId, input.ExistingOpenOpportunities),
             ConfidenceScore: Math.Clamp(response.ConfidenceScore, 0, 100),
             Reasons: Clean(response.Reasons));
     }
@@ -121,6 +150,51 @@ public sealed class WhatsappConversationAnalysisAgent(
 
     private static string? CleanNullableText(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private static string? ValidateSuggestionMatch(
+        string? value,
+        string suggestionType,
+        IReadOnlyCollection<WhatsappSuggestionCandidate> candidates)
+    {
+        if (!Guid.TryParse(value, out var parsed))
+        {
+            return null;
+        }
+
+        var normalized = parsed.ToString();
+        return candidates.Any(candidate =>
+            candidate.Id.Equals(normalized, StringComparison.OrdinalIgnoreCase)
+            && candidate.SuggestionType.Equals(suggestionType, StringComparison.OrdinalIgnoreCase))
+            ? normalized
+            : null;
+    }
+
+    private static string? ValidateOpenOpportunityMatch(
+        string? value,
+        IReadOnlyCollection<WhatsappOpenOpportunityCandidate> candidates)
+    {
+        if (!Guid.TryParse(value, out var parsed))
+        {
+            return null;
+        }
+
+        var normalized = parsed.ToString();
+        return candidates.Any(candidate => candidate.Id.Equals(normalized, StringComparison.OrdinalIgnoreCase))
+            ? normalized
+            : null;
+    }
+
+    private static string? CleanIntentKey(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        var normalized = string.Join('_', value.Trim().ToLowerInvariant()
+            .Split([' ', '-', '/', '.'], StringSplitOptions.RemoveEmptyEntries));
+        return normalized.Length <= 160 ? normalized : normalized[..160];
+    }
 
     private static IReadOnlyCollection<string> Clean(IReadOnlyCollection<string> values)
         => values

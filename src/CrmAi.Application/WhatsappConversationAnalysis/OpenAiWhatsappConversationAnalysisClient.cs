@@ -11,6 +11,16 @@ public sealed class OpenAiResponsesWhatsappConversationAnalysisClient(
     IOptions<OpenAiRiskAnalysisOptions> options,
     IAiAgentInvocationLogStore invocationLogStore) : IOpenAiWhatsappConversationAnalysisClient
 {
+    private const string SemanticDeduplicationInstructions = """
+        Deduplicacao semantica obrigatoria:
+        - Compare cada atividade ou oportunidade sugerida com existingSuggestions e existingOpenOpportunities.
+        - A decisao deve considerar o intuito comercial, a acao esperada, o objeto/produto/veiculo, o problema tratado e o resultado pretendido; nao use apenas igualdade textual.
+        - Mudanca de redacao, detalhe, prazo ou data de uma mesma pendencia continua sendo o mesmo intuito e deve atualizar a sugestao existente.
+        - Produtos, veiculos, necessidades, problemas ou resultados comerciais materialmente diferentes representam intuitos distintos e podem gerar novos registros.
+        - Quando houver o mesmo intuito, retorne exatamente o id do candidato em activityMatchingSuggestionId, opportunityMatchingSuggestionId ou matchingOpenOpportunityId.
+        - Nunca invente ids. Use null quando nenhum candidato representar o mesmo intuito.
+        - Para cada nova atividade ou oportunidade, gere também uma semantic intent key curta, estavel e baseada no significado, nao na frase usada. Intuitos equivalentes devem receber a mesma chave; intuitos diferentes devem receber chaves diferentes.
+        """;
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web)
     {
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
@@ -29,7 +39,7 @@ public sealed class OpenAiResponsesWhatsappConversationAnalysisClient(
         var payload = new
         {
             model = string.IsNullOrWhiteSpace(settings.Model) ? configuredOptions.Model : settings.Model,
-            instructions = settings.Instructions,
+            instructions = $"{settings.Instructions}\n\n{SemanticDeduplicationInstructions}",
             input = JsonSerializer.Serialize(input, SerializerOptions),
             text = new
             {

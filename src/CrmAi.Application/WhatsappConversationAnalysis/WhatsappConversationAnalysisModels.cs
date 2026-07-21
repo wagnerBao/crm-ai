@@ -17,7 +17,36 @@ public sealed record OpenAiWhatsappConversationAnalysisResponse(
     IReadOnlyCollection<string>? Insights = null,
     bool ShouldCreateOpportunity = false,
     string? OpportunityTitle = null,
-    string? OpportunityDescription = null);
+    string? OpportunityDescription = null,
+    string? ActivityMatchingSuggestionId = null,
+    string? ActivityIntentKey = null,
+    string? OpportunityMatchingSuggestionId = null,
+    string? OpportunityIntentKey = null,
+    string? MatchingOpenOpportunityId = null);
+
+public sealed record WhatsappSuggestionSemanticContext(
+    IReadOnlyCollection<WhatsappSuggestionCandidate> ExistingSuggestions,
+    IReadOnlyCollection<WhatsappOpenOpportunityCandidate> ExistingOpenOpportunities)
+{
+    public static WhatsappSuggestionSemanticContext Empty { get; } = new([], []);
+}
+
+public sealed record WhatsappSuggestionCandidate(
+    string Id,
+    string SuggestionType,
+    string Status,
+    string Title,
+    string Description,
+    DateTime? SuggestedDueAt,
+    string? SemanticIntentKey,
+    DateTime UpdatedAt);
+
+public sealed record WhatsappOpenOpportunityCandidate(
+    string Id,
+    string Name,
+    string Pipeline,
+    string Stage,
+    DateTime UpdatedAt);
 
 public sealed record WhatsappConversationAnalysisInput(
     AnalysisWhatsappOpportunity? Opportunity,
@@ -35,6 +64,9 @@ public sealed record WhatsappConversationAnalysisInput(
     string? AdditionalContext,
     DateTime AnalyzedAt)
 {
+    public IReadOnlyCollection<WhatsappSuggestionCandidate> ExistingSuggestions { get; init; } = [];
+    public IReadOnlyCollection<WhatsappOpenOpportunityCandidate> ExistingOpenOpportunities { get; init; } = [];
+
     public static WhatsappConversationAnalysisInput FromContext(
         OpportunityAnalysisContext context,
         IReadOnlyCollection<string>? contextEntityKeys = null)

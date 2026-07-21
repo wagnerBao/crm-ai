@@ -21,6 +21,11 @@ internal static class WhatsappConversationAnalysisJsonSchema
             "shouldCreateOpportunity",
             "opportunityTitle",
             "opportunityDescription",
+            "activityMatchingSuggestionId",
+            "activityIntentKey",
+            "opportunityMatchingSuggestionId",
+            "opportunityIntentKey",
+            "matchingOpenOpportunityId",
             "confidenceScore",
             "reasons"
         },
@@ -39,6 +44,11 @@ internal static class WhatsappConversationAnalysisJsonSchema
             shouldCreateOpportunity = new { type = "boolean", description = "True only when the conversation contains a concrete commercial opportunity signal." },
             opportunityTitle = new { type = new[] { "string", "null" } },
             opportunityDescription = new { type = new[] { "string", "null" } },
+            activityMatchingSuggestionId = new { type = new[] { "string", "null" }, description = "ID from existingSuggestions when an activity has the same underlying business intent; null otherwise." },
+            activityIntentKey = new { type = new[] { "string", "null" }, description = "Stable semantic key for the activity intent, independent of wording." },
+            opportunityMatchingSuggestionId = new { type = new[] { "string", "null" }, description = "ID from existingSuggestions when an opportunity suggestion has the same underlying business intent; null otherwise." },
+            opportunityIntentKey = new { type = new[] { "string", "null" }, description = "Stable semantic key for the opportunity intent, including the material product, vehicle, need or issue." },
+            matchingOpenOpportunityId = new { type = new[] { "string", "null" }, description = "ID from existingOpenOpportunities when it already represents the same commercial issue; null otherwise." },
             confidenceScore = new { type = "integer", minimum = 0, maximum = 100 },
             reasons = new
             {

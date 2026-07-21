@@ -116,7 +116,12 @@ public sealed record WhatsappConversationAnalysisResult(
     IReadOnlyCollection<string>? Insights = null,
     bool ShouldCreateOpportunity = false,
     string? OpportunityTitle = null,
-    string? OpportunityDescription = null);
+    string? OpportunityDescription = null,
+    string? ActivityMatchingSuggestionId = null,
+    string? ActivityIntentKey = null,
+    string? OpportunityMatchingSuggestionId = null,
+    string? OpportunityIntentKey = null,
+    string? MatchingOpenOpportunityId = null);
 
 public enum RiskLevel
 {

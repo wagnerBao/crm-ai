@@ -78,6 +78,11 @@ public interface IWhatsappConversationAnalysisAgent
         => Task.FromResult<WhatsappConversationAnalysisResult?>(null);
 }
 
+public interface IWhatsappSuggestionContextRepository
+{
+    Task<WhatsappSuggestionSemanticContext> GetAsync(string? companyId, string? contactId, CancellationToken cancellationToken);
+}
+
 public interface IWhatsappConversationActionStore
 {
     Task ApplyAsync(OpportunityAnalysisContext context, WhatsappConversationAnalysisResult result, CancellationToken cancellationToken);

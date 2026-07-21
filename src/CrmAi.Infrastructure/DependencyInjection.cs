@@ -26,6 +26,7 @@ public static class DependencyInjection
         services.AddScoped<IAiAgentInvocationLogStore, PostgresAiAgentInvocationLogStore>();
         services.AddScoped<IAnalysisResultStore, PostgresAnalysisResultStore>();
         services.AddScoped<IWhatsappConversationActionStore, PostgresWhatsappConversationActionStore>();
+        services.AddScoped<IWhatsappSuggestionContextRepository, PostgresWhatsappSuggestionContextRepository>();
         services.AddScoped<IWhatsappConversationAnalysisScheduler, PostgresWhatsappConversationAnalysisScheduler>();
         services.AddScoped<IMeetingAudioAnalysisService, PostgresMeetingAudioAnalysisService>();
         services.AddScoped<IDailyCheckinProjectionService, PostgresDailyCheckinProjectionService>();

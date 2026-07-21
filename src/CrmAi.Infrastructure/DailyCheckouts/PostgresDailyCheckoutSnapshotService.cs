@@ -34,12 +34,25 @@ public sealed class PostgresDailyCheckoutSnapshotService(
 
             var targetDate = setting.ConsiderPreviousDayWhenRunBeforeNoon ? DateOnly.FromDateTime(localNow.Date.AddDays(-1)) : DateOnly.FromDateTime(localNow.Date);
             var runStartedAtUtc = ToUtc(targetDate.ToDateTime(TimeOnly.FromTimeSpan(runAt)), timeZone);
-            if (await SnapshotAlreadyGeneratedForRunAsync(connection, setting.CompanyId, targetDate, runStartedAtUtc, cancellationToken))
+            var lockKey = $"daily-checkout:{setting.CompanyId}:{targetDate:yyyy-MM-dd}";
+            if (!await TryAcquireRunLockAsync(connection, lockKey, cancellationToken))
             {
                 continue;
             }
 
-            await GenerateSnapshotAsync(connection, setting, targetDate, timeZone, cancellationToken);
+            try
+            {
+                if (await SnapshotAlreadyGeneratedForRunAsync(connection, setting.CompanyId, targetDate, runStartedAtUtc, cancellationToken))
+                {
+                    continue;
+                }
+
+                await GenerateSnapshotAsync(connection, setting, targetDate, timeZone, cancellationToken);
+            }
+            finally
+            {
+                await ReleaseRunLockAsync(connection, lockKey, CancellationToken.None);
+            }
         }
     }
 
@@ -570,6 +583,20 @@ public sealed class PostgresDailyCheckoutSnapshotService(
         command.Parameters.AddWithValue("snapshotDate", date);
         command.Parameters.AddWithValue("runStartedAtUtc", NpgsqlDbType.TimestampTz, runStartedAtUtc);
         return await command.ExecuteScalarAsync(cancellationToken) is not null;
+    }
+
+    private static async Task<bool> TryAcquireRunLockAsync(NpgsqlConnection connection, string key, CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand("select pg_try_advisory_lock(hashtextextended(@key, 0));", connection);
+        command.Parameters.AddWithValue("key", key);
+        return (bool)(await command.ExecuteScalarAsync(cancellationToken) ?? false);
+    }
+
+    private static async Task ReleaseRunLockAsync(NpgsqlConnection connection, string key, CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand("select pg_advisory_unlock(hashtextextended(@key, 0));", connection);
+        command.Parameters.AddWithValue("key", key);
+        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static async Task UpsertSnapshotAsync(NpgsqlConnection connection, string? companyId, DateOnly date, object payload, CancellationToken cancellationToken)
