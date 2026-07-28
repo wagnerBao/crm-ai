@@ -334,16 +334,22 @@ public sealed class PostgresDailyCheckinProjectionService(NpgsqlDataSource dataS
 
             case "opportunity.updated":
                 {
-                    if (!string.IsNullOrWhiteSpace(opportunityEvent.UserId))
+                    var actorUserId = GetString(opportunityEvent, "actorUserId") ?? opportunityEvent.UserId;
+                    if (!string.IsNullOrWhiteSpace(actorUserId))
                     {
                         var date = DateOnly.FromDateTime(opportunityEvent.OccurredAt.ToUniversalTime());
                         var pipelineId = GetString(opportunityEvent, "newPipelineId") ?? GetString(opportunityEvent, "pipelineId");
                         var stageId = GetString(opportunityEvent, "newStageId") ?? GetString(opportunityEvent, "stageId");
-                        yield return new DailyCheckinEventDelta(opportunityEvent.UserId, "opportunity_updated", null, pipelineId, stageId, date, 1);
+                        var oldStageId = GetString(opportunityEvent, "oldStageId");
+                        if (!string.IsNullOrWhiteSpace(stageId) &&
+                            !string.Equals(oldStageId, stageId, StringComparison.OrdinalIgnoreCase))
+                        {
+                            yield return new DailyCheckinEventDelta(actorUserId, "opportunity_updated", null, pipelineId, stageId, date, 1);
+                        }
 
                         if (!IsWon(GetString(opportunityEvent, "oldStatus")) && IsWon(GetString(opportunityEvent, "newStatus")))
                         {
-                            yield return new DailyCheckinEventDelta(opportunityEvent.UserId, "opportunity_won", null, pipelineId, stageId, date, 1);
+                            yield return new DailyCheckinEventDelta(actorUserId, "opportunity_won", null, pipelineId, stageId, date, 1);
                         }
                     }
                     break;
@@ -675,24 +681,34 @@ public sealed class PostgresDailyCheckinProjectionService(NpgsqlDataSource dataS
 
     private static async Task<Dictionary<(string UserId, string PipelineId, string StageId), int>> CountWonOpportunitiesByUserAndPipelineAsync(NpgsqlConnection connection, DateTime startsAt, DateTime endsAt, string[] userIds, CancellationToken cancellationToken) =>
         await CountOpportunityByUserAndPipelineAsync(connection, """
-            select owner_user_id as user_id, pipeline_id, stage_id, count(*)::int as total
-            from opportunities
-            where owner_user_id = any(@userIds)
-              and lower(status) = 'won'
-              and updated_at >= @startsAt
-              and updated_at < @endsAt
-            group by owner_user_id, pipeline_id, stage_id
+            select user_id, pipeline_id, stage_id, count(*)::int as total
+            from (
+                select distinct on (user_id, opportunity_id)
+                    user_id, opportunity_id, pipeline_id, stage_id
+                from opportunity_history
+                where user_id = any(@userIds)
+                  and event_type = 'status_transition'
+                  and to_status = 'won'
+                  and pipeline_id is not null
+                  and stage_id is not null
+                  and created_at >= @startsAt
+                  and created_at < @endsAt
+                order by user_id, opportunity_id, created_at
+            ) won_opportunities
+            group by user_id, pipeline_id, stage_id
             """, startsAt, endsAt, userIds, cancellationToken);
 
     private static async Task<Dictionary<(string UserId, string PipelineId, string StageId), int>> CountUpdatedOpportunitiesByUserAndPipelineAsync(NpgsqlConnection connection, DateTime startsAt, DateTime endsAt, string[] userIds, CancellationToken cancellationToken) =>
         await CountOpportunityByUserAndPipelineAsync(connection, """
-            select owner_user_id as user_id, pipeline_id, stage_id, count(*)::int as total
-            from opportunities
-            where owner_user_id = any(@userIds)
-              and updated_at >= @startsAt
-              and updated_at < @endsAt
-              and updated_at > created_at
-            group by owner_user_id, pipeline_id, stage_id
+            select user_id, pipeline_id, stage_id, count(distinct opportunity_id)::int as total
+            from opportunity_history
+            where user_id = any(@userIds)
+              and event_type = 'stage_transition'
+              and pipeline_id is not null
+              and stage_id is not null
+              and created_at >= @startsAt
+              and created_at < @endsAt
+            group by user_id, pipeline_id, stage_id
             """, startsAt, endsAt, userIds, cancellationToken);
 
     private static async Task<Dictionary<string, int>> CountNotesByUserAsync(NpgsqlConnection connection, DateTime startsAt, DateTime endsAt, string[] userIds, CancellationToken cancellationToken) =>
