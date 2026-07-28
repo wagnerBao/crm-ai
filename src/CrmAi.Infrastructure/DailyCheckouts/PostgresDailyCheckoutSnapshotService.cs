@@ -32,7 +32,7 @@ public sealed class PostgresDailyCheckoutSnapshotService(
                 continue;
             }
 
-            var targetDate = setting.ConsiderPreviousDayWhenRunBeforeNoon ? DateOnly.FromDateTime(localNow.Date.AddDays(-1)) : DateOnly.FromDateTime(localNow.Date);
+            var targetDate = ResolveTargetDate(localNow, runAt, setting.ConsiderPreviousDayWhenRunBeforeNoon);
             var runStartedAtUtc = ToUtc(targetDate.ToDateTime(TimeOnly.FromTimeSpan(runAt)), timeZone);
             var lockKey = $"daily-checkout:{setting.CompanyId}:{targetDate:yyyy-MM-dd}";
             if (!await TryAcquireRunLockAsync(connection, lockKey, cancellationToken))
@@ -42,12 +42,19 @@ public sealed class PostgresDailyCheckoutSnapshotService(
 
             try
             {
-                if (await SnapshotAlreadyGeneratedForRunAsync(connection, setting.CompanyId, targetDate, runStartedAtUtc, cancellationToken))
+                var agentSettings = await settingsRepository.GetAsync(AgentKey, setting.CompanyId, cancellationToken);
+                if (await SnapshotAlreadyGeneratedForRunAsync(
+                        connection,
+                        setting.CompanyId,
+                        targetDate,
+                        runStartedAtUtc,
+                        agentSettings.IsActive,
+                        cancellationToken))
                 {
                     continue;
                 }
 
-                await GenerateSnapshotAsync(connection, setting, targetDate, timeZone, cancellationToken);
+                await GenerateSnapshotAsync(connection, setting, targetDate, timeZone, agentSettings, cancellationToken);
             }
             finally
             {
@@ -67,18 +74,30 @@ public sealed class PostgresDailyCheckoutSnapshotService(
         var setting = await ReadCompanySettingAsync(connection, companyId, cancellationToken);
         var timeZone = ResolveTimeZone(setting.TimeZoneId);
         var targetDate = date ?? DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, timeZone).Date);
-        await GenerateSnapshotAsync(connection, setting, targetDate, timeZone, cancellationToken);
+        var agentSettings = await settingsRepository.GetAsync(AgentKey, setting.CompanyId, cancellationToken);
+        await GenerateSnapshotAsync(connection, setting, targetDate, timeZone, agentSettings, cancellationToken);
     }
 
-    private async Task GenerateSnapshotAsync(NpgsqlConnection connection, DailyCheckoutSettingsSnapshot setting, DateOnly date, TimeZoneInfo timeZone, CancellationToken cancellationToken)
+    private async Task GenerateSnapshotAsync(
+        NpgsqlConnection connection,
+        DailyCheckoutSettingsSnapshot setting,
+        DateOnly date,
+        TimeZoneInfo timeZone,
+        AiAgentRuntimeSettings agentSettings,
+        CancellationToken cancellationToken)
     {
         var dayStartUtc = ToUtc(date.ToDateTime(TimeOnly.MinValue), timeZone);
         var dayEndUtc = ToUtc(date.AddDays(1).ToDateTime(TimeOnly.MinValue), timeZone);
         var context = await BuildContextAsync(connection, setting, date, timeZone, dayStartUtc, dayEndUtc, cancellationToken);
-        var agentSettings = await settingsRepository.GetAsync(AgentKey, setting.CompanyId, cancellationToken);
         var ai = await AnalyzeBestEffortAsync(setting, agentSettings, FilterContext(context, agentSettings.ContextEntityKeys), cancellationToken);
         var payload = BuildPayload(date, setting, context, ai);
         await UpsertSnapshotAsync(connection, setting.CompanyId, date, payload, cancellationToken);
+    }
+
+    internal static DateOnly ResolveTargetDate(DateTime localNow, TimeSpan runAt, bool considerPreviousDayWhenRunBeforeNoon)
+    {
+        var usePreviousDay = considerPreviousDayWhenRunBeforeNoon && runAt < TimeSpan.FromHours(12);
+        return DateOnly.FromDateTime(usePreviousDay ? localNow.Date.AddDays(-1) : localNow.Date);
     }
 
     private async Task<OpenAiDailyCheckoutResponse?> AnalyzeBestEffortAsync(DailyCheckoutSettingsSnapshot setting, AiAgentRuntimeSettings agentSettings, DailyCheckoutAnalysisInput input, CancellationToken cancellationToken)
@@ -567,7 +586,13 @@ public sealed class PostgresDailyCheckoutSnapshotService(
             reader.GetBoolean(reader.GetOrdinal("consider_previous_day_when_run_before_noon")));
     }
 
-    private static async Task<bool> SnapshotAlreadyGeneratedForRunAsync(NpgsqlConnection connection, string? companyId, DateOnly date, DateTime runStartedAtUtc, CancellationToken cancellationToken)
+    private static async Task<bool> SnapshotAlreadyGeneratedForRunAsync(
+        NpgsqlConnection connection,
+        string? companyId,
+        DateOnly date,
+        DateTime runStartedAtUtc,
+        bool requireOpenAiAnalysis,
+        CancellationToken cancellationToken)
     {
         const string sql = """
             select 1
@@ -575,6 +600,10 @@ public sealed class PostgresDailyCheckoutSnapshotService(
             where company_id = @companyId
               and snapshot_date = @snapshotDate
               and snapshot_at >= @runStartedAtUtc
+              and (
+                  not @requireOpenAiAnalysis
+                  or payload_json #>> '{executiveSummary,generatedBy}' = 'openai'
+              )
             limit 1
             """;
 
@@ -582,6 +611,7 @@ public sealed class PostgresDailyCheckoutSnapshotService(
         AddCompanyParameter(command, companyId);
         command.Parameters.AddWithValue("snapshotDate", date);
         command.Parameters.AddWithValue("runStartedAtUtc", NpgsqlDbType.TimestampTz, runStartedAtUtc);
+        command.Parameters.AddWithValue("requireOpenAiAnalysis", requireOpenAiAnalysis);
         return await command.ExecuteScalarAsync(cancellationToken) is not null;
     }
 

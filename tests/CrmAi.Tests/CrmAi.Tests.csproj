@@ -21,6 +21,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\CrmAi.Application\CrmAi.Application.csproj" />
     <ProjectReference Include="..\..\src\CrmAi.Domain\CrmAi.Domain.csproj" />
+    <ProjectReference Include="..\..\src\CrmAi.Infrastructure\CrmAi.Infrastructure.csproj" />
   </ItemGroup>
 
 </Project>
