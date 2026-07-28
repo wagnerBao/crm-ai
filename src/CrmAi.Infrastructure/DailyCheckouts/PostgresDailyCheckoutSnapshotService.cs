@@ -151,7 +151,9 @@ public sealed class PostgresDailyCheckoutSnapshotService(
         {
             charts.Remove("opportunityPulse");
             charts.Remove("riskMap");
+            charts.Remove("opportunityOrigins");
         }
+        if (!enabled.Contains("contacts")) charts.Remove("contactOrigins");
 
         return input with
         {
@@ -223,6 +225,13 @@ public sealed class PostgresDailyCheckoutSnapshotService(
             select
                 count(*) filter (where o.status = 'active')::int as activeOpportunities,
                 count(*) filter (where o.created_at >= @startsAt and o.created_at < @endsAt)::int as openedToday,
+                (
+                    select count(*)::int
+                    from contacts c
+                    where c.company_id = @companyId
+                      and c.created_at >= @startsAt
+                      and c.created_at < @endsAt
+                ) as newContacts,
                 count(*) filter (where o.status = 'won' and o.updated_at >= @startsAt and o.updated_at < @endsAt)::int as wonToday,
                 count(*) filter (where o.status = 'lost' and o.updated_at >= @startsAt and o.updated_at < @endsAt)::int as lostToday,
                 count(*) filter (where o.updated_at >= @startsAt and o.updated_at < @endsAt and o.created_at < @startsAt)::int as movedToday,
@@ -244,6 +253,28 @@ public sealed class PostgresDailyCheckoutSnapshotService(
               and date_at < @endsAt
             group by lower(channel)
             order by value desc
+            """, setting.CompanyId, dayStartUtc, dayEndUtc, cancellationToken);
+
+        var opportunityOrigins = await ReadRowsAsync(connection, """
+            select coalesce(oo.name, 'Sem origem') as label, count(*)::int as value
+            from opportunities o
+            left join opportunity_origins oo on oo.id = o.origin_id
+            where o.company_id = @companyId
+              and o.created_at >= @startsAt
+              and o.created_at < @endsAt
+            group by coalesce(oo.name, 'Sem origem')
+            order by value desc, label
+            """, setting.CompanyId, dayStartUtc, dayEndUtc, cancellationToken);
+
+        var contactOrigins = await ReadRowsAsync(connection, """
+            select coalesce(co.name, nullif(btrim(c.origin), ''), 'Sem origem') as label, count(*)::int as value
+            from contacts c
+            left join contact_origins co on co.id = c.origin_id
+            where c.company_id = @companyId
+              and c.created_at >= @startsAt
+              and c.created_at < @endsAt
+            group by coalesce(co.name, nullif(btrim(c.origin), ''), 'Sem origem')
+            order by value desc, label
             """, setting.CompanyId, dayStartUtc, dayEndUtc, cancellationToken);
 
         var performance = await ReadRowsAsync(connection, """
@@ -319,6 +350,7 @@ public sealed class PostgresDailyCheckoutSnapshotService(
         {
             new { key = "goalPercent", title = "Meta individual do check-in", value = goalPercent, suffix = "%", description = $"{totalExecuted} executado / {totalPlanned} planejado" },
             new { key = "checkoutGoalPercent", title = "Metas operacionais do checkout", value = checkoutGoalPercent, suffix = "%", description = $"{checkoutExecuted} realizado / {checkoutPlanned} planejado" },
+            new { key = "newContacts", title = "Novos contatos", value = totals.GetValueOrDefault("newContacts") ?? 0, description = "Contatos cadastrados no CRM no dia selecionado" },
             new { key = "contactsDone", title = "Contatos realizados", value = totalExecuted, description = "Atividades, notas e oportunidades do recorte" },
             new { key = "movedOpportunities", title = "Oportunidades movidas", value = totals.GetValueOrDefault("movedToday") ?? 0, description = "Atualizacoes reais do dia" },
             new { key = "movedValue", title = "Valor potencial movimentado", value = totals.GetValueOrDefault("movedValue") ?? 0, prefix = "R$", description = "Pipeline com atualizacao no recorte" },
@@ -351,6 +383,8 @@ public sealed class PostgresDailyCheckoutSnapshotService(
         var charts = new
         {
             activityChannels,
+            opportunityOrigins,
+            contactOrigins,
             opportunityPulse = new[]
             {
                 new { label = "Abertas do dia", value = totals.GetValueOrDefault("openedToday") ?? 0 },
@@ -514,6 +548,7 @@ public sealed class PostgresDailyCheckoutSnapshotService(
                 o.updated_at as updatedAt,
                 ps.title as stage,
                 u.name as owner,
+                coalesce(oo.name, 'Sem origem') as origin,
                 coalesce(ls.health_score, 0)::int as qualityScore,
                 coalesce(ls.confidence_score, 0)::int as confidenceScore,
                 coalesce(ls.last_interaction_days, 0)::int as daysWithoutContact,
@@ -521,6 +556,7 @@ public sealed class PostgresDailyCheckoutSnapshotService(
             from opportunities o
             left join pipeline_stages ps on ps.id = o.stage_id
             left join users u on u.id = o.owner_user_id
+            left join opportunity_origins oo on oo.id = o.origin_id
             left join latest_scores ls on ls.opportunity_id = o.id
             where o.company_id = @companyId
               and {{condition}}

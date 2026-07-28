@@ -1,4 +1,5 @@
 using CrmAi.Application;
+using CrmAi.Domain;
 using CrmAi.Infrastructure.DailyCheckouts;
 
 namespace CrmAi.Tests;
@@ -69,6 +70,41 @@ public sealed class DailyCheckoutSchedulerTests
             []);
 
         Assert.False(PostgresDailyCheckoutSnapshotService.RequiresOpenAiAnalysis(settings));
+    }
+
+    [Fact]
+    public void CheckoutSnapshot_MustIncludeNewContactsAndBothOriginBreakdowns()
+    {
+        var source = ReadSource("src/CrmAi.Infrastructure/DailyCheckouts/PostgresDailyCheckoutSnapshotService.cs");
+
+        Assert.Contains("as newContacts", source);
+        Assert.Contains("left join opportunity_origins", source);
+        Assert.Contains("left join contact_origins", source);
+        Assert.Contains("coalesce(co.name, nullif(btrim(c.origin), ''), 'Sem origem')", source);
+        Assert.Contains("new { key = \"newContacts\"", source);
+        Assert.Contains("opportunityOrigins", source);
+        Assert.Contains("contactOrigins", source);
+    }
+
+    [Fact]
+    public void ContactOriginContext_MustRespectAgentContextSelection()
+    {
+        var input = new DailyCheckoutAnalysisInput(
+            new DateOnly(2026, 7, 27),
+            new DailyCheckoutSettingsSnapshot("company", "18:00", "America/Sao_Paulo", false),
+            new { },
+            [],
+            new { contactOrigins = new[] { new { label = "Meta Ads", value = 7 } } },
+            new { },
+            [],
+            [],
+            []);
+
+        var withoutContacts = PostgresDailyCheckoutSnapshotService.FilterContext(input, ["daily_metrics"]);
+        var withContacts = PostgresDailyCheckoutSnapshotService.FilterContext(input, ["daily_metrics", "contacts"]);
+
+        Assert.DoesNotContain("contactOrigins", System.Text.Json.JsonSerializer.Serialize(withoutContacts.Charts));
+        Assert.Contains("contactOrigins", System.Text.Json.JsonSerializer.Serialize(withContacts.Charts));
     }
 
     private static string ReadSource(string relativePath)
