@@ -1,3 +1,4 @@
+using CrmAi.Application;
 using CrmAi.Infrastructure.DailyCheckouts;
 
 namespace CrmAi.Tests;
@@ -50,7 +51,24 @@ public sealed class DailyCheckoutSchedulerTests
 
         Assert.Contains("not @requireOpenAiAnalysis", source);
         Assert.Contains("payload_json #>> '{executiveSummary,generatedBy}' = 'openai'", source);
-        Assert.Contains("agentSettings.IsActive", source);
+        Assert.Contains("RequiresOpenAiAnalysis(agentSettings)", source);
+    }
+
+    [Fact]
+    public void AgentWithoutApiKey_MustNotCauseEndlessScheduledRetries()
+    {
+        var settings = new AiAgentRuntimeSettings(
+            "daily-checkout",
+            IsActive: true,
+            "openai",
+            "gpt-4.1-mini",
+            ApiKey: null,
+            "prompt",
+            1,
+            null,
+            []);
+
+        Assert.False(PostgresDailyCheckoutSnapshotService.RequiresOpenAiAnalysis(settings));
     }
 
     private static string ReadSource(string relativePath)

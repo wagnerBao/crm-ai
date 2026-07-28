@@ -48,7 +48,7 @@ public sealed class PostgresDailyCheckoutSnapshotService(
                         setting.CompanyId,
                         targetDate,
                         runStartedAtUtc,
-                        agentSettings.IsActive,
+                        RequiresOpenAiAnalysis(agentSettings),
                         cancellationToken))
                 {
                     continue;
@@ -99,6 +99,9 @@ public sealed class PostgresDailyCheckoutSnapshotService(
         var usePreviousDay = considerPreviousDayWhenRunBeforeNoon && runAt < TimeSpan.FromHours(12);
         return DateOnly.FromDateTime(usePreviousDay ? localNow.Date.AddDays(-1) : localNow.Date);
     }
+
+    internal static bool RequiresOpenAiAnalysis(AiAgentRuntimeSettings settings) =>
+        settings.IsActive && !string.IsNullOrWhiteSpace(settings.ApiKey);
 
     private async Task<OpenAiDailyCheckoutResponse?> AnalyzeBestEffortAsync(DailyCheckoutSettingsSnapshot setting, AiAgentRuntimeSettings agentSettings, DailyCheckoutAnalysisInput input, CancellationToken cancellationToken)
     {
