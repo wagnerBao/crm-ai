@@ -178,6 +178,10 @@ public sealed class OpportunityAnalysisEventProcessor(
         {
             return;
         }
+        if (!string.Equals(context.Opportunity.Status, "active", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
 
         if (string.Equals(opportunityEvent.Type, "opportunity.whatsapp.conversation.batch", StringComparison.OrdinalIgnoreCase))
         {
@@ -203,6 +207,10 @@ public sealed class ActivityAnalysisEventProcessor(
     {
         var context = await contextRepository.GetForAnalysisAsync(activityEvent, cancellationToken);
         if (context is null)
+        {
+            return;
+        }
+        if (!string.Equals(context.Opportunity.Status, "active", StringComparison.OrdinalIgnoreCase))
         {
             return;
         }

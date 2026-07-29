@@ -13,6 +13,19 @@ public sealed class PostgresAnalysisResultStore(NpgsqlDataSource dataSource) : I
     public async Task SaveRiskAnalysisAsync(OpportunityAnalysisContext context, RiskAnalysisResult result, CancellationToken cancellationToken)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        if (!string.Equals(context.Opportunity.Status, "active", StringComparison.OrdinalIgnoreCase))
+        {
+            await using var clearRisk = new NpgsqlCommand("""
+                update opportunities
+                set risk = false
+                where id = @opportunityId
+                  and risk = true
+                """, connection);
+            clearRisk.Parameters.AddWithValue("opportunityId", Guid.Parse(context.Opportunity.Id));
+            await clearRisk.ExecuteNonQueryAsync(cancellationToken);
+            return;
+        }
+
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
         const string insertSql = """
@@ -48,6 +61,7 @@ public sealed class PostgresAnalysisResultStore(NpgsqlDataSource dataSource) : I
             update opportunities
             set risk = @risk, updated_at = @updatedAt
             where id = @opportunityId
+              and status = 'active'
               and risk is distinct from @risk
             """;
 

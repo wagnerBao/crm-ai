@@ -130,6 +130,17 @@ public sealed class DailyCheckoutSchedulerTests
         Assert.Contains("Quanto maior, maior a atencao", source);
     }
 
+    [Fact]
+    public void CheckoutRecommendations_MustBeActionableAndReferenceExactOpportunities()
+    {
+        var schema = ReadSource("src/CrmAi.Application/DailyCheckoutJsonSchema.cs");
+        var models = ReadSource("src/CrmAi.Domain/DailyCheckoutModels.cs");
+
+        Assert.Contains("\"why\", \"steps\", \"opportunities\"", schema);
+        Assert.Contains("\"id\", \"name\", \"reason\", \"approach\"", schema);
+        Assert.Contains("DailyCheckoutRecommendationOpportunityResponse", models);
+    }
+
     private static string ReadSource(string relativePath)
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);

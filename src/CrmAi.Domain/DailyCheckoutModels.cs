@@ -26,5 +26,16 @@ public sealed record DailyCheckoutExecutiveSummaryResponse(string Headline, stri
 
 public sealed record DailyCheckoutTextItemResponse(string Title, string Description, string Severity);
 
-public sealed record DailyCheckoutRecommendationResponse(string Title, string Description, string Priority);
+public sealed record DailyCheckoutRecommendationResponse(
+    string Title,
+    string Description,
+    string Priority,
+    string Why,
+    IReadOnlyCollection<string> Steps,
+    IReadOnlyCollection<DailyCheckoutRecommendationOpportunityResponse> Opportunities);
 
+public sealed record DailyCheckoutRecommendationOpportunityResponse(
+    string Id,
+    string Name,
+    string Reason,
+    string Approach);
