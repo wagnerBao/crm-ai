@@ -192,6 +192,10 @@ public sealed class OpportunityAnalysisEventProcessor(
                 context = await contextRepository.GetForAnalysisAsync(opportunityEvent, cancellationToken) ?? context;
             }
         }
+        if (!string.Equals(context.Opportunity.Status, "active", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
 
         var result = await riskAnalysisAgent.AnalyzeAsync(context, cancellationToken);
         await resultStore.SaveRiskAnalysisAsync(context, result, cancellationToken);
