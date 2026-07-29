@@ -61,6 +61,36 @@ public sealed class RiskAnalysisAgentTests
     }
 
     [Fact]
+    public void CommercialRules_DoNotManufactureRiskFromOverlappingOrContradictoryPredicates()
+    {
+        var now = new DateTime(2026, 7, 29, 12, 0, 0, DateTimeKind.Utc);
+        var rules = new[]
+        {
+            new CommercialAnalysisMetricRuleSnapshot(Guid.NewGuid().ToString(), "overdue_activities", null, null, "medium", "<", 3, "count"),
+            new CommercialAnalysisMetricRuleSnapshot(Guid.NewGuid().ToString(), "overdue_activities", null, null, "ok", "=", 0, "count"),
+            new CommercialAnalysisMetricRuleSnapshot(Guid.NewGuid().ToString(), "opportunity_interactions", null, null, "critical", ">", 0, "count"),
+            new CommercialAnalysisMetricRuleSnapshot(Guid.NewGuid().ToString(), "opportunity_interactions", null, null, "ok", ">", 0, "count")
+        };
+        var context = CreateContext(
+            now,
+            [],
+            [new NoteSnapshot(Guid.NewGuid().ToString(), "Contato recente", null, now)],
+            [],
+            rules);
+
+        var request = new RiskAnalysisAgentInputBuilder(new CommercialRuleAssessmentService()).Build(context, ["notes"]);
+
+        Assert.Equal(100, request.SnapshotUpdate.HealthScore);
+        Assert.All(request.Input.CommercialRuleAssessment.Metrics, metric =>
+        {
+            if (metric.AppliedRule is not null)
+            {
+                Assert.Equal("ok", metric.AppliedRule.Level);
+            }
+        });
+    }
+
+    [Fact]
     public async Task AnalyzeAsync_UsesOpenAiAgentResponse_ForRiskResult()
     {
         var now = new DateTime(2026, 05, 06, 12, 0, 0, DateTimeKind.Utc);

@@ -48,6 +48,7 @@ public sealed class PostgresAnalysisResultStore(NpgsqlDataSource dataSource) : I
             update opportunities
             set risk = @risk, updated_at = @updatedAt
             where id = @opportunityId
+              and risk is distinct from @risk
             """;
 
         await using (var command = new NpgsqlCommand(updateOpportunitySql, connection, transaction))
@@ -85,6 +86,7 @@ public sealed class PostgresAnalysisResultStore(NpgsqlDataSource dataSource) : I
                 health_score = @healthScore,
                 confidence_score = @confidenceScore
             where opportunity_id = @opportunityId
+              and company_id = @companyId
               and snapshot_source = 'daily'
               and snapshot_at >= @dayStart
               and snapshot_at < @dayEnd
@@ -114,6 +116,7 @@ public sealed class PostgresAnalysisResultStore(NpgsqlDataSource dataSource) : I
                 last_interaction_at,
                 health_score,
                 confidence_score,
+                company_id,
                 created_at)
             values (
                 @id,
@@ -128,6 +131,7 @@ public sealed class PostgresAnalysisResultStore(NpgsqlDataSource dataSource) : I
                 @lastInteractionAt,
                 @healthScore,
                 @confidenceScore,
+                @companyId,
                 @createdAt)
             """;
 
@@ -149,6 +153,10 @@ public sealed class PostgresAnalysisResultStore(NpgsqlDataSource dataSource) : I
         DateTime dayEnd)
     {
         command.Parameters.AddWithValue("opportunityId", Guid.Parse(context.Opportunity.Id));
+        command.Parameters.Add("companyId", NpgsqlDbType.Uuid).Value =
+            string.IsNullOrWhiteSpace(context.Opportunity.CompanyId)
+                ? DBNull.Value
+                : Guid.Parse(context.Opportunity.CompanyId);
         command.Parameters.AddWithValue("stageId", Guid.Parse(context.Opportunity.StageId));
         command.Parameters.AddWithValue("daysInStage", snapshot.DaysInStage);
         command.Parameters.AddWithValue("activitiesOpen", snapshot.ActivitiesOpen);

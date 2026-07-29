@@ -135,7 +135,7 @@ public sealed class PostgresDailyCheckoutSnapshotService(
         var tables = JsonSerializer.SerializeToNode(input.Tables, SerializerOptions) as JsonObject ?? [];
         if (!enabled.Contains("opportunities"))
         {
-            foreach (var name in new[] { "opened", "won", "lost", "focus" }) tables.Remove(name);
+            foreach (var name in new[] { "opened", "won", "lost", "focus", "movements" }) tables.Remove(name);
         }
         if (!enabled.Contains("users"))
         {
@@ -151,6 +151,7 @@ public sealed class PostgresDailyCheckoutSnapshotService(
         {
             charts.Remove("opportunityPulse");
             charts.Remove("riskMap");
+            charts.Remove("pipelineMovement");
             charts.Remove("opportunityOrigins");
         }
         if (!enabled.Contains("contacts")) charts.Remove("contactOrigins");
@@ -209,18 +210,65 @@ public sealed class PostgresDailyCheckoutSnapshotService(
         CancellationToken cancellationToken)
     {
         var monthStartUtc = ToUtc(new DateTime(date.Year, date.Month, 1), timeZone);
-        var monthEndUtc = ToUtc(new DateTime(date.Year, date.Month, 1).AddMonths(1), timeZone);
+        var monthEndUtc = dayEndUtc;
         var totals = await ReadOneAsync(connection, """
-            with latest_scores as (
-                select distinct on (opportunity_id)
-                    opportunity_id,
-                    health_score,
-                    confidence_score,
-                    last_interaction_days,
-                    activities_overdue
-                from opportunity_analysis_snapshots
-                where company_id = @companyId
-                order by opportunity_id, snapshot_at desc
+            with latest_risk as (
+                select distinct on (i.opportunity_id)
+                    i.opportunity_id,
+                    upper(replace(i.title, 'Risk analysis: ', '')) as risk_level,
+                    round(i.confidence * 100)::int as risk_score,
+                    coalesce(((regexp_match(i.message, '"healthScore":([0-9]+)'))[1])::int, 0) as health_score,
+                    coalesce(((regexp_match(i.message, '"lastInteractionDays":([0-9]+)'))[1])::int, 0) as last_interaction_days,
+                    coalesce(((regexp_match(i.message, '"activitiesOverdue":([0-9]+)'))[1])::int, 0) as activities_overdue
+                from ai_insights i
+                where i.company_id = @companyId
+                  and i.kind = 'risk-analysis'
+                  and i.status = 'active'
+                order by i.opportunity_id, i.created_at desc
+            ),
+            outcome_events as (
+                select distinct on (h.opportunity_id, h.to_status)
+                    h.opportunity_id,
+                    h.to_status
+                from opportunity_history h
+                where h.company_id = @companyId
+                  and h.event_type = 'status_transition'
+                  and h.created_at >= @startsAt
+                  and h.created_at < @endsAt
+                  and h.to_status in ('won', 'lost')
+                order by h.opportunity_id, h.to_status, h.created_at
+            ),
+            movement_events as (
+                select
+                    h.opportunity_id,
+                    source_stage.sort_order as from_position,
+                    target_stage.sort_order as to_position
+                from opportunity_history h
+                left join pipeline_stages source_stage
+                  on source_stage.id = ((regexp_match(h.event, 'fromStageId=([0-9a-fA-F-]{36})'))[1])::uuid
+                left join pipeline_stages target_stage on target_stage.id = h.stage_id
+                where h.company_id = @companyId
+                  and h.event_type = 'stage_transition'
+                  and h.created_at >= @startsAt
+                  and h.created_at < @endsAt
+            ),
+            advanced_opportunities as (
+                select distinct opportunity_id
+                from movement_events
+                where to_position > from_position
+            ),
+            movement_totals as (
+                select
+                    count(distinct opportunity_id)::int as moved_today,
+                    count(distinct opportunity_id) filter (where to_position > from_position)::int as advanced_today,
+                    count(distinct opportunity_id) filter (where to_position < from_position)::int as regressed_today
+                from movement_events
+            ),
+            advanced_value as (
+                select coalesce(sum(o.value), 0)::numeric as potential_advanced
+                from advanced_opportunities a
+                join opportunities o on o.id = a.opportunity_id
+                where o.status = 'active'
             )
             select
                 count(*) filter (where o.status = 'active')::int as activeOpportunities,
@@ -232,15 +280,19 @@ public sealed class PostgresDailyCheckoutSnapshotService(
                       and c.created_at >= @startsAt
                       and c.created_at < @endsAt
                 ) as newContacts,
-                count(*) filter (where o.status = 'won' and o.updated_at >= @startsAt and o.updated_at < @endsAt)::int as wonToday,
-                count(*) filter (where o.status = 'lost' and o.updated_at >= @startsAt and o.updated_at < @endsAt)::int as lostToday,
-                count(*) filter (where o.updated_at >= @startsAt and o.updated_at < @endsAt and o.created_at < @startsAt)::int as movedToday,
-                coalesce(sum(o.value) filter (where o.updated_at >= @startsAt and o.updated_at < @endsAt), 0)::numeric as movedValue,
-                coalesce(avg(ls.health_score), 0)::numeric as averageQuality,
-                count(*) filter (where o.status = 'active' and (o.risk = true or coalesce(ls.activities_overdue, 0) > 0 or coalesce(ls.last_interaction_days, 0) >= 15))::int as criticalAlerts,
-                count(*) filter (where o.status = 'active' and coalesce(ls.last_interaction_days, 0) >= 7 and coalesce(ls.last_interaction_days, 0) < 15)::int as mediumRisk
+                (select count(*)::int from outcome_events where to_status = 'won') as wonToday,
+                (select count(*)::int from outcome_events where to_status = 'lost') as lostToday,
+                (select moved_today from movement_totals) as movedToday,
+                (select advanced_today from movement_totals) as advancedToday,
+                (select regressed_today from movement_totals) as regressedToday,
+                (select potential_advanced from advanced_value) as movedValue,
+                coalesce(avg(lr.health_score) filter (where o.status = 'active' and lr.opportunity_id is not null), 0)::numeric as averageQuality,
+                coalesce(avg(lr.risk_score) filter (where o.status = 'active' and lr.opportunity_id is not null), 0)::numeric as averageRisk,
+                count(*) filter (where o.status = 'active' and (lr.risk_level = 'HIGH' or (lr.opportunity_id is null and o.risk = true)))::int as criticalAlerts,
+                count(*) filter (where o.status = 'active' and lr.risk_level = 'MEDIUM')::int as mediumRisk,
+                count(*) filter (where o.status = 'active' and lr.opportunity_id is not null)::int as analyzedRisk
             from opportunities o
-            left join latest_scores ls on ls.opportunity_id = o.id
+            left join latest_risk lr on lr.opportunity_id = o.id
             where o.company_id = @companyId
             """, setting.CompanyId, dayStartUtc, dayEndUtc, cancellationToken);
 
@@ -283,79 +335,174 @@ public sealed class PostgresDailyCheckoutSnapshotService(
                 from users
                 where company_id = @companyId and is_active = true
             ),
-            user_targets as (
+            applicable_metrics as (
                 select
                     u.id as user_id,
-                    coalesce(sum(m.target), 0)::int as planned
+                    m.id,
+                    m.target,
+                    m.unit,
+                    m.activity_channel,
+                    m.pipeline_id,
+                    m.stage_id
                 from active_users u
-                left join daily_checkin_metrics m
+                join daily_checkin_metrics m
                     on m.company_id = @companyId
                    and m.is_active = true
                    and m.period = 'daily'
                    and (m.group_id is null or m.group_id = u.group_id)
-                group by u.id
+                   and (m.user_id is null or m.user_id = u.id)
             ),
-            executed as (
-                select owner_user_id as user_id, count(*)::int as amount
-                from activities
-                where company_id = @companyId and status = 'done' and date_at >= @startsAt and date_at < @endsAt and owner_user_id is not null
-                group by owner_user_id
-                union all
-                select owner_user_id as user_id, count(*)::int as amount
-                from opportunities
-                where company_id = @companyId and created_at >= @startsAt and created_at < @endsAt and owner_user_id is not null
-                group by owner_user_id
-                union all
-                select author_user_id as user_id, count(*)::int as amount
-                from notes
-                where company_id = @companyId and created_at >= @startsAt and created_at < @endsAt and author_user_id is not null
-                group by author_user_id
+            metric_results as (
+                select
+                    m.user_id,
+                    m.target,
+                    coalesce(result.actual, 0)::int as actual
+                from applicable_metrics m
+                left join lateral (
+                    select count(*)::int as actual
+                    from (
+                        select 1
+                        from activities a
+                        where m.unit = 'activity'
+                          and a.company_id = @companyId
+                          and a.owner_user_id = m.user_id
+                          and a.status = 'done'
+                          and a.date_at >= @startsAt and a.date_at < @endsAt
+                          and (m.activity_channel is null or lower(a.channel) = lower(m.activity_channel))
+                        union all
+                        select 1
+                        from opportunities o
+                        where m.unit = 'opportunity'
+                          and o.company_id = @companyId
+                          and o.owner_user_id = m.user_id
+                          and o.created_at >= @startsAt and o.created_at < @endsAt
+                          and (m.pipeline_id is null or o.pipeline_id = m.pipeline_id)
+                          and (m.stage_id is null or o.stage_id = m.stage_id)
+                        union all
+                        select 1
+                        from opportunity_history h
+                        where m.unit = 'opportunity_won'
+                          and h.company_id = @companyId
+                          and h.user_id = m.user_id
+                          and h.event_type = 'status_transition'
+                          and h.to_status = 'won'
+                          and h.created_at >= @startsAt and h.created_at < @endsAt
+                          and (m.pipeline_id is null or h.pipeline_id = m.pipeline_id)
+                          and (m.stage_id is null or h.stage_id = m.stage_id)
+                        union all
+                        select 1
+                        from (
+                            select distinct h.opportunity_id
+                            from opportunity_history h
+                            where m.unit = 'opportunity_updated'
+                              and h.company_id = @companyId
+                              and h.user_id = m.user_id
+                              and h.event_type = 'stage_transition'
+                              and h.created_at >= @startsAt and h.created_at < @endsAt
+                              and (m.pipeline_id is null or h.pipeline_id = m.pipeline_id)
+                              and (m.stage_id is null or h.stage_id = m.stage_id)
+                        ) moved
+                        union all
+                        select 1
+                        from notes n
+                        where m.unit = 'note'
+                          and n.company_id = @companyId
+                          and n.author_user_id = m.user_id
+                          and n.created_at >= @startsAt and n.created_at < @endsAt
+                    ) facts
+                ) result on true
             ),
-            user_execution as (
-                select user_id, sum(amount)::int as executed
-                from executed
+            user_results as (
+                select
+                    user_id,
+                    sum(target)::int as planned,
+                    sum(actual)::int as executed,
+                    sum(least(actual, target))::int as credited
+                from metric_results
                 group by user_id
             )
             select
                 u.id::text as id,
                 u.name,
                 coalesce(g.name, u.role, 'Sem grupo') as "group",
-                ut.planned,
-                coalesce(ue.executed, 0)::int as executed,
-                case when ut.planned = 0 then 0 else round(coalesce(ue.executed, 0)::numeric / ut.planned * 100, 1) end as percent
+                coalesce(ur.planned, 0)::int as planned,
+                coalesce(ur.executed, 0)::int as executed,
+                coalesce(ur.credited, 0)::int as credited,
+                case when coalesce(ur.planned, 0) = 0 then 0 else round(ur.credited::numeric / ur.planned * 100, 1) end as percent
             from active_users u
-            join user_targets ut on ut.user_id = u.id
             left join user_groups g on g.id = u.group_id
-            left join user_execution ue on ue.user_id = u.id
+            left join user_results ur on ur.user_id = u.id
             order by percent desc, u.name
             """, setting.CompanyId, dayStartUtc, dayEndUtc, cancellationToken);
 
         var checkoutMetrics = await ReadCheckoutMetricRowsAsync(connection, setting.CompanyId, dayStartUtc, dayEndUtc, monthStartUtc, monthEndUtc, cancellationToken);
         var opened = await ReadOpportunityRowsAsync(connection, setting.CompanyId, dayStartUtc, dayEndUtc, "o.created_at >= @startsAt and o.created_at < @endsAt", "o.created_at desc", cancellationToken);
-        var won = await ReadOpportunityRowsAsync(connection, setting.CompanyId, dayStartUtc, dayEndUtc, "o.status = 'won' and o.updated_at >= @startsAt and o.updated_at < @endsAt", "o.updated_at desc", cancellationToken);
-        var lost = await ReadOpportunityRowsAsync(connection, setting.CompanyId, dayStartUtc, dayEndUtc, "o.status = 'lost' and o.updated_at >= @startsAt and o.updated_at < @endsAt", "o.updated_at desc", cancellationToken);
-        var focus = await ReadOpportunityRowsAsync(connection, setting.CompanyId, dayStartUtc, dayEndUtc, "o.status = 'active' and (o.risk = true or coalesce(ls.last_interaction_days, 0) >= 5)", "o.risk desc, coalesce(ls.last_interaction_days, 0) desc, o.value desc", cancellationToken);
-        var updated = await ReadOpportunityRowsAsync(connection, setting.CompanyId, dayStartUtc, dayEndUtc, "o.updated_at >= @startsAt and o.updated_at < @endsAt", "o.updated_at desc", cancellationToken);
+        var won = await ReadOpportunityRowsAsync(connection, setting.CompanyId, dayStartUtc, dayEndUtc, """
+            exists (
+                select 1 from opportunity_history outcome
+                where outcome.opportunity_id = o.id
+                  and outcome.company_id = @companyId
+                  and outcome.event_type = 'status_transition'
+                  and outcome.to_status = 'won'
+                  and outcome.created_at >= @startsAt
+                  and outcome.created_at < @endsAt)
+            """, "event_at desc", cancellationToken);
+        var lost = await ReadOpportunityRowsAsync(connection, setting.CompanyId, dayStartUtc, dayEndUtc, """
+            exists (
+                select 1 from opportunity_history outcome
+                where outcome.opportunity_id = o.id
+                  and outcome.company_id = @companyId
+                  and outcome.event_type = 'status_transition'
+                  and outcome.to_status = 'lost'
+                  and outcome.created_at >= @startsAt
+                  and outcome.created_at < @endsAt)
+            """, "event_at desc", cancellationToken);
+        var focus = await ReadOpportunityRowsAsync(connection, setting.CompanyId, dayStartUtc, dayEndUtc, """
+            o.status = 'active'
+            and (
+                lr.risk_level in ('HIGH', 'MEDIUM')
+                or coalesce(lr.activities_overdue, 0) > 0
+                or coalesce(lr.last_interaction_days, 0) >= 5
+                or (lr.opportunity_id is null and o.risk = true))
+            """, """
+            case lr.risk_level when 'HIGH' then 3 when 'MEDIUM' then 2 else 1 end desc,
+            lr.risk_score desc,
+            coalesce(lr.activities_overdue, 0) desc,
+            coalesce(lr.last_interaction_days, 0) desc,
+            o.value desc
+            """, cancellationToken);
+        var movements = await ReadMovementRowsAsync(connection, setting.CompanyId, dayStartUtc, dayEndUtc, cancellationToken);
+        var updated = movements.Cast<object>().ToArray();
 
-        var lowEffectiveness = performance.Where(row => Convert.ToDecimal(row.GetValueOrDefault("percent") ?? 0m) < 60m).Take(10).Cast<object>().ToArray();
+        var lowEffectiveness = performance
+            .Where(row =>
+                Convert.ToInt32(row.GetValueOrDefault("planned") ?? 0) > 0 &&
+                Convert.ToDecimal(row.GetValueOrDefault("percent") ?? 0m) < 60m)
+            .Take(10)
+            .Cast<object>()
+            .ToArray();
         var totalPlanned = performance.Sum(row => Convert.ToInt32(row.GetValueOrDefault("planned") ?? 0));
         var totalExecuted = performance.Sum(row => Convert.ToInt32(row.GetValueOrDefault("executed") ?? 0));
-        var goalPercent = totalPlanned == 0 ? 0 : Math.Round(totalExecuted / (decimal)totalPlanned * 100, 1);
+        var totalCredited = performance.Sum(row => Convert.ToInt32(row.GetValueOrDefault("credited") ?? 0));
+        var goalPercent = totalPlanned == 0 ? 0 : Math.Round(totalCredited / (decimal)totalPlanned * 100, 1);
         var checkoutPlanned = checkoutMetrics.Sum(row => Convert.ToInt32(row.GetValueOrDefault("target") ?? 0));
         var checkoutExecuted = checkoutMetrics.Sum(row => Convert.ToInt32(row.GetValueOrDefault("actual") ?? 0));
-        var checkoutGoalPercent = checkoutPlanned == 0 ? 0 : Math.Round(checkoutExecuted / (decimal)checkoutPlanned * 100, 1);
-        var averageQuality = Convert.ToDecimal(totals.GetValueOrDefault("averageQuality") ?? 0m);
+        var checkoutCredited = checkoutMetrics.Sum(row => Math.Min(
+            Convert.ToInt32(row.GetValueOrDefault("actual") ?? 0),
+            Convert.ToInt32(row.GetValueOrDefault("target") ?? 0)));
+        var checkoutGoalPercent = checkoutPlanned == 0 ? 0 : Math.Round(checkoutCredited / (decimal)checkoutPlanned * 100, 1);
+        var averageRisk = Convert.ToDecimal(totals.GetValueOrDefault("averageRisk") ?? 0m);
 
         var metrics = new object[]
         {
             new { key = "goalPercent", title = "Meta individual do check-in", value = goalPercent, suffix = "%", description = $"{totalExecuted} executado / {totalPlanned} planejado" },
             new { key = "checkoutGoalPercent", title = "Metas operacionais do checkout", value = checkoutGoalPercent, suffix = "%", description = $"{checkoutExecuted} realizado / {checkoutPlanned} planejado" },
             new { key = "newContacts", title = "Novos contatos", value = totals.GetValueOrDefault("newContacts") ?? 0, description = "Contatos cadastrados no CRM no dia selecionado" },
-            new { key = "contactsDone", title = "Contatos realizados", value = totalExecuted, description = "Atividades, notas e oportunidades do recorte" },
-            new { key = "movedOpportunities", title = "Oportunidades movidas", value = totals.GetValueOrDefault("movedToday") ?? 0, description = "Atualizacoes reais do dia" },
-            new { key = "movedValue", title = "Valor potencial movimentado", value = totals.GetValueOrDefault("movedValue") ?? 0, prefix = "R$", description = "Pipeline com atualizacao no recorte" },
+            new { key = "contactsDone", title = "Interacoes concluidas", value = activityChannels.Sum(row => Convert.ToInt32(row.GetValueOrDefault("value") ?? 0)), description = "Atividades concluidas e registradas por canal no dia" },
+            new { key = "movedOpportunities", title = "Oportunidades que avancaram", value = totals.GetValueOrDefault("advancedToday") ?? 0, description = $"{totals.GetValueOrDefault("movedToday") ?? 0} mudaram de etapa; {totals.GetValueOrDefault("regressedToday") ?? 0} regrediram" },
+            new { key = "movedValue", title = "Valor potencial que avancou", value = totals.GetValueOrDefault("movedValue") ?? 0, prefix = "R$", description = "Valor atual, nao receita, das oportunidades ativas que avancaram de etapa" },
             new { key = "criticalAlerts", title = "Alertas criticos", value = totals.GetValueOrDefault("criticalAlerts") ?? 0, description = "Riscos para amanha cedo" },
-            new { key = "averageQuality", title = "Taxa media de qualidade", value = Math.Round(averageQuality, 1), suffix = "/100", description = "Execucao + avanco + CRM" },
+            new { key = "averageRisk", title = "Score medio de risco", value = Math.Round(averageRisk, 1), suffix = "/100", description = $"Quanto maior, maior a atencao; {totals.GetValueOrDefault("analyzedRisk") ?? 0} ativas analisadas" },
             new { key = "openedToday", title = "Abertas do dia", value = totals.GetValueOrDefault("openedToday") ?? 0, description = "Oportunidades criadas no dia selecionado" },
             new { key = "wonToday", title = "Ganhas do dia", value = totals.GetValueOrDefault("wonToday") ?? 0, description = "Oportunidades ganhas no dia selecionado" },
             new { key = "lostToday", title = "Perdidas do dia", value = totals.GetValueOrDefault("lostToday") ?? 0, description = "Oportunidades marcadas como perda" },
@@ -368,6 +515,7 @@ public sealed class PostgresDailyCheckoutSnapshotService(
             won,
             lost,
             focus,
+            movements,
             performance,
             checkoutMetrics,
             lowEffectiveness,
@@ -395,6 +543,11 @@ public sealed class PostgresDailyCheckoutSnapshotService(
             {
                 new { label = "Risco medio", value = totals.GetValueOrDefault("mediumRisk") ?? 0 },
                 new { label = "Risco critico", value = totals.GetValueOrDefault("criticalAlerts") ?? 0 }
+            },
+            pipelineMovement = new[]
+            {
+                new { label = "Avancos", value = totals.GetValueOrDefault("advancedToday") ?? 0 },
+                new { label = "Regressoes", value = totals.GetValueOrDefault("regressedToday") ?? 0 }
             }
         };
 
@@ -434,11 +587,11 @@ public sealed class PostgresDailyCheckoutSnapshotService(
                 m.name,
                 m.period,
                 m.unit,
-                m.group_id::text as groupId,
-                m.group_name as groupName,
+                m.group_id::text as "groupId",
+                m.group_name as "groupName",
                 m.target,
                 coalesce(results.actual, 0)::int as actual,
-                case when m.target = 0 then 0 else round(coalesce(results.actual, 0)::numeric / m.target * 100, 1) end as percent
+                case when m.target = 0 then 0 else least(100, round(coalesce(results.actual, 0)::numeric / m.target * 100, 1)) end as percent
             from metrics m
             left join lateral (
                 select count(*)::int as actual
@@ -464,23 +617,27 @@ public sealed class PostgresDailyCheckoutSnapshotService(
                       and (m.group_id is null or u.group_id = m.group_id)
                     union all
                     select 1
-                    from opportunities o
-                    left join users u on u.id = o.owner_user_id
+                    from opportunity_history h
+                    left join users u on u.id = h.user_id
                     where m.unit = 'opportunity_won'
-                      and o.company_id = @companyId
-                      and o.status = 'won'
-                      and o.updated_at >= m.starts_at
-                      and o.updated_at < m.ends_at
+                      and h.company_id = @companyId
+                      and h.event_type = 'status_transition'
+                      and h.to_status = 'won'
+                      and h.created_at >= m.starts_at
+                      and h.created_at < m.ends_at
                       and (m.group_id is null or u.group_id = m.group_id)
                     union all
                     select 1
-                    from opportunities o
-                    left join users u on u.id = o.owner_user_id
+                    from (
+                        select distinct h.opportunity_id, h.user_id
+                        from opportunity_history h
+                        where h.company_id = @companyId
+                          and h.event_type = 'stage_transition'
+                          and h.created_at >= m.starts_at
+                          and h.created_at < m.ends_at
+                    ) moved
+                    left join users u on u.id = moved.user_id
                     where m.unit = 'opportunity_updated'
-                      and o.company_id = @companyId
-                      and o.updated_at >= m.starts_at
-                      and o.updated_at < m.ends_at
-                      and o.updated_at > o.created_at
                       and (m.group_id is null or u.group_id = m.group_id)
                     union all
                     select 1
@@ -528,39 +685,96 @@ public sealed class PostgresDailyCheckoutSnapshotService(
         CancellationToken cancellationToken)
     {
         var sql = $$"""
-            with latest_scores as (
-                select distinct on (opportunity_id)
-                    opportunity_id,
-                    health_score,
-                    confidence_score,
-                    last_interaction_days,
-                    activities_overdue
-                from opportunity_analysis_snapshots
-                where company_id = @companyId
-                order by opportunity_id, snapshot_at desc
+            with latest_risk as (
+                select distinct on (i.opportunity_id)
+                    i.opportunity_id,
+                    upper(replace(i.title, 'Risk analysis: ', '')) as risk_level,
+                    round(i.confidence * 100)::int as risk_score,
+                    coalesce(((regexp_match(i.message, '"healthScore":([0-9]+)'))[1])::int, 0) as health_score,
+                    coalesce(((regexp_match(i.message, '"confidenceScore":([0-9]+)'))[1])::int, 0) as confidence_score,
+                    coalesce(((regexp_match(i.message, '"lastInteractionDays":([0-9]+)'))[1])::int, 0) as last_interaction_days,
+                    coalesce(((regexp_match(i.message, '"activitiesOverdue":([0-9]+)'))[1])::int, 0) as activities_overdue,
+                    i.message as risk_payload,
+                    i.created_at as risk_analyzed_at
+                from ai_insights i
+                where i.company_id = @companyId
+                  and i.kind = 'risk-analysis'
+                  and i.status = 'active'
+                order by i.opportunity_id, i.created_at desc
             )
             select
                 o.id::text as id,
                 o.name,
                 o.status,
                 o.value,
-                o.created_at as createdAt,
-                o.updated_at as updatedAt,
+                o.created_at as "createdAt",
+                o.updated_at as "updatedAt",
+                (
+                    select max(outcome.created_at)
+                    from opportunity_history outcome
+                    where outcome.opportunity_id = o.id
+                      and outcome.company_id = @companyId
+                      and outcome.event_type = 'status_transition'
+                      and outcome.created_at >= @startsAt
+                      and outcome.created_at < @endsAt
+                ) as event_at,
                 ps.title as stage,
                 u.name as owner,
                 coalesce(oo.name, 'Sem origem') as origin,
-                coalesce(ls.health_score, 0)::int as qualityScore,
-                coalesce(ls.confidence_score, 0)::int as confidenceScore,
-                coalesce(ls.last_interaction_days, 0)::int as daysWithoutContact,
-                coalesce(ls.activities_overdue, 0)::int as overdueActivities
+                coalesce(lr.health_score, 0)::int as "qualityScore",
+                coalesce(lr.confidence_score, 0)::int as "confidenceScore",
+                coalesce(lr.last_interaction_days, 0)::int as "daysWithoutContact",
+                coalesce(lr.activities_overdue, 0)::int as "overdueActivities",
+                coalesce(lr.risk_level, case when o.risk then 'HIGH' else 'NOT_ANALYZED' end) as "riskLevel",
+                coalesce(lr.risk_score, case when o.risk then 70 else 0 end)::int as "riskScore",
+                lr.risk_payload as "riskPayload",
+                lr.risk_analyzed_at as "riskAnalyzedAt"
             from opportunities o
             left join pipeline_stages ps on ps.id = o.stage_id
             left join users u on u.id = o.owner_user_id
             left join opportunity_origins oo on oo.id = o.origin_id
-            left join latest_scores ls on ls.opportunity_id = o.id
+            left join latest_risk lr on lr.opportunity_id = o.id
             where o.company_id = @companyId
               and {{condition}}
             order by {{orderBy}}
+            limit 50
+            """;
+
+        return await ReadRowsAsync(connection, sql, companyId, startsAt, endsAt, cancellationToken);
+    }
+
+    private static async Task<List<Dictionary<string, object?>>> ReadMovementRowsAsync(
+        NpgsqlConnection connection,
+        string? companyId,
+        DateTime startsAt,
+        DateTime endsAt,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            select
+                h.opportunity_id::text as id,
+                o.name,
+                o.value,
+                u.name as owner,
+                source_stage.title as "fromStage",
+                target_stage.title as "toStage",
+                case
+                    when target_stage.sort_order > source_stage.sort_order then 'advance'
+                    when target_stage.sort_order < source_stage.sort_order then 'regression'
+                    else 'lateral'
+                end as direction,
+                h.created_at as "eventAt"
+            from opportunity_history h
+            join opportunities o on o.id = h.opportunity_id
+            left join users u on u.id = h.user_id
+            left join pipeline_stages source_stage
+              on source_stage.id = ((regexp_match(h.event, 'fromStageId=([0-9a-fA-F-]{36})'))[1])::uuid
+            left join pipeline_stages target_stage on target_stage.id = h.stage_id
+            where h.company_id = @companyId
+              and h.event_type = 'stage_transition'
+              and h.created_at >= @startsAt
+              and h.created_at < @endsAt
+            order by h.created_at desc
             limit 50
             """;
 

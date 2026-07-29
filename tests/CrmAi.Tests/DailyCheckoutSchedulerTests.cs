@@ -107,6 +107,29 @@ public sealed class DailyCheckoutSchedulerTests
         Assert.Contains("contactOrigins", System.Text.Json.JsonSerializer.Serialize(withContacts.Charts));
     }
 
+    [Fact]
+    public void CheckoutCommercialOutcomes_MustComeFromAuditableTransitions()
+    {
+        var source = ReadSource("src/CrmAi.Infrastructure/DailyCheckouts/PostgresDailyCheckoutSnapshotService.cs");
+
+        Assert.Contains("h.event_type = 'status_transition'", source);
+        Assert.Contains("h.event_type = 'stage_transition'", source);
+        Assert.Contains("advanced_opportunities", source);
+        Assert.Contains("Valor potencial que avancou", source);
+        Assert.Contains("nao receita", source);
+    }
+
+    [Fact]
+    public void CheckoutRiskMap_MustUseRiskAgentResults()
+    {
+        var source = ReadSource("src/CrmAi.Infrastructure/DailyCheckouts/PostgresDailyCheckoutSnapshotService.cs");
+
+        Assert.Contains("i.kind = 'risk-analysis'", source);
+        Assert.Contains("as analyzedRisk", source);
+        Assert.Contains("risk_payload", source);
+        Assert.Contains("Quanto maior, maior a atencao", source);
+    }
+
     private static string ReadSource(string relativePath)
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);

@@ -54,10 +54,29 @@ public sealed class CommercialRuleAssessmentService
             .OrderByDescending(group => group.Key)
             .FirstOrDefault();
 
-        var matchingRule = scopedRules
-            ?.Where(candidate => candidate.Matches)
-            .OrderByDescending(candidate => candidate.Penalty)
-            .FirstOrDefault();
+        var matchingCandidates = scopedRules?
+            .Where(candidate => candidate.Matches)
+            .ToArray() ?? [];
+
+        // Exact rules describe the current value more precisely than overlapping
+        // ranges (for example: overdue = 0/ok and overdue < 3/medium).
+        // Contradictory duplicate predicates are treated conservatively so a
+        // configuration collision cannot manufacture commercial risk.
+        var exactMatches = matchingCandidates
+            .Where(candidate => candidate.Rule.Operator == "=")
+            .OrderBy(candidate => candidate.Penalty)
+            .ToArray();
+        var matchingRule = exactMatches.FirstOrDefault()
+            ?? matchingCandidates
+                .GroupBy(candidate => new
+                {
+                    candidate.Rule.Operator,
+                    candidate.Rule.ThresholdValue,
+                    candidate.Rule.ThresholdUnit
+                })
+                .Select(group => group.OrderBy(candidate => candidate.Penalty).First())
+                .OrderByDescending(candidate => candidate.Penalty)
+                .FirstOrDefault();
 
         return new CommercialMetricSummary(
             metricKey,
