@@ -969,7 +969,8 @@ public sealed class PostgresDailyCheckoutSnapshotService(
 
     private static async Task UpsertSnapshotAsync(NpgsqlConnection connection, string? companyId, DateOnly date, object payload, CancellationToken cancellationToken)
     {
-        var json = JsonSerializer.Serialize(payload, SerializerOptions);
+        var json = JsonSerializer.Serialize(payload, SerializerOptions)
+            .Replace("\\u0000", string.Empty, StringComparison.OrdinalIgnoreCase);
         const string sql = """
             insert into daily_checkout_snapshots (id, snapshot_date, snapshot_at, payload_json, company_id, created_at, updated_at)
             values (@id, @snapshotDate, @snapshotAt, @payload::jsonb, @companyId, @snapshotAt, @snapshotAt)

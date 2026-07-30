@@ -15,6 +15,7 @@ public sealed class DailyCheckoutMetricValidityTests
         Assert.Contains("opportunity_state as (", source);
         Assert.Contains("o.status_at_end = 'active'", source);
         Assert.Contains("i.created_at < @endsAt", source);
+        Assert.Contains(".Replace(\"\\\\u0000\", string.Empty", source);
         Assert.DoesNotContain("o.status = 'active'", source);
     }
 
