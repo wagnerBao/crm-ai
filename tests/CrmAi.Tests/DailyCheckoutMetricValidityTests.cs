@@ -8,8 +8,8 @@ public sealed class DailyCheckoutMetricValidityTests
         var source = ReadSource("src/CrmAi.Infrastructure/DailyCheckouts/PostgresDailyCheckoutSnapshotService.cs");
 
         Assert.Contains("m.created_at < @endsAt", source);
-        Assert.Contains("greatest(@startsAt, m.created_at) as starts_at", source);
-        Assert.Contains("greatest(case when m.period = 'monthly' then @monthStartsAt else @startsAt end, m.created_at)", source);
+        Assert.Contains("@startsAt as starts_at", source);
+        Assert.Contains("case when m.period = 'monthly' then @monthStartsAt else @startsAt end as starts_at", source);
         Assert.Contains("BuildPerformanceRows", source);
         Assert.Contains("[\"goals\"] = goals", source);
         Assert.Contains("opportunity_state as (", source);

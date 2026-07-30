@@ -364,7 +364,7 @@ public sealed class PostgresDailyCheckoutSnapshotService(
                     m.activity_channel,
                     m.pipeline_id,
                     m.stage_id,
-                    greatest(@startsAt, m.created_at) as starts_at
+                    @startsAt as starts_at
                 from active_users u
                 join daily_checkin_metrics m
                     on m.company_id = @companyId
@@ -640,7 +640,7 @@ public sealed class PostgresDailyCheckoutSnapshotService(
                     m.group_id,
                     g.name as group_name,
                     m.activity_channel,
-                    greatest(case when m.period = 'monthly' then @monthStartsAt else @startsAt end, m.created_at) as starts_at,
+                    case when m.period = 'monthly' then @monthStartsAt else @startsAt end as starts_at,
                     @endsAt as ends_at
                 from daily_checkout_metrics m
                 left join user_groups g on g.id = m.group_id
@@ -836,10 +836,21 @@ public sealed class PostgresDailyCheckoutSnapshotService(
         CancellationToken cancellationToken)
     {
         const string sql = """
+            with latest_transition as (
+                select distinct on (history.opportunity_id)
+                    history.opportunity_id,
+                    history.to_status
+                from opportunity_history history
+                where history.company_id = @companyId
+                  and history.event_type = 'status_transition'
+                  and history.created_at < @endsAt
+                order by history.opportunity_id, history.created_at desc
+            )
             select
                 h.opportunity_id::text as id,
                 o.name,
                 o.value,
+                coalesce(transition.to_status, 'active') as status,
                 u.name as owner,
                 source_stage.title as "fromStage",
                 target_stage.title as "toStage",
@@ -851,6 +862,7 @@ public sealed class PostgresDailyCheckoutSnapshotService(
                 h.created_at as "eventAt"
             from opportunity_history h
             join opportunities o on o.id = h.opportunity_id
+            left join latest_transition transition on transition.opportunity_id = o.id
             left join users u on u.id = h.user_id
             left join pipeline_stages source_stage
               on source_stage.id = ((regexp_match(h.event, 'fromStageId=([0-9a-fA-F-]{36})'))[1])::uuid
