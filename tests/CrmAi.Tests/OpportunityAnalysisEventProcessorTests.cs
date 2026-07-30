@@ -160,6 +160,42 @@ public sealed class OpportunityAnalysisEventProcessorTests
         Assert.Same(context, riskAgent.LastContext);
     }
 
+    [Theory]
+    [InlineData("won")]
+    [InlineData("lost")]
+    public async Task Processors_DoNotAnalyzeRisk_ForClosedOpportunities(string status)
+    {
+        var opportunityEvent = CreateEvent("opportunity.updated");
+        var opportunityContext = CreateContext(opportunityEvent, status);
+        var opportunityRiskAgent = new CountingRiskAnalysisAgent();
+        var opportunityStore = new CountingAnalysisResultStore();
+        var opportunityProcessor = new OpportunityAnalysisEventProcessor(
+            new CountingOpportunityContextRepository(opportunityContext),
+            opportunityRiskAgent,
+            opportunityStore,
+            new NullWhatsappConversationAnalysisAgent(),
+            new CountingWhatsappConversationActionStore(),
+            new CountingWhatsappConversationAnalysisScheduler(),
+            new NullMeetingAudioAnalysisService());
+
+        await opportunityProcessor.ProcessAsync(opportunityEvent, CancellationToken.None);
+
+        var activityEvent = CreateEvent("activity.updated");
+        var activityRiskAgent = new CountingRiskAnalysisAgent();
+        var activityStore = new CountingAnalysisResultStore();
+        var activityProcessor = new ActivityAnalysisEventProcessor(
+            new CountingOpportunityContextRepository(CreateContext(activityEvent, status)),
+            activityRiskAgent,
+            activityStore);
+
+        await activityProcessor.ProcessAsync(activityEvent, CancellationToken.None);
+
+        Assert.Equal(0, opportunityRiskAgent.Calls);
+        Assert.Equal(0, opportunityStore.Calls);
+        Assert.Equal(0, activityRiskAgent.Calls);
+        Assert.Equal(0, activityStore.Calls);
+    }
+
     [Fact]
     public async Task ProcessAsync_RunsOpportunityRiskAnalysis_AfterMeetingAudioTranscription()
     {
@@ -315,12 +351,12 @@ public sealed class OpportunityAnalysisEventProcessorTests
                 ["text"] = "Cliente pediu proposta atualizada."
             });
 
-    private static OpportunityAnalysisContext CreateContext(OpportunityEvent triggerEvent)
+    private static OpportunityAnalysisContext CreateContext(OpportunityEvent triggerEvent, string status = "active")
     {
         var pipelineId = Guid.NewGuid().ToString();
         var stageId = Guid.NewGuid().ToString();
         return new OpportunityAnalysisContext(
-            new OpportunitySnapshot(triggerEvent.OpportunityId, Guid.NewGuid().ToString(), "Oportunidade WhatsApp", pipelineId, stageId, null, triggerEvent.UserId, 1000m, "active", false, DateTime.UtcNow.AddDays(-3), DateTime.UtcNow, null),
+            new OpportunitySnapshot(triggerEvent.OpportunityId, Guid.NewGuid().ToString(), "Oportunidade WhatsApp", pipelineId, stageId, null, triggerEvent.UserId, 1000m, status, false, DateTime.UtcNow.AddDays(-3), DateTime.UtcNow, null),
             new PipelineStageSnapshot(stageId, "Negociacao", 1),
             [],
             [],
