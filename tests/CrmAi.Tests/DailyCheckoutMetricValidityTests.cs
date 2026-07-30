@@ -1,5 +1,3 @@
-using FluentAssertions;
-
 namespace CrmAi.Tests;
 
 public sealed class DailyCheckoutMetricValidityTests
@@ -9,11 +7,15 @@ public sealed class DailyCheckoutMetricValidityTests
     {
         var source = ReadSource("src/CrmAi.Infrastructure/DailyCheckouts/PostgresDailyCheckoutSnapshotService.cs");
 
-        source.Should().Contain("m.created_at < @endsAt");
-        source.Should().Contain("greatest(@startsAt, m.created_at) as starts_at");
-        source.Should().Contain("greatest(case when m.period = 'monthly' then @monthStartsAt else @startsAt end, m.created_at)");
-        source.Should().Contain("BuildPerformanceRows");
-        source.Should().Contain("[\"goals\"] = goals");
+        Assert.Contains("m.created_at < @endsAt", source);
+        Assert.Contains("greatest(@startsAt, m.created_at) as starts_at", source);
+        Assert.Contains("greatest(case when m.period = 'monthly' then @monthStartsAt else @startsAt end, m.created_at)", source);
+        Assert.Contains("BuildPerformanceRows", source);
+        Assert.Contains("[\"goals\"] = goals", source);
+        Assert.Contains("opportunity_state as (", source);
+        Assert.Contains("o.status_at_end = 'active'", source);
+        Assert.Contains("i.created_at < @endsAt", source);
+        Assert.DoesNotContain("o.status = 'active'", source);
     }
 
     private static string ReadSource(string relativePath)

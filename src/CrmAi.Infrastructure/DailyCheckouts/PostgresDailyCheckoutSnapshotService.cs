@@ -223,8 +223,27 @@ public sealed class PostgresDailyCheckoutSnapshotService(
                 from ai_insights i
                 where i.company_id = @companyId
                   and i.kind = 'risk-analysis'
-                  and i.status = 'active'
+                  and i.created_at < @endsAt
                 order by i.opportunity_id, i.created_at desc
+            ),
+            latest_transition as (
+                select distinct on (h.opportunity_id)
+                    h.opportunity_id,
+                    h.to_status
+                from opportunity_history h
+                where h.company_id = @companyId
+                  and h.event_type = 'status_transition'
+                  and h.created_at < @endsAt
+                order by h.opportunity_id, h.created_at desc
+            ),
+            opportunity_state as (
+                select
+                    o.*,
+                    coalesce(transition.to_status, 'active') as status_at_end
+                from opportunities o
+                left join latest_transition transition on transition.opportunity_id = o.id
+                where o.company_id = @companyId
+                  and o.created_at < @endsAt
             ),
             outcome_events as (
                 select distinct on (h.opportunity_id, h.to_status)
@@ -267,11 +286,11 @@ public sealed class PostgresDailyCheckoutSnapshotService(
             advanced_value as (
                 select coalesce(sum(o.value), 0)::numeric as potential_advanced
                 from advanced_opportunities a
-                join opportunities o on o.id = a.opportunity_id
-                where o.status = 'active'
+                join opportunity_state o on o.id = a.opportunity_id
+                where o.status_at_end = 'active'
             )
             select
-                count(*) filter (where o.status = 'active')::int as activeOpportunities,
+                count(*) filter (where o.status_at_end = 'active')::int as activeOpportunities,
                 count(*) filter (where o.created_at >= @startsAt and o.created_at < @endsAt)::int as openedToday,
                 (
                     select count(*)::int
@@ -286,14 +305,13 @@ public sealed class PostgresDailyCheckoutSnapshotService(
                 (select advanced_today from movement_totals) as advancedToday,
                 (select regressed_today from movement_totals) as regressedToday,
                 (select potential_advanced from advanced_value) as movedValue,
-                coalesce(avg(lr.health_score) filter (where o.status = 'active' and lr.opportunity_id is not null), 0)::numeric as averageQuality,
-                coalesce(avg(lr.risk_score) filter (where o.status = 'active' and lr.opportunity_id is not null), 0)::numeric as averageRisk,
-                count(*) filter (where o.status = 'active' and (lr.risk_level = 'HIGH' or (lr.opportunity_id is null and o.risk = true)))::int as criticalAlerts,
-                count(*) filter (where o.status = 'active' and lr.risk_level = 'MEDIUM')::int as mediumRisk,
-                count(*) filter (where o.status = 'active' and lr.opportunity_id is not null)::int as analyzedRisk
-            from opportunities o
+                coalesce(avg(lr.health_score) filter (where o.status_at_end = 'active' and lr.opportunity_id is not null), 0)::numeric as averageQuality,
+                coalesce(avg(lr.risk_score) filter (where o.status_at_end = 'active' and lr.opportunity_id is not null), 0)::numeric as averageRisk,
+                count(*) filter (where o.status_at_end = 'active' and lr.risk_level = 'HIGH')::int as criticalAlerts,
+                count(*) filter (where o.status_at_end = 'active' and lr.risk_level = 'MEDIUM')::int as mediumRisk,
+                count(*) filter (where o.status_at_end = 'active' and lr.opportunity_id is not null)::int as analyzedRisk
+            from opportunity_state o
             left join latest_risk lr on lr.opportunity_id = o.id
-            where o.company_id = @companyId
             """, setting.CompanyId, dayStartUtc, dayEndUtc, cancellationToken);
 
         var activityChannels = await ReadRowsAsync(connection, """
@@ -462,7 +480,7 @@ public sealed class PostgresDailyCheckoutSnapshotService(
                   and outcome.created_at < @endsAt)
             """, "event_at desc", cancellationToken);
         var focus = await ReadOpportunityRowsAsync(connection, setting.CompanyId, dayStartUtc, dayEndUtc, """
-            o.status = 'active'
+            o.status_at_end = 'active'
             and (
                 lr.risk_level in ('HIGH', 'MEDIUM')
                 or coalesce(lr.activities_overdue, 0) > 0
@@ -748,13 +766,32 @@ public sealed class PostgresDailyCheckoutSnapshotService(
                 from ai_insights i
                 where i.company_id = @companyId
                   and i.kind = 'risk-analysis'
-                  and i.status = 'active'
+                  and i.created_at < @endsAt
                 order by i.opportunity_id, i.created_at desc
+            ),
+            latest_transition as (
+                select distinct on (h.opportunity_id)
+                    h.opportunity_id,
+                    h.to_status
+                from opportunity_history h
+                where h.company_id = @companyId
+                  and h.event_type = 'status_transition'
+                  and h.created_at < @endsAt
+                order by h.opportunity_id, h.created_at desc
+            ),
+            opportunity_rows as (
+                select
+                    opportunity.*,
+                    coalesce(transition.to_status, 'active') as status_at_end
+                from opportunities opportunity
+                left join latest_transition transition on transition.opportunity_id = opportunity.id
+                where opportunity.company_id = @companyId
+                  and opportunity.created_at < @endsAt
             )
             select
                 o.id::text as id,
                 o.name,
-                o.status,
+                o.status_at_end as status,
                 o.value,
                 o.created_at as "createdAt",
                 o.updated_at as "updatedAt",
@@ -774,17 +811,16 @@ public sealed class PostgresDailyCheckoutSnapshotService(
                 coalesce(lr.confidence_score, 0)::int as "confidenceScore",
                 coalesce(lr.last_interaction_days, 0)::int as "daysWithoutContact",
                 coalesce(lr.activities_overdue, 0)::int as "overdueActivities",
-                coalesce(lr.risk_level, case when o.risk then 'HIGH' else 'NOT_ANALYZED' end) as "riskLevel",
-                coalesce(lr.risk_score, case when o.risk then 70 else 0 end)::int as "riskScore",
+                coalesce(lr.risk_level, 'NOT_ANALYZED') as "riskLevel",
+                coalesce(lr.risk_score, 0)::int as "riskScore",
                 lr.risk_payload as "riskPayload",
                 lr.risk_analyzed_at as "riskAnalyzedAt"
-            from opportunities o
+            from opportunity_rows o
             left join pipeline_stages ps on ps.id = o.stage_id
             left join users u on u.id = o.owner_user_id
             left join opportunity_origins oo on oo.id = o.origin_id
             left join latest_risk lr on lr.opportunity_id = o.id
-            where o.company_id = @companyId
-              and {{condition}}
+            where {{condition}}
             order by {{orderBy}}
             limit 50
             """;
