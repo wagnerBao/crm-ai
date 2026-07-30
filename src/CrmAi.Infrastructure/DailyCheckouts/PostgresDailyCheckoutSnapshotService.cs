@@ -329,7 +329,7 @@ public sealed class PostgresDailyCheckoutSnapshotService(
             order by value desc, label
             """, setting.CompanyId, dayStartUtc, dayEndUtc, cancellationToken);
 
-        var performance = await ReadRowsAsync(connection, """
+        var performanceDetails = await ReadRowsAsync(connection, """
             with active_users as (
                 select id, name, role, group_id
                 from users
@@ -339,23 +339,32 @@ public sealed class PostgresDailyCheckoutSnapshotService(
                 select
                     u.id as user_id,
                     m.id,
+                    m.name,
+                    m.period,
                     m.target,
                     m.unit,
                     m.activity_channel,
                     m.pipeline_id,
-                    m.stage_id
+                    m.stage_id,
+                    greatest(@startsAt, m.created_at) as starts_at
                 from active_users u
                 join daily_checkin_metrics m
                     on m.company_id = @companyId
                    and m.is_active = true
                    and m.period = 'daily'
+                   and m.created_at < @endsAt
                    and (m.group_id is null or m.group_id = u.group_id)
                    and (m.user_id is null or m.user_id = u.id)
             ),
             metric_results as (
                 select
                     m.user_id,
+                    m.id,
+                    m.name,
+                    m.period,
                     m.target,
+                    m.unit,
+                    m.activity_channel,
                     coalesce(result.actual, 0)::int as actual
                 from applicable_metrics m
                 left join lateral (
@@ -367,7 +376,7 @@ public sealed class PostgresDailyCheckoutSnapshotService(
                           and a.company_id = @companyId
                           and a.owner_user_id = m.user_id
                           and a.status = 'done'
-                          and a.date_at >= @startsAt and a.date_at < @endsAt
+                          and a.date_at >= m.starts_at and a.date_at < @endsAt
                           and (m.activity_channel is null or lower(a.channel) = lower(m.activity_channel))
                         union all
                         select 1
@@ -375,7 +384,7 @@ public sealed class PostgresDailyCheckoutSnapshotService(
                         where m.unit = 'opportunity'
                           and o.company_id = @companyId
                           and o.owner_user_id = m.user_id
-                          and o.created_at >= @startsAt and o.created_at < @endsAt
+                          and o.created_at >= m.starts_at and o.created_at < @endsAt
                           and (m.pipeline_id is null or o.pipeline_id = m.pipeline_id)
                           and (m.stage_id is null or o.stage_id = m.stage_id)
                         union all
@@ -386,7 +395,7 @@ public sealed class PostgresDailyCheckoutSnapshotService(
                           and h.user_id = m.user_id
                           and h.event_type = 'status_transition'
                           and h.to_status = 'won'
-                          and h.created_at >= @startsAt and h.created_at < @endsAt
+                          and h.created_at >= m.starts_at and h.created_at < @endsAt
                           and (m.pipeline_id is null or h.pipeline_id = m.pipeline_id)
                           and (m.stage_id is null or h.stage_id = m.stage_id)
                         union all
@@ -398,7 +407,7 @@ public sealed class PostgresDailyCheckoutSnapshotService(
                               and h.company_id = @companyId
                               and h.user_id = m.user_id
                               and h.event_type = 'stage_transition'
-                              and h.created_at >= @startsAt and h.created_at < @endsAt
+                              and h.created_at >= m.starts_at and h.created_at < @endsAt
                               and (m.pipeline_id is null or h.pipeline_id = m.pipeline_id)
                               and (m.stage_id is null or h.stage_id = m.stage_id)
                         ) moved
@@ -408,32 +417,27 @@ public sealed class PostgresDailyCheckoutSnapshotService(
                         where m.unit = 'note'
                           and n.company_id = @companyId
                           and n.author_user_id = m.user_id
-                          and n.created_at >= @startsAt and n.created_at < @endsAt
+                          and n.created_at >= m.starts_at and n.created_at < @endsAt
                     ) facts
                 ) result on true
-            ),
-            user_results as (
-                select
-                    user_id,
-                    sum(target)::int as planned,
-                    sum(actual)::int as executed,
-                    sum(least(actual, target))::int as credited
-                from metric_results
-                group by user_id
             )
             select
                 u.id::text as id,
                 u.name,
                 coalesce(g.name, u.role, 'Sem grupo') as "group",
-                coalesce(ur.planned, 0)::int as planned,
-                coalesce(ur.executed, 0)::int as executed,
-                coalesce(ur.credited, 0)::int as credited,
-                case when coalesce(ur.planned, 0) = 0 then 0 else round(ur.credited::numeric / ur.planned * 100, 1) end as percent
+                mr.id::text as "goalId",
+                mr.name as "goalName",
+                mr.period as "goalPeriod",
+                mr.unit as "goalUnit",
+                mr.activity_channel as "goalActivityChannel",
+                coalesce(mr.target, 0)::int as "goalTarget",
+                coalesce(mr.actual, 0)::int as "goalActual"
             from active_users u
             left join user_groups g on g.id = u.group_id
-            left join user_results ur on ur.user_id = u.id
-            order by percent desc, u.name
+            left join metric_results mr on mr.user_id = u.id
+            order by u.name, mr.name
             """, setting.CompanyId, dayStartUtc, dayEndUtc, cancellationToken);
+        var performance = BuildPerformanceRows(performanceDetails);
 
         var checkoutMetrics = await ReadCheckoutMetricRowsAsync(connection, setting.CompanyId, dayStartUtc, dayEndUtc, monthStartUtc, monthEndUtc, cancellationToken);
         var opened = await ReadOpportunityRowsAsync(connection, setting.CompanyId, dayStartUtc, dayEndUtc, "o.created_at >= @startsAt and o.created_at < @endsAt", "o.created_at desc", cancellationToken);
@@ -554,6 +558,50 @@ public sealed class PostgresDailyCheckoutSnapshotService(
         return new DailyCheckoutAnalysisInput(date, setting, totals, metrics, charts, tables, updated.Cast<object>().Take(30).ToArray(), focus.Cast<object>().Take(30).ToArray(), lowEffectiveness);
     }
 
+    private static List<Dictionary<string, object?>> BuildPerformanceRows(IReadOnlyCollection<Dictionary<string, object?>> details) =>
+        details
+            .GroupBy(row => row.GetValueOrDefault("id")?.ToString() ?? string.Empty, StringComparer.OrdinalIgnoreCase)
+            .Select(group =>
+            {
+                var first = group.First();
+                var goals = group
+                    .Where(row => !string.IsNullOrWhiteSpace(row.GetValueOrDefault("goalId")?.ToString()))
+                    .Select(row =>
+                    {
+                        var target = Convert.ToInt32(row.GetValueOrDefault("goalTarget") ?? 0);
+                        var actual = Convert.ToInt32(row.GetValueOrDefault("goalActual") ?? 0);
+                        return new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+                        {
+                            ["id"] = row.GetValueOrDefault("goalId")?.ToString(),
+                            ["name"] = row.GetValueOrDefault("goalName")?.ToString() ?? "Metrica",
+                            ["period"] = row.GetValueOrDefault("goalPeriod")?.ToString() ?? "daily",
+                            ["unit"] = row.GetValueOrDefault("goalUnit")?.ToString() ?? "activity",
+                            ["activityChannel"] = row.GetValueOrDefault("goalActivityChannel")?.ToString(),
+                            ["target"] = target,
+                            ["actual"] = actual,
+                            ["percent"] = target == 0 ? 0m : Math.Round(Math.Min(actual, target) / (decimal)target * 100, 1)
+                        };
+                    })
+                    .ToArray();
+                var planned = goals.Sum(goal => Convert.ToInt32(goal["target"] ?? 0));
+                var executed = goals.Sum(goal => Convert.ToInt32(goal["actual"] ?? 0));
+                var credited = goals.Sum(goal => Math.Min(Convert.ToInt32(goal["actual"] ?? 0), Convert.ToInt32(goal["target"] ?? 0)));
+                return new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["id"] = first.GetValueOrDefault("id")?.ToString(),
+                    ["name"] = first.GetValueOrDefault("name")?.ToString(),
+                    ["group"] = first.GetValueOrDefault("group")?.ToString(),
+                    ["planned"] = planned,
+                    ["executed"] = executed,
+                    ["credited"] = credited,
+                    ["percent"] = planned == 0 ? 0m : Math.Round(credited / (decimal)planned * 100, 1),
+                    ["goals"] = goals
+                };
+            })
+            .OrderByDescending(row => Convert.ToDecimal(row["percent"] ?? 0m))
+            .ThenBy(row => row["name"]?.ToString())
+            .ToList();
+
     private static async Task<List<Dictionary<string, object?>>> ReadCheckoutMetricRowsAsync(
         NpgsqlConnection connection,
         string? companyId,
@@ -574,12 +622,13 @@ public sealed class PostgresDailyCheckoutSnapshotService(
                     m.group_id,
                     g.name as group_name,
                     m.activity_channel,
-                    case when m.period = 'monthly' then @monthStartsAt else @startsAt end as starts_at,
-                    case when m.period = 'monthly' then @monthEndsAt else @endsAt end as ends_at
+                    greatest(case when m.period = 'monthly' then @monthStartsAt else @startsAt end, m.created_at) as starts_at,
+                    @endsAt as ends_at
                 from daily_checkout_metrics m
                 left join user_groups g on g.id = m.group_id
                 where m.company_id = @companyId
                   and m.is_active = true
+                  and m.created_at < @endsAt
                 order by m.sort_order, m.name
             )
             select
