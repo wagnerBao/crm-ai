@@ -22,7 +22,7 @@ services:
       - RabbitMQ__DeadLetterQueueSuffix=.dlq
       - RabbitMQ__DailyCheckinSnapshotIntervalMinutes=15
       - RabbitMQ__DailyCheckoutSnapshotIntervalMinutes=15
-      - OpenAI__Model=gpt-4.1-mini
+      - OpenAI__Model=gpt-5.6-terra
       - OpenAI__ResponsesEndpoint=https://api.openai.com/v1/responses
       - OPENAI_TRANSCRIPTION_MODEL=gpt-4o-transcribe
       - OPENAI_TRANSCRIPTION_FALLBACK_MODEL=whisper-1

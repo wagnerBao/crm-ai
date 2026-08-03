@@ -10,7 +10,7 @@ public sealed class OpenAiRiskAnalysisOptions
 {
     public const string SectionName = "OpenAI";
 
-    public string Model { get; init; } = "gpt-4.1-mini";
+    public string Model { get; init; } = "gpt-5.6-terra";
 
     public string ResponsesEndpoint { get; init; } = "https://api.openai.com/v1/responses";
 }
@@ -35,9 +35,11 @@ public sealed class OpenAiResponsesRiskAnalysisClient(
         var apiKey = ResolveApiKey(settings);
         var endpoint = configuredOptions.ResponsesEndpoint;
         var startedAt = DateTime.UtcNow;
+        var model = string.IsNullOrWhiteSpace(settings.Model) ? configuredOptions.Model : settings.Model;
         var payload = new
         {
-            model = string.IsNullOrWhiteSpace(settings.Model) ? configuredOptions.Model : settings.Model,
+            model,
+            reasoning = OpenAiGpt56RequestOptions.Reasoning(model, "low"),
             instructions = settings.Instructions,
             input = JsonSerializer.Serialize(input, SerializerOptions),
             text = new

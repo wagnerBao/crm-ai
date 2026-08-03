@@ -27,9 +27,11 @@ public sealed class OpenAiResponsesDailyCheckoutClient(
         var apiKey = string.IsNullOrWhiteSpace(settings.ApiKey) ? null : settings.ApiKey.Trim();
         var endpoint = configuredOptions.ResponsesEndpoint;
         var startedAt = DateTime.UtcNow;
+        var model = string.IsNullOrWhiteSpace(settings.Model) ? configuredOptions.Model : settings.Model;
         var payload = new
         {
-            model = string.IsNullOrWhiteSpace(settings.Model) ? configuredOptions.Model : settings.Model,
+            model,
+            reasoning = OpenAiGpt56RequestOptions.Reasoning(model, "low"),
             instructions = settings.Instructions,
             input = JsonSerializer.Serialize(input, SerializerOptions),
             text = new
@@ -110,4 +112,3 @@ public sealed class OpenAiResponsesDailyCheckoutClient(
     private sealed record OpenAiOutputItem(IReadOnlyCollection<OpenAiOutputContent> Content);
     private sealed record OpenAiOutputContent(string Type, string? Text);
 }
-

@@ -36,9 +36,11 @@ public sealed class OpenAiResponsesWhatsappConversationAnalysisClient(
         var apiKey = ResolveApiKey(settings);
         var endpoint = configuredOptions.ResponsesEndpoint;
         var startedAt = DateTime.UtcNow;
+        var model = string.IsNullOrWhiteSpace(settings.Model) ? configuredOptions.Model : settings.Model;
         var payload = new
         {
-            model = string.IsNullOrWhiteSpace(settings.Model) ? configuredOptions.Model : settings.Model,
+            model,
+            reasoning = OpenAiGpt56RequestOptions.Reasoning(model, "none"),
             instructions = $"{settings.Instructions}\n\n{SemanticDeduplicationInstructions}",
             input = JsonSerializer.Serialize(input, SerializerOptions),
             text = new
