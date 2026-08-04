@@ -9,6 +9,8 @@ public sealed class AiInsightFailureSafetyTests
         Assert.Contains("analysis_provider_error", source, StringComparison.Ordinal);
         Assert.Contains("when @status = 'failed'", source, StringComparison.Ordinal);
         Assert.DoesNotContain("message || @error", source, StringComparison.Ordinal);
+        Assert.Contains("select id, opportunity_id, message", source, StringComparison.Ordinal);
+        Assert.Contains("JsonSerializer.Deserialize<PendingWhatsappAnalysisPayload>", source, StringComparison.Ordinal);
     }
 
     private static string ReadSource(string relativePath)
