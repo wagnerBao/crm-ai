@@ -243,7 +243,11 @@ public sealed class PostgresWhatsappConversationAnalysisScheduler(
         const string sql = """
             update ai_insights
             set status = @status,
-                message = case when @error is null then message else message || @error end,
+                title = case when @status = 'failed' then 'Analise de IA indisponivel' else title end,
+                message = case
+                    when @status = 'failed' then '{"unavailable":true,"reason":"analysis_provider_error"}'
+                    else message
+                end,
                 updated_at = now()
             where id = @id
             """;
@@ -251,7 +255,6 @@ public sealed class PostgresWhatsappConversationAnalysisScheduler(
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue("id", id);
         command.Parameters.AddWithValue("status", status);
-        command.Parameters.AddWithValue("error", string.IsNullOrWhiteSpace(error) ? DBNull.Value : $"\nerror: {error}");
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
