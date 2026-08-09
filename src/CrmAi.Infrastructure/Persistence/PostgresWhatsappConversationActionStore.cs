@@ -409,7 +409,7 @@ public sealed class PostgresWhatsappConversationActionStore(NpgsqlDataSource dat
             }, SerializerOptions);
             await InsertAgentSuggestionAsync(connection, companyId.Value, contactId.Value, conversationId, runId.Value,
                 "activity", result.ActivityTitle!, description!, result.ActivityDueAt, payload,
-                result.ActivityMatchingSuggestionId, result.ActivityIntentKey, cancellationToken);
+                result.ActivityMatchingSuggestionId, result.ActivityIntentKey, result, cancellationToken);
         }
 
         if (result.ShouldCreateOpportunity && !string.IsNullOrWhiteSpace(result.OpportunityTitle)
@@ -427,7 +427,7 @@ public sealed class PostgresWhatsappConversationActionStore(NpgsqlDataSource dat
             }, SerializerOptions);
             await InsertAgentSuggestionAsync(connection, companyId.Value, contactId.Value, conversationId, runId.Value,
                 "opportunity", result.OpportunityTitle!, description!, null, payload,
-                result.OpportunityMatchingSuggestionId, result.OpportunityIntentKey, cancellationToken);
+                result.OpportunityMatchingSuggestionId, result.OpportunityIntentKey, result, cancellationToken);
         }
     }
 
@@ -444,6 +444,7 @@ public sealed class PostgresWhatsappConversationActionStore(NpgsqlDataSource dat
         string payload,
         string? matchingSuggestionId,
         string? semanticIntentKey,
+        WhatsappConversationAnalysisResult analysisResult,
         CancellationToken cancellationToken)
     {
         var suggestionLockKey = $"whatsapp-suggestion:{companyId}:{contactId}:{type}:{semanticIntentKey ?? matchingSuggestionId ?? runId.ToString()}";
@@ -477,16 +478,22 @@ public sealed class PostgresWhatsappConversationActionStore(NpgsqlDataSource dat
                     description = @description,
                     suggested_due_at = @dueAt,
                     payload = @payload,
+                    generation_model = @generationModel,
+                    prompt_fingerprint = @promptFingerprint,
+                    confidence_score = @confidenceScore,
+                    generation_reasons = @generationReasons,
                     updated_at = now()
                 where suggestion.id = (select id from existing)
                 returning suggestion.id
             )
             insert into ai_agent_suggestions
                 (id, company_id, agent_key, suggestion_type, status, contact_id, conversation_id, run_id,
-                 title, description, suggested_due_at, payload, created_at, updated_at)
+                 title, description, suggested_due_at, payload, generation_model, prompt_fingerprint,
+                 confidence_score, generation_reasons, created_at, updated_at)
             select
                 @id, @companyId, 'whatsapp-conversation-analysis', @type, 'pending', @contactId, @conversationId, @runId,
-                @title, @description, @dueAt, @payload, now(), now()
+                @title, @description, @dueAt, @payload, @generationModel, @promptFingerprint,
+                @confidenceScore, @generationReasons, now(), now()
             where not exists (select 1 from updated)
             on conflict (run_id, suggestion_type) where run_id is not null do nothing;
             """;
@@ -505,6 +512,13 @@ public sealed class PostgresWhatsappConversationActionStore(NpgsqlDataSource dat
         command.Parameters.AddWithValue("description", Truncate(description, 3000));
         command.Parameters.Add("dueAt", NpgsqlDbType.TimestampTz).Value = dueAt is null ? DBNull.Value : dueAt.Value;
         command.Parameters.Add("payload", NpgsqlDbType.Jsonb).Value = payload;
+        command.Parameters.Add("generationModel", NpgsqlDbType.Text).Value =
+            string.IsNullOrWhiteSpace(analysisResult.GenerationModel) ? DBNull.Value : analysisResult.GenerationModel;
+        command.Parameters.Add("promptFingerprint", NpgsqlDbType.Text).Value =
+            string.IsNullOrWhiteSpace(analysisResult.PromptFingerprint) ? DBNull.Value : analysisResult.PromptFingerprint;
+        command.Parameters.AddWithValue("confidenceScore", Math.Clamp(analysisResult.ConfidenceScore, 0, 100));
+        command.Parameters.Add("generationReasons", NpgsqlDbType.Jsonb).Value =
+            JsonSerializer.Serialize(analysisResult.Reasons, SerializerOptions);
         await command.ExecuteNonQueryAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
     }

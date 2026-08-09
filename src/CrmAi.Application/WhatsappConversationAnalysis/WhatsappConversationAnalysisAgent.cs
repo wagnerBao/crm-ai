@@ -1,4 +1,6 @@
 using CrmAi.Domain;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace CrmAi.Application;
 
@@ -126,7 +128,9 @@ public sealed class WhatsappConversationAnalysisAgent(
             MatchingOpenOpportunityId: ValidateOpenOpportunityMatch(
                 response.MatchingOpenOpportunityId, input.ExistingOpenOpportunities),
             ConfidenceScore: Math.Clamp(response.ConfidenceScore, 0, 100),
-            Reasons: Clean(response.Reasons));
+            Reasons: Clean(response.Reasons),
+            GenerationModel: settings.Model,
+            PromptFingerprint: Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(settings.Instructions))).ToLowerInvariant());
     }
 
     private static string? GetString(OpportunityEvent opportunityEvent, string key) =>

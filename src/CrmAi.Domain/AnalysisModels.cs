@@ -130,7 +130,9 @@ public sealed record WhatsappConversationAnalysisResult(
     string? ActivityIntentKey = null,
     string? OpportunityMatchingSuggestionId = null,
     string? OpportunityIntentKey = null,
-    string? MatchingOpenOpportunityId = null);
+    string? MatchingOpenOpportunityId = null,
+    string? GenerationModel = null,
+    string? PromptFingerprint = null);
 
 public enum RiskLevel
 {

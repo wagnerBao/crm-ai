@@ -5,9 +5,10 @@
       "commandName": "Project",
       "dotnetRunMessages": true,
       "launchBrowser": false,
-      "applicationUrl": "http://localhost:5130",
+        "applicationUrl": "http://localhost:5130",
         "environmentVariables": {
-            "ASPNETCORE_ENVIRONMENT": "Development"
+            "ASPNETCORE_ENVIRONMENT": "Development",
+            "ConnectionStrings__CrmDatabase": "Host=localhost;Port=5432;Database=crmdb;Username=crm_user;Password=crm_pass"
         }
     },
     "https": {
@@ -16,7 +17,8 @@
       "launchBrowser": false,
       "applicationUrl": "https://localhost:7027;http://localhost:5130",
       "environmentVariables": {
-        "ASPNETCORE_ENVIRONMENT": "Development"
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "ConnectionStrings__CrmDatabase": "Host=localhost;Port=5432;Database=crmdb;Username=crm_user;Password=crm_pass"
       }
     }
   }
