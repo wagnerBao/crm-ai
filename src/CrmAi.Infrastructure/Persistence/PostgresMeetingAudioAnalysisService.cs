@@ -11,7 +11,8 @@ public sealed class PostgresMeetingAudioAnalysisService(
     IAiAgentRuntimeSettingsRepository agentSettingsRepository,
     IOpenAiMeetingAudioClient openAiClient) : IMeetingAudioAnalysisService
 {
-    private const string AgentKey = "meeting-service-analysis";
+    private const string MeetingAgentKey = "meeting-service-analysis";
+    private const string CallAgentKey = "call-audio-analysis";
 
     public async Task<bool> ProcessAsync(OpportunityEvent opportunityEvent, CancellationToken cancellationToken)
     {
@@ -30,7 +31,7 @@ public sealed class PostgresMeetingAudioAnalysisService(
         try
         {
             await UpdateStatusAsync(parsedRecordingId, "transcribing", null, cancellationToken);
-            var settings = await agentSettingsRepository.GetAsync(AgentKey, recording.CompanyId, cancellationToken);
+            var settings = await agentSettingsRepository.GetAsync(ResolveAgentKey(recording.SourceKind), recording.CompanyId, cancellationToken);
             if (!settings.IsActive)
             {
                 await UpdateStatusAsync(parsedRecordingId, "skipped", "Agent de analise do atendimento inativo.", cancellationToken);
@@ -103,6 +104,7 @@ public sealed class PostgresMeetingAudioAnalysisService(
             select
                 mar.id,
                 mar.meeting_id,
+                mar.source_kind,
                 mar.activity_id,
                 mar.opportunity_id,
                 mar.account_id,
@@ -133,17 +135,18 @@ public sealed class PostgresMeetingAudioAnalysisService(
         return new MeetingAudioRecordingPayload(
             reader.GetGuid(0).ToString(),
             reader.GetString(1),
-            ReadNullableGuid(reader, 2),
             ReadNullableGuid(reader, 3),
             ReadNullableGuid(reader, 4),
-            reader.GetString(5),
+            ReadNullableGuid(reader, 5),
             reader.GetString(6),
-            (byte[])reader[7],
-            ReadNullableString(reader, 9),
+            reader.GetString(7),
+            (byte[])reader[8],
             ReadNullableString(reader, 10),
             ReadNullableString(reader, 11),
             ReadNullableString(reader, 12),
-            ReadNullableGuid(reader, 8));
+            ReadNullableString(reader, 13),
+            ReadNullableGuid(reader, 9),
+            reader.GetString(2));
     }
 
     private async Task UpdateStatusAsync(Guid recordingId, string status, string? error, CancellationToken cancellationToken)
@@ -215,9 +218,14 @@ public sealed class PostgresMeetingAudioAnalysisService(
         return builder.ToString().Trim();
     }
 
+    public static string ResolveAgentKey(string? sourceKind) =>
+        string.Equals(sourceKind, "whatsapp_call", StringComparison.OrdinalIgnoreCase)
+            ? CallAgentKey
+            : MeetingAgentKey;
+
     private static AiAgentInvocationContext BuildInvocationContext(MeetingAudioRecordingPayload recording, AiAgentRuntimeSettings settings) =>
         new(
-            PlatformArea: "meeting-audio",
+            PlatformArea: string.Equals(recording.SourceKind, "whatsapp_call", StringComparison.OrdinalIgnoreCase) ? "call-audio" : "meeting-audio",
             CompanyId: recording.CompanyId,
             OpportunityId: recording.OpportunityId,
             MeetingAudioRecordingId: recording.Id,
@@ -227,6 +235,7 @@ public sealed class PostgresMeetingAudioAnalysisService(
             Metadata: new Dictionary<string, object?>
             {
                 ["meetingId"] = recording.MeetingId,
+                ["sourceKind"] = recording.SourceKind,
                 ["fileName"] = recording.FileName,
                 ["mimeType"] = recording.MimeType,
                 ["opportunityName"] = recording.OpportunityName,

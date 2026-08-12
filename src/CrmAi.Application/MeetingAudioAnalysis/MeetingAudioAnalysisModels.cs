@@ -36,4 +36,5 @@ public sealed record MeetingAudioRecordingPayload(
     string? AccountName,
     string? ActivityTitle,
     string? ActivityNotes,
-    string? CompanyId);
+    string? CompanyId,
+    string SourceKind = "google_meet");

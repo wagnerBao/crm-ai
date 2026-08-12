@@ -222,6 +222,37 @@ public sealed class OpportunityAnalysisEventProcessorTests
         Assert.Equal(1, resultStore.Calls);
     }
 
+    [Fact]
+    public async Task ProcessAsync_TranscribesWhatsappCall_WithoutOpportunityContext()
+    {
+        var callEvent = new OpportunityEvent(
+            Guid.NewGuid().ToString(),
+            "opportunity.meeting_audio.recording.created",
+            DateTime.UtcNow,
+            string.Empty,
+            Guid.NewGuid().ToString(),
+            new Dictionary<string, object?> { ["recordingId"] = Guid.NewGuid().ToString(), ["sourceKind"] = "whatsapp_call" });
+        var contextRepository = new CountingOpportunityContextRepository();
+        var meetingService = new CountingMeetingAudioAnalysisService();
+        var riskAgent = new CountingRiskAnalysisAgent();
+        var resultStore = new CountingAnalysisResultStore();
+        var processor = new OpportunityAnalysisEventProcessor(
+            contextRepository,
+            riskAgent,
+            resultStore,
+            new NullWhatsappConversationAnalysisAgent(),
+            new CountingWhatsappConversationActionStore(),
+            new CountingWhatsappConversationAnalysisScheduler(),
+            meetingService);
+
+        await processor.ProcessAsync(callEvent, CancellationToken.None);
+
+        Assert.Equal(1, meetingService.Calls);
+        Assert.Equal(1, contextRepository.Calls);
+        Assert.Equal(0, riskAgent.Calls);
+        Assert.Equal(0, resultStore.Calls);
+    }
+
     private sealed class CountingOpportunityContextRepository : IOpportunityContextRepository
     {
         private readonly Queue<OpportunityAnalysisContext?> _contexts;
