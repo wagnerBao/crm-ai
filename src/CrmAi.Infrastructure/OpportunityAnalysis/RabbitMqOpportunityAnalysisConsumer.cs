@@ -17,6 +17,11 @@ public sealed class RabbitMqOpportunityAnalysisConsumer(
     protected override string QueueName(RabbitMqOptions options) => options.OpportunityAnalysisQueue;
     protected override IReadOnlyCollection<string> ExchangeNames(RabbitMqOptions options) => options.OpportunityAnalysisExchangeNames;
 
+    protected override bool CanProcessWithoutOpportunityId(OpportunityEvent opportunityEvent) =>
+        string.Equals(opportunityEvent.Type, "opportunity.meeting_audio.recording.created", StringComparison.OrdinalIgnoreCase)
+        && opportunityEvent.Data.TryGetValue("sourceKind", out var sourceKind)
+        && string.Equals(sourceKind?.ToString(), "whatsapp_call", StringComparison.OrdinalIgnoreCase);
+
     protected override Task ProcessAsync(IServiceProvider services, OpportunityEvent opportunityEvent, CancellationToken cancellationToken) =>
         services.GetRequiredService<IOpportunityAnalysisEventProcessor>().ProcessAsync(opportunityEvent, cancellationToken);
 }

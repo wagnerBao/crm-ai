@@ -24,6 +24,7 @@ public abstract class RabbitMqOpportunityEventConsumerBase(
     protected abstract IReadOnlyCollection<string> ExchangeNames(RabbitMqOptions options);
     protected abstract Task ProcessAsync(IServiceProvider services, OpportunityEvent opportunityEvent, CancellationToken cancellationToken);
     protected virtual bool RequiresOpportunityId => true;
+    protected virtual bool CanProcessWithoutOpportunityId(OpportunityEvent opportunityEvent) => !RequiresOpportunityId;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -118,7 +119,7 @@ public abstract class RabbitMqOpportunityEventConsumerBase(
         try
         {
             var opportunityEvent = DeserializeEvent(args);
-            if (RequiresOpportunityId && string.IsNullOrWhiteSpace(opportunityEvent.OpportunityId))
+            if (string.IsNullOrWhiteSpace(opportunityEvent.OpportunityId) && !CanProcessWithoutOpportunityId(opportunityEvent))
             {
                 logger.LogWarning("Discarding RabbitMQ event without opportunityId from exchange {Exchange}.", args.Exchange);
                 PublishToDeadLetterQueue(args, rabbitOptions, "MissingOpportunityId", "RabbitMQ event did not include opportunityId.");
