@@ -26,7 +26,24 @@ public sealed class PostgresAiAgentRuntimeSettingsRepository(NpgsqlDataSource da
                              and nullif(btrim(global_settings.api_key), '') is not null
                            order by global_settings.updated_at desc
                            limit 1
-                       )
+                       ),
+                       case
+                           when settings.agent_key = 'call-audio-analysis' then (
+                               select nullif(btrim(credential_settings.api_key), '')
+                               from ai_agent_settings credential_settings
+                               where credential_settings.agent_key = 'meeting-service-analysis'
+                                 and (
+                                     credential_settings.company_id = @companyId::uuid
+                                     or credential_settings.company_id is null
+                                 )
+                                 and lower(btrim(credential_settings.provider)) = lower(btrim(settings.provider))
+                                 and nullif(btrim(credential_settings.api_key), '') is not null
+                               order by
+                                   case when credential_settings.company_id = @companyId::uuid then 0 else 1 end,
+                                   credential_settings.updated_at desc
+                               limit 1
+                           )
+                       end
                    ) as api_key,
                    settings.system_prompt,
                    settings.debounce_minutes,
