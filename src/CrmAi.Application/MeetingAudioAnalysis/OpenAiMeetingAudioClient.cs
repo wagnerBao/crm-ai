@@ -21,6 +21,13 @@ public sealed class OpenAiMeetingAudioClient(
     private const string DefaultFallbackTranscriptionModel = "whisper-1";
     private const int MaxOpenAiAudioUploadBytes = 24 * 1024 * 1024;
     private const int DefaultSegmentSeconds = 600;
+    private const string CallSuggestionInstructions = """
+        Para ligacoes do WhatsApp, avalie se existe uma acao comercial concreta sustentada pelo que foi dito.
+        Marque shouldCreateActivity=true somente quando houver retorno, envio, cobranca, validacao, agendamento,
+        feedback ou outro proximo passo executavel. Preencha activityTitle e activityNotes de forma objetiva.
+        Nao crie atividade para conversa social, encerramento generico ou acao sem evidencia na ligacao.
+        Use activityDueAt somente quando houver prazo claro; caso contrario retorne null.
+        """;
 
     public async Task<string> TranscribeAsync(
         AiAgentRuntimeSettings settings,
@@ -246,20 +253,23 @@ public sealed class OpenAiMeetingAudioClient(
         var endpoint = configuredOptions.ResponsesEndpoint;
         var startedAt = DateTime.UtcNow;
         var model = string.IsNullOrWhiteSpace(settings.Model) ? configuredOptions.Model : settings.Model;
+        var isWhatsappCall = string.Equals(settings.AgentKey, "call-audio-analysis", StringComparison.OrdinalIgnoreCase);
         var payload = new
         {
             model,
             reasoning = OpenAiGpt56RequestOptions.Reasoning(model, "low"),
-            instructions = settings.Instructions,
+            instructions = isWhatsappCall
+                ? string.Join("\n\n", settings.Instructions, CallSuggestionInstructions)
+                : settings.Instructions,
             input = JsonSerializer.Serialize(input, SerializerOptions),
             text = new
             {
                 format = new
                 {
                     type = "json_schema",
-                    name = "meeting_audio_analysis_result",
+                    name = isWhatsappCall ? "call_audio_analysis_result" : "meeting_audio_analysis_result",
                     strict = true,
-                    schema = MeetingAudioAnalysisJsonSchema.Value
+                    schema = isWhatsappCall ? CallAudioAnalysisJsonSchema.Value : MeetingAudioAnalysisJsonSchema.Value
                 }
             }
         };

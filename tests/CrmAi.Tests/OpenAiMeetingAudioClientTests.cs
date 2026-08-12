@@ -7,6 +7,48 @@ namespace CrmAi.Tests;
 public sealed class OpenAiMeetingAudioClientTests
 {
     [Fact]
+    public async Task AnalyzeAsync_PreservesMeetSchemaWithoutCallSuggestions()
+    {
+        var response = """{"output":[{"content":[{"type":"output_text","text":"{\"summary\":\"Resumo\",\"objections\":[],\"objectionBreakOpportunities\":[],\"nextStep\":\"Agendar retorno\"}"}]}]}""";
+        var handler = new CapturingHandler((HttpStatusCode.OK, response));
+        var client = CreateClient(handler);
+
+        var result = await client.AnalyzeAsync(
+            CreateSettings(),
+            new MeetingAudioAnalysisInput("Transcrição", null, null, "Meet", null),
+            AiAgentInvocationContext.Unknown,
+            CancellationToken.None);
+
+        Assert.False(result.ShouldCreateActivity);
+        var requestBody = Assert.Single(handler.RequestBodies);
+        Assert.Contains("meeting_audio_analysis_result", requestBody);
+        Assert.DoesNotContain("call_audio_analysis_result", requestBody);
+        Assert.DoesNotContain("shouldCreateActivity", requestBody);
+    }
+
+    [Fact]
+    public async Task AnalyzeAsync_RequestsSuggestedActivityOnlyForWhatsappCallAgent()
+    {
+        var response = """{"output":[{"content":[{"type":"output_text","text":"{\"summary\":\"Resumo\",\"objections\":[],\"objectionBreakOpportunities\":[],\"nextStep\":\"Enviar material\",\"shouldCreateActivity\":true,\"activityTitle\":\"Enviar material\",\"activityNotes\":\"Enviar os arquivos combinados.\",\"activityDueAt\":null,\"confidenceScore\":90,\"reasons\":[\"Ação combinada\"]}"}]}]}""";
+        var handler = new CapturingHandler((HttpStatusCode.OK, response));
+        var client = CreateClient(handler);
+        var settings = CreateSettings() with { AgentKey = "call-audio-analysis" };
+
+        var result = await client.AnalyzeAsync(
+            settings,
+            new MeetingAudioAnalysisInput("Transcrição", null, null, "Ligação", null),
+            AiAgentInvocationContext.Unknown,
+            CancellationToken.None);
+
+        Assert.True(result.ShouldCreateActivity);
+        Assert.Equal("Enviar material", result.ActivityTitle);
+        var requestBody = Assert.Single(handler.RequestBodies);
+        Assert.Contains("call_audio_analysis_result", requestBody);
+        Assert.Contains("shouldCreateActivity", requestBody);
+        Assert.Contains("Nao crie atividade para conversa social", requestBody);
+    }
+
+    [Fact]
     public async Task TranscribeAsync_SendsSingleRequestWithoutChunking_WhenAudioFits()
     {
         var previousModel = Environment.GetEnvironmentVariable("OPENAI_TRANSCRIPTION_MODEL");

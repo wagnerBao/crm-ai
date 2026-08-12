@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json;
 using CrmAi.Application;
 using CrmAi.Domain;
 using Npgsql;
@@ -59,7 +60,7 @@ public sealed class PostgresMeetingAudioAnalysisService(
                 selectedContext.Activities,
                 selectedContext.AgentInsights), invocationContext, cancellationToken);
 
-            await SaveAnalysisAsync(parsedRecordingId, transcript, FormatSummary(analysis), cancellationToken);
+            await SaveAnalysisAsync(recording, parsedRecordingId, transcript, FormatSummary(analysis), analysis, settings, cancellationToken);
             return true;
         }
         catch (Exception exception)
@@ -115,7 +116,9 @@ public sealed class PostgresMeetingAudioAnalysisService(
                 o.name as opportunity_name,
                 a.name as account_name,
                 act.title as activity_title,
-                act.notes as activity_notes
+                act.notes as activity_notes,
+                act.contact_id,
+                act.owner_user_id
             from meeting_audio_recordings mar
             left join opportunities o on o.id = mar.opportunity_id
             left join accounts a on a.id = mar.account_id
@@ -146,7 +149,9 @@ public sealed class PostgresMeetingAudioAnalysisService(
             ReadNullableString(reader, 12),
             ReadNullableString(reader, 13),
             ReadNullableGuid(reader, 9),
-            reader.GetString(2));
+            reader.GetString(2),
+            ReadNullableGuid(reader, 14),
+            ReadNullableGuid(reader, 15));
     }
 
     private async Task UpdateStatusAsync(Guid recordingId, string status, string? error, CancellationToken cancellationToken)
@@ -186,7 +191,14 @@ public sealed class PostgresMeetingAudioAnalysisService(
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
-    private async Task SaveAnalysisAsync(Guid recordingId, string transcript, string summary, CancellationToken cancellationToken)
+    private async Task SaveAnalysisAsync(
+        MeetingAudioRecordingPayload recording,
+        Guid recordingId,
+        string transcript,
+        string summary,
+        OpenAiMeetingAudioAnalysisResponse analysis,
+        AiAgentRuntimeSettings settings,
+        CancellationToken cancellationToken)
     {
         const string sql = """
             update meeting_audio_recordings
@@ -200,12 +212,84 @@ public sealed class PostgresMeetingAudioAnalysisService(
             """;
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await using var command = new NpgsqlCommand(sql, connection);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await using var command = new NpgsqlCommand(sql, connection, transaction);
         command.Parameters.AddWithValue("recordingId", recordingId);
         command.Parameters.AddWithValue("transcript", transcript);
         command.Parameters.AddWithValue("summary", summary);
         await command.ExecuteNonQueryAsync(cancellationToken);
+
+        if (ShouldCreateCallSuggestion(recording, analysis))
+        {
+            await InsertCallSuggestionAsync(connection, transaction, recording, recordingId, analysis, settings, cancellationToken);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
     }
+
+    public static bool ShouldCreateCallSuggestion(MeetingAudioRecordingPayload recording, OpenAiMeetingAudioAnalysisResponse analysis) =>
+        string.Equals(recording.SourceKind, "whatsapp_call", StringComparison.OrdinalIgnoreCase)
+        && Guid.TryParse(recording.CompanyId, out _)
+        && Guid.TryParse(recording.ContactId, out _)
+        && analysis.ShouldCreateActivity
+        && !string.IsNullOrWhiteSpace(analysis.ActivityTitle)
+        && !string.IsNullOrWhiteSpace(analysis.ActivityNotes);
+
+    private static async Task InsertCallSuggestionAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        MeetingAudioRecordingPayload recording,
+        Guid recordingId,
+        OpenAiMeetingAudioAnalysisResponse analysis,
+        AiAgentRuntimeSettings settings,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            insert into ai_agent_suggestions
+                (id, company_id, agent_key, suggestion_type, status, contact_id, conversation_id, run_id,
+                 title, description, suggested_due_at, payload, generation_model, confidence_score,
+                 generation_reasons, created_at, updated_at)
+            values
+                (gen_random_uuid(), @companyId, 'call-audio-analysis', 'activity', 'pending', @contactId, null, @runId,
+                 @title, @description, @dueAt, @payload, @generationModel, @confidenceScore,
+                 @generationReasons, now(), now())
+            on conflict (run_id, suggestion_type) where run_id is not null do nothing;
+            """;
+
+        var dueAt = ParseUtcDateTime(analysis.ActivityDueAt);
+        var payload = JsonSerializer.Serialize(new
+        {
+            activityType = "follow-up",
+            channel = "call",
+            notes = analysis.ActivityNotes!.Trim(),
+            dueAt = dueAt?.ToString("O"),
+            recordingId = recording.Id,
+            activityId = recording.ActivityId,
+            accountId = recording.AccountId,
+            opportunityId = recording.OpportunityId,
+            ownerUserId = recording.OwnerUserId,
+            sourceKind = recording.SourceKind
+        });
+
+        await using var command = new NpgsqlCommand(sql, connection, transaction);
+        command.Parameters.AddWithValue("companyId", Guid.Parse(recording.CompanyId!));
+        command.Parameters.AddWithValue("contactId", Guid.Parse(recording.ContactId!));
+        command.Parameters.AddWithValue("runId", recordingId);
+        command.Parameters.AddWithValue("title", Truncate(analysis.ActivityTitle!.Trim(), 300));
+        command.Parameters.AddWithValue("description", Truncate(analysis.ActivityNotes!.Trim(), 3000));
+        command.Parameters.Add("dueAt", NpgsqlDbType.TimestampTz).Value = dueAt?.UtcDateTime ?? (object)DBNull.Value;
+        command.Parameters.Add("payload", NpgsqlDbType.Jsonb).Value = payload;
+        command.Parameters.AddWithValue("generationModel", settings.Model);
+        command.Parameters.AddWithValue("confidenceScore", Math.Clamp(analysis.ConfidenceScore, 0, 100));
+        command.Parameters.Add("generationReasons", NpgsqlDbType.Jsonb).Value = JsonSerializer.Serialize(analysis.Reasons ?? []);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static DateTimeOffset? ParseUtcDateTime(string? value) =>
+        DateTimeOffset.TryParse(value, out var parsed) ? parsed.ToUniversalTime() : null;
+
+    private static string Truncate(string value, int maximumLength) =>
+        value.Length <= maximumLength ? value : value[..maximumLength];
 
     private static string FormatSummary(OpenAiMeetingAudioAnalysisResponse analysis)
     {

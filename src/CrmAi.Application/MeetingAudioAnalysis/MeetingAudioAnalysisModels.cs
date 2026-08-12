@@ -21,7 +21,13 @@ public sealed record OpenAiMeetingAudioAnalysisResponse(
     string Summary,
     IReadOnlyCollection<string> Objections,
     IReadOnlyCollection<string> ObjectionBreakOpportunities,
-    string NextStep);
+    string NextStep,
+    bool ShouldCreateActivity = false,
+    string? ActivityTitle = null,
+    string? ActivityNotes = null,
+    string? ActivityDueAt = null,
+    int ConfidenceScore = 0,
+    IReadOnlyCollection<string>? Reasons = null);
 
 public sealed record MeetingAudioRecordingPayload(
     string Id,
@@ -37,4 +43,6 @@ public sealed record MeetingAudioRecordingPayload(
     string? ActivityTitle,
     string? ActivityNotes,
     string? CompanyId,
-    string SourceKind = "google_meet");
+    string SourceKind = "google_meet",
+    string? ContactId = null,
+    string? OwnerUserId = null);
