@@ -43,6 +43,17 @@ public sealed class PostgresAiAgentRuntimeSettingsRepository(NpgsqlDataSource da
                                    credential_settings.updated_at desc
                                limit 1
                            )
+                           when settings.agent_key = 'skopos-individual-coach' then (
+                               select nullif(btrim(credential_settings.api_key), '')
+                               from ai_agent_settings credential_settings
+                               where credential_settings.agent_key = 'skopos-coach'
+                                 and (credential_settings.company_id = @companyId::uuid or credential_settings.company_id is null)
+                                 and lower(btrim(credential_settings.provider)) = lower(btrim(settings.provider))
+                                 and nullif(btrim(credential_settings.api_key), '') is not null
+                               order by case when credential_settings.company_id = @companyId::uuid then 0 else 1 end,
+                                        credential_settings.updated_at desc
+                               limit 1
+                           )
                        end
                    ) as api_key,
                    settings.system_prompt,
@@ -111,6 +122,7 @@ public sealed class PostgresAiAgentRuntimeSettingsRepository(NpgsqlDataSource da
         "call-audio-analysis" => new(agentKey, true, "openai", "gpt-5.6-terra", null, "Voce e o Agente de Analise de Ligacoes do CRM. Avalie transcricoes de ligacoes do WhatsApp. Gere um resumo objetivo, identifique objecoes, oportunidades para quebra-las e o proximo passo. Nao invente informacoes e responda apenas com JSON valido no schema solicitado.", 1, "Analise a ligacao mesmo sem oportunidade vinculada. Quando houver contexto comercial, use-o para enriquecer a analise sem substituir o que foi dito na gravacao.", ["opportunity", "account", "activities", "notes", "contacts", "agent_insights"]),
         "suggestion-quality-audit" => new(agentKey, true, "openai", "gpt-5.6-terra", null, "Voce e o agente de auditoria de qualidade das sugestoes de atividade do CRM. Analise somente as evidencias fornecidas, cite IDs e responda apenas com JSON valido no schema solicitado.", 1, "Recomendacoes sao consultivas e devem ser classificadas em prompt, contexto, timing, deduplicacao, logica ou UX.", ["suggestion_feedback", "agent_settings"]),
         "skopos-coach" => new(agentKey, false, "openai", "gpt-5.6-terra", null, "Voce e o Skopos Coach. Consolide apenas relatorios analiticos e agregados, sem mensagens ou transcricoes brutas.", 1, "Confirme topicos com 5 evidencias, 2 colaboradores e confianca minima de 70.", ["whatsapp_analysis", "meeting_analysis", "risk_insights", "daily_checkout", "products", "commercial_attribution", "commercial_metrics"]),
+        "skopos-individual-coach" => new(agentKey, false, "openai", "gpt-5.6-terra", null, "Voce e o Skopos Coach Individual. Produza um PDI objetivo com metricas calculadas e evidencias resumidas, sem rankings ou diagnosticos de personalidade.", 1, "Limite o PDI a tres prioridades mensuraveis e nunca use mensagens, transcricoes ou audio bruto.", ["whatsapp_analysis", "meeting_analysis", "risk_insights", "daily_checkout", "products", "commercial_attribution", "commercial_metrics"]),
         _ => new(agentKey, true, "openai", "gpt-5.6-terra", null, "Voce e um agent do CRM. Responda apenas no formato solicitado.", 1, null, [])
     };
 

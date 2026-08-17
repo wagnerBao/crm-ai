@@ -35,7 +35,9 @@ public static class DependencyInjection
         services.AddScoped<IGamificationProjectionService, PostgresGamificationProjectionService>();
         services.AddScoped<SuggestionQualityAuditProcessor>();
         services.AddScoped<SkoposCoachProjectionService>();
+        services.AddScoped<SkoposIndividualCoachProcessor>();
         services.AddHttpClient<SkoposCoachSynthesisClient>();
+        services.AddHttpClient<SkoposIndividualCoachClient>();
         services.AddHostedService<RabbitMqOpportunityAnalysisConsumer>();
         services.AddHostedService<RabbitMqActivityAnalysisConsumer>();
         services.AddHostedService<WhatsappConversationAnalysisHostedService>();

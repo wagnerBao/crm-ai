@@ -17,15 +17,24 @@ public sealed class SkoposCoachHostedService(
 
     private async Task RunAsync(CancellationToken cancellationToken)
     {
+        await using var scope = scopeFactory.CreateAsyncScope();
         try
         {
-            await using var scope = scopeFactory.CreateAsyncScope();
             await scope.ServiceProvider.GetRequiredService<SkoposCoachProjectionService>().ProjectAndProcessAsync(cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
         catch (Exception exception)
         {
             logger.LogError(exception, "Skopos Coach projection cycle failed. Other AI agents remain isolated.");
+        }
+        try
+        {
+            await scope.ServiceProvider.GetRequiredService<SkoposIndividualCoachProcessor>().ProcessPendingAsync(cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
+        catch (Exception exception)
+        {
+            logger.LogError(exception, "Skopos Individual Coach cycle failed. The collective Coach remains isolated.");
         }
     }
 }
