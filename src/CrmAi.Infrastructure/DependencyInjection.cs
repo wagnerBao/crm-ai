@@ -5,6 +5,7 @@ using CrmAi.Infrastructure.Gamification;
 using CrmAi.Infrastructure.OpportunityAnalysis;
 using CrmAi.Infrastructure.Persistence;
 using CrmAi.Infrastructure.RabbitMq;
+using CrmAi.Infrastructure.SkoposCoach;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
@@ -33,6 +34,8 @@ public static class DependencyInjection
         services.AddScoped<IDailyCheckoutSnapshotService, PostgresDailyCheckoutSnapshotService>();
         services.AddScoped<IGamificationProjectionService, PostgresGamificationProjectionService>();
         services.AddScoped<SuggestionQualityAuditProcessor>();
+        services.AddScoped<SkoposCoachProjectionService>();
+        services.AddHttpClient<SkoposCoachSynthesisClient>();
         services.AddHostedService<RabbitMqOpportunityAnalysisConsumer>();
         services.AddHostedService<RabbitMqActivityAnalysisConsumer>();
         services.AddHostedService<WhatsappConversationAnalysisHostedService>();
@@ -42,6 +45,7 @@ public static class DependencyInjection
         services.AddHostedService<DailyCheckinSnapshotHostedService>();
         services.AddHostedService<DailyCheckoutSnapshotHostedService>();
         services.AddHostedService<SuggestionQualityAuditHostedService>();
+        services.AddHostedService<SkoposCoachHostedService>();
 
         return services;
     }
