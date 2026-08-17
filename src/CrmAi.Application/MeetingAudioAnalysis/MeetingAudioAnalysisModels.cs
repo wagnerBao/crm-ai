@@ -45,4 +45,5 @@ public sealed record MeetingAudioRecordingPayload(
     string? CompanyId,
     string SourceKind = "google_meet",
     string? ContactId = null,
-    string? OwnerUserId = null);
+    string? OwnerUserId = null,
+    string? Transcript = null);
