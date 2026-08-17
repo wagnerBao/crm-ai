@@ -63,6 +63,47 @@ public sealed class PostgresMeetingAudioAnalysisServiceTests
         Assert.NotEqual(PostgresMeetingAudioAnalysisService.PromptFingerprint(first), PostgresMeetingAudioAnalysisService.PromptFingerprint(changedContext));
     }
 
+    [Fact]
+    public void ScorecardNormalization_RequiresLiteralEvidenceAndDoesNotInventTimestamps()
+    {
+        var coveredCriterion = Criterion("discovery", "Descoberta");
+        var uncoveredCriterion = Criterion("objections", "Objeções");
+        var template = new PostgresMeetingAudioAnalysisService.ScorecardTemplate(
+            Guid.NewGuid(), Guid.NewGuid(), 1, "Padrao", [coveredCriterion, uncoveredCriterion]);
+        var modelItems = new[]
+        {
+            new OpenAiConversationScorecardItem("discovery", 82, 90, "Investigou a necessidade.", "Aprofundar impacto.",
+                [new OpenAiConversationEvidence("precisamos reduzir o prazo", "Cliente", 1000, 2000, "transcript", 95)]),
+            new OpenAiConversationScorecardItem("objections", 70, 80, "Tratou a objeção.", null,
+                [new OpenAiConversationEvidence("trecho que nao existe", null, null, null, "transcript", 80)])
+        };
+
+        var result = PostgresMeetingAudioAnalysisService.NormalizeScorecardItems(
+            template, modelItems, "Cliente: precisamos   reduzir o prazo para concluir a entrega.").ToArray();
+
+        Assert.True(result[0].IsCovered);
+        Assert.Equal(82, result[0].Score);
+        Assert.Null(result[0].Evidence.Single().StartMs);
+        Assert.Null(result[0].Evidence.Single().EndMs);
+        Assert.False(result[1].IsCovered);
+        Assert.Equal(0, result[1].Confidence);
+        Assert.Empty(result[1].Evidence);
+    }
+
+    [Fact]
+    public void ScorecardPersistence_UsesAnalysisVersionAndExcludesUncoveredWeight()
+    {
+        var source = ReadSource("src/CrmAi.Infrastructure/Persistence/PostgresMeetingAudioAnalysisService.cs");
+
+        Assert.Contains("conversation_scorecards", source, StringComparison.Ordinal);
+        Assert.Contains("conversation_scorecard_items", source, StringComparison.Ordinal);
+        Assert.Contains("items.Where(item => item.IsCovered)", source, StringComparison.Ordinal);
+        Assert.Contains("template_version", source, StringComparison.Ordinal);
+    }
+
+    private static PostgresMeetingAudioAnalysisService.ScorecardCriterion Criterion(string key, string title) =>
+        new(Guid.NewGuid(), key, title, null, 10m, "Avalie.", [], [], 0, 100, true);
+
     private static MeetingAudioRecordingPayload CreateRecording(string sourceKind, string? contactId) =>
         new(
             Guid.NewGuid().ToString(),

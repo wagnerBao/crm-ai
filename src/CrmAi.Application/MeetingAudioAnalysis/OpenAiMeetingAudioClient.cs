@@ -28,6 +28,13 @@ public sealed class OpenAiMeetingAudioClient(
         Nao crie atividade para conversa social, encerramento generico ou acao sem evidencia na ligacao.
         Use activityDueAt somente quando houver prazo claro; caso contrario retorne null.
         """;
+    private const string ScorecardInstructions = """
+        Quando input.scorecardTemplate estiver preenchido, avalie exatamente cada criterio recebido e devolva um
+        scorecardItems para cada criterionKey. Baseie nota, justificativa e recomendacao somente na transcricao e no
+        contexto fornecido. Toda evidencia deve ser um trecho literal curto da transcricao. Nao invente participante
+        ou timestamp: use null quando indisponivel. Quando um criterio nao tiver cobertura, use baixa confianca,
+        explique a ausencia de evidencia e nao presuma desempenho ruim. Quando nao houver template, devolva array vazio.
+        """;
 
     public async Task<string> TranscribeAsync(
         AiAgentRuntimeSettings settings,
@@ -259,8 +266,8 @@ public sealed class OpenAiMeetingAudioClient(
             model,
             reasoning = OpenAiGpt56RequestOptions.Reasoning(model, "low"),
             instructions = isWhatsappCall
-                ? string.Join("\n\n", settings.Instructions, CallSuggestionInstructions)
-                : settings.Instructions,
+                ? string.Join("\n\n", settings.Instructions, CallSuggestionInstructions, ScorecardInstructions)
+                : string.Join("\n\n", settings.Instructions, ScorecardInstructions),
             input = JsonSerializer.Serialize(input, SerializerOptions),
             text = new
             {

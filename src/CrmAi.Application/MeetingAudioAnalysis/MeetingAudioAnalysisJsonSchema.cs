@@ -11,7 +11,10 @@ public static class MeetingAudioAnalysisJsonSchema
             "summary",
             "objections",
             "objectionBreakOpportunities",
-            "nextStep"
+            "nextStep",
+            "confidenceScore",
+            "reasons",
+            "scorecardItems"
         },
         properties = new
         {
@@ -26,7 +29,10 @@ public static class MeetingAudioAnalysisJsonSchema
                 type = "array",
                 items = new { type = "string" }
             },
-            nextStep = new { type = "string" }
+            nextStep = new { type = "string" },
+            confidenceScore = new { type = "integer", minimum = 0, maximum = 100 },
+            reasons = new { type = "array", minItems = 1, items = new { type = "string" } },
+            scorecardItems = ConversationScorecardJsonSchema.Value
         }
     };
 }

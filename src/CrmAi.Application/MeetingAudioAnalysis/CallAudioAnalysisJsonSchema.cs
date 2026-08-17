@@ -17,7 +17,8 @@ public static class CallAudioAnalysisJsonSchema
             "activityNotes",
             "activityDueAt",
             "confidenceScore",
-            "reasons"
+            "reasons",
+            "scorecardItems"
         },
         properties = new
         {
@@ -38,7 +39,8 @@ public static class CallAudioAnalysisJsonSchema
                 description = "ISO 8601 UTC date/time only when the call supports a deadline; otherwise null."
             },
             confidenceScore = new { type = "integer", minimum = 0, maximum = 100 },
-            reasons = new { type = "array", minItems = 1, items = new { type = "string" } }
+            reasons = new { type = "array", minItems = 1, items = new { type = "string" } },
+            scorecardItems = ConversationScorecardJsonSchema.Value
         }
     };
 }
