@@ -26,6 +26,16 @@ public sealed class SkoposIndividualCoachProcessor(
         new("product", "Domínio de produto", ["produto", "servico", "solucao", "beneficio", "entrega"]),
         new("execution", "Execução comercial", ["atividade", "meta", "efetividade", "produtiv", "atras", "estagn"])
     ];
+    private static readonly CriterionMapping[] CriterionMappings =
+    [
+        new("objections", ["objection_handling", "objections", "objecoes", "tratamento_de_objecoes", "quebra_de_objecoes"]),
+        new("qualification", ["needs_discovery", "decision_process", "qualification", "discovery", "qualificacao", "descoberta", "processo_de_decisao"]),
+        new("cadence", ["next_step", "follow_up", "cadence", "proximo_passo", "cadencia"]),
+        new("proposal", ["proposal_clarity", "negotiation", "value_building", "proposal", "proposta", "negociacao", "construcao_de_valor"]),
+        new("product", ["product_knowledge", "product", "dominio_de_produto", "conhecimento_de_produto"]),
+        new("execution", ["playbook_adherence", "execution", "activity_execution", "aderencia_ao_playbook", "execucao_comercial", "execucao_de_atividades"]),
+        new("service", ["opening_connection", "customer_service", "service", "rapport", "communication", "response_time", "response_quality", "quality_of_service", "abertura_e_conexao", "qualidade_do_atendimento", "tempo_de_resposta", "qualidade_da_resposta", "atendimento"])
+    ];
 
     public async Task ProcessPendingAsync(CancellationToken cancellationToken)
     {
@@ -71,7 +81,8 @@ public sealed class SkoposIndividualCoachProcessor(
             return;
         }
 
-        var candidates = Rules.Select(rule => new CompetencyCandidate(rule, reports.Where(report => Matches(report.Summary, rule)).ToArray())).ToArray();
+        var scorecardSignals = await ReadScorecardSignalsAsync(connection, plan, cancellationToken);
+        var candidates = BuildCandidates(reports, scorecardSignals);
         var competencyScores = candidates.Select(candidate => new CompetencyScore(candidate.Rule.Key, candidate.Rule.Title, Score(candidate, metrics), candidate.Reports.Length)).ToArray();
         var context = await ReadCommercialContextAsync(connection, plan, cancellationToken);
         IndividualCoachResult? synthesis = null;
@@ -86,7 +97,14 @@ public sealed class SkoposIndividualCoachProcessor(
                     minimumOpportunities = 3,
                     responseAttribution = "current_conversation_owner",
                     excludedActivityType = "agent-skopos",
-                    contentPolicy = "sanitized_analytical_summaries_only"
+                    contentPolicy = "structured_scorecards_first_sanitized_legacy_summaries_fallback",
+                    scorecardPolicy = new
+                    {
+                        currentVersionOnly = true,
+                        requiresEvidence = true,
+                        reviewedScoreOverridesAiScore = true,
+                        reviewedEvidenceWeightMultiplier = 2
+                    }
                 },
                 metrics,
                 competencies = candidates.Select(candidate => new
@@ -95,11 +113,16 @@ public sealed class SkoposIndividualCoachProcessor(
                     title = candidate.Rule.Title,
                     deterministicScore = Score(candidate, metrics),
                     evidenceCount = candidate.Reports.Length,
+                    scoreOrigin = candidate.Signals.Length > 0
+                        ? candidate.Signals.Any(signal => signal.Reviewed) ? "reviewed_scorecard" : "ai_scorecard"
+                        : "legacy_summary",
+                    reviewedEvidenceCount = candidate.Signals.Where(signal => signal.Reviewed).Select(signal => signal.Report.Id).Distinct().Count(),
                     samples = candidate.Reports.Take(5).Select(report => new
                     {
                         id = report.Id.ToString(),
                         source = report.SourceType,
-                        summary = Truncate(SkoposCoachProjectionService.SanitizeForCoach(report.Summary), 600)
+                        summary = Truncate(SkoposCoachProjectionService.SanitizeForCoach(
+                            SelectEvidenceExcerpt(candidate, report)), 600)
                     })
                 }),
                 commercialContext = JsonSerializer.Deserialize<object>(context, JsonOptions)
@@ -113,20 +136,15 @@ public sealed class SkoposIndividualCoachProcessor(
         var allowedEvidenceIds = reports.Select(report => report.Id.ToString()).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var items = NormalizeItems(synthesis, candidates, competencyScores, allowedEvidenceIds);
         var strengths = NormalizeStrengths(synthesis, competencyScores);
-        var limitations = new[]
-        {
-            "O tempo de resposta usa o responsável atual da conversa; não há autoria individual por mensagem.",
-            "O tempo de resposta é tempo corrido e pode incluir períodos fora do expediente até que a empresa configure uma jornada comercial.",
-            "Campanhas e anúncios acompanham as conversas atualmente atribuídas ao colaborador e servem apenas como contexto, não como nota de desempenho.",
-            "Atividades automáticas do tipo agent-skopos foram excluídas dos indicadores de execução.",
-            "A avaliação semântica usa resumos analíticos sanitizados, não mensagens, áudios ou transcrições brutas."
-        };
+        var limitations = BuildLimitations(scorecardSignals, candidates);
         var assessmentId = Guid.NewGuid();
         var coverage = Coverage(metrics);
         var confidence = Confidence(metrics);
         var fingerprint = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(settings.Instructions)));
+        var scorecardReportCount = scorecardSignals.Select(signal => signal.Report.Id).Distinct().Count();
+        var reviewedScorecardCount = scorecardSignals.Where(signal => signal.Reviewed).Select(signal => signal.Report.Id).Distinct().Count();
         var summary = string.IsNullOrWhiteSpace(synthesis?.Summary)
-            ? $"Avaliação baseada em {metrics.ReportCount} relatórios, {metrics.OpportunityCount} oportunidades e {metrics.SourceCount} fontes. O plano prioriza até três competências com evidências rastreáveis."
+            ? $"Avaliação baseada em {metrics.ReportCount} relatórios, {metrics.OpportunityCount} oportunidades, {metrics.SourceCount} fontes e {scorecardReportCount} scorecards válidos ({reviewedScorecardCount} revisados). O plano prioriza até três competências com evidências rastreáveis."
             : synthesis.Summary.Trim();
         var objective = string.IsNullOrWhiteSpace(synthesis?.Objective)
             ? "Elevar a consistência do atendimento e da execução comercial com ações mensuráveis no próximo ciclo."
@@ -158,6 +176,58 @@ public sealed class SkoposIndividualCoachProcessor(
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken)) reports.Add(new(reader.GetGuid(0), reader.GetString(1), reader.IsDBNull(2) ? null : reader.GetGuid(2), reader.GetString(3)));
         return reports;
+    }
+
+    private static async Task<ScorecardSignal[]> ReadScorecardSignalsAsync(NpgsqlConnection connection, PlanRequest plan, CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SELECT report.id, report.source_type, report.opportunity_id, report.report_summary,
+                   item.criterion_key, item.criterion_title, item.weight,
+                   CASE WHEN scorecard.status = 'reviewed'
+                        THEN coalesce(item.reviewed_score, item.ai_score)
+                        ELSE item.ai_score END effective_score,
+                   item.confidence_score, scorecard.status = 'reviewed' reviewed,
+                   item.justification
+            FROM conversation_scorecards scorecard
+            JOIN conversation_analysis_results analysis
+              ON analysis.id = scorecard.analysis_result_id AND analysis.is_current
+            JOIN conversation_scorecard_items item ON item.scorecard_id = scorecard.id
+            JOIN skopos_coach_agent_reports report
+              ON report.company_id = scorecard.company_id
+             AND report.source_type = 'meeting'
+             AND report.source_id = scorecard.recording_id
+             AND report.owner_user_id = @userId
+            WHERE scorecard.company_id = @companyId
+              AND scorecard.evaluated_user_id = @userId
+              AND scorecard.status <> 'invalidated'
+              AND report.occurred_at >= @from::date
+              AND report.occurred_at < (@to::date + interval '1 day')
+              AND item.confidence_score > 0
+              AND jsonb_typeof(item.evidence_json) = 'array'
+              AND jsonb_array_length(item.evidence_json) > 0
+            ORDER BY report.occurred_at DESC, item.criterion_key
+            """;
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("companyId", plan.CompanyId);
+        command.Parameters.AddWithValue("userId", plan.UserId);
+        command.Parameters.AddWithValue("from", plan.From);
+        command.Parameters.AddWithValue("to", plan.To);
+        var signals = new List<ScorecardSignal>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var report = new Report(reader.GetGuid(0), reader.GetString(1), reader.IsDBNull(2) ? null : reader.GetGuid(2), reader.GetString(3));
+            signals.Add(new(
+                report,
+                reader.GetString(4),
+                reader.GetString(5),
+                reader.GetDecimal(6),
+                reader.GetInt32(7),
+                reader.GetInt32(8),
+                reader.GetBoolean(9),
+                reader.GetString(10)));
+        }
+        return signals.ToArray();
     }
 
     private static async Task<ObjectiveMetrics> ReadMetricsAsync(NpgsqlConnection connection, PlanRequest plan, IReadOnlyCollection<Report> reports, CancellationToken cancellationToken)
@@ -228,9 +298,95 @@ public sealed class SkoposIndividualCoachProcessor(
         return (string)(await command.ExecuteScalarAsync(cancellationToken) ?? "{}");
     }
 
+    private static CompetencyCandidate[] BuildCandidates(IReadOnlyCollection<Report> reports, IReadOnlyCollection<ScorecardSignal> signals)
+    {
+        var scoredReportIds = signals.Select(signal => signal.Report.Id).ToHashSet();
+        var legacyReports = reports.Where(report => !scoredReportIds.Contains(report.Id)).ToArray();
+        return Rules.Select(rule =>
+        {
+            var structured = signals
+                .Where(signal => string.Equals(MapCriterionToCompetency(signal.CriterionKey, signal.CriterionTitle), rule.Key, StringComparison.OrdinalIgnoreCase))
+                .ToArray();
+            var evidence = structured.Length > 0
+                ? structured.Select(signal => signal.Report).DistinctBy(report => report.Id).ToArray()
+                : legacyReports.Where(report => Matches(report.Summary, rule)).ToArray();
+            return new CompetencyCandidate(rule, evidence, structured);
+        }).ToArray();
+    }
+
+    internal static string? MapCriterionToCompetency(string criterionKey, string criterionTitle)
+    {
+        var normalized = NormalizeCriterion($"{criterionKey} {criterionTitle}");
+        foreach (var mapping in CriterionMappings)
+            if (mapping.Aliases.Any(alias => ContainsCriterionToken(normalized, alias))) return mapping.CompetencyKey;
+        return null;
+    }
+
+    private static string NormalizeCriterion(string value)
+    {
+        var normalized = RemoveDiacritics(value).ToLowerInvariant();
+        var builder = new StringBuilder(normalized.Length);
+        var previousSeparator = false;
+        foreach (var character in normalized)
+        {
+            if (char.IsLetterOrDigit(character))
+            {
+                builder.Append(character);
+                previousSeparator = false;
+            }
+            else if (!previousSeparator)
+            {
+                builder.Append('_');
+                previousSeparator = true;
+            }
+        }
+        return builder.ToString().Trim('_');
+    }
+
+    private static bool ContainsCriterionToken(string normalized, string alias) =>
+        normalized.Equals(alias, StringComparison.Ordinal) ||
+        normalized.StartsWith($"{alias}_", StringComparison.Ordinal) ||
+        normalized.EndsWith($"_{alias}", StringComparison.Ordinal) ||
+        normalized.Contains($"_{alias}_", StringComparison.Ordinal);
+
+    private static string SelectEvidenceExcerpt(CompetencyCandidate candidate, Report report)
+    {
+        var structured = candidate.Signals
+            .Where(signal => signal.Report.Id == report.Id)
+            .OrderByDescending(signal => signal.Reviewed)
+            .ThenBy(signal => signal.Score)
+            .ThenByDescending(signal => signal.Confidence)
+            .FirstOrDefault();
+        return structured?.Justification ?? report.Summary;
+    }
+
+    private static string[] BuildLimitations(IReadOnlyCollection<ScorecardSignal> signals, IReadOnlyCollection<CompetencyCandidate> candidates)
+    {
+        var limitations = new List<string>
+        {
+            "O tempo de resposta usa o responsável atual da conversa; não há autoria individual por mensagem.",
+            "O tempo de resposta é tempo corrido e pode incluir períodos fora do expediente até que a empresa configure uma jornada comercial.",
+            "Campanhas e anúncios acompanham as conversas atualmente atribuídas ao colaborador e servem apenas como contexto, não como nota de desempenho.",
+            "Atividades automáticas do tipo agent-skopos foram excluídas dos indicadores de execução."
+        };
+        if (signals.Count > 0)
+        {
+            limitations.Add("Competências com cobertura estruturada usam somente o scorecard corrente; a nota revisada pelo gestor prevalece sobre a nota original da IA.");
+            if (candidates.Any(candidate => candidate.Signals.Length == 0 && candidate.Reports.Length > 0))
+                limitations.Add("Para competências ainda sem cobertura de scorecard, foram usados apenas resumos analíticos legados sanitizados como fallback.");
+            if (signals.Any(signal => MapCriterionToCompetency(signal.CriterionKey, signal.CriterionTitle) is null))
+                limitations.Add("Critérios personalizados sem correspondência com o catálogo atual foram preservados no scorecard, mas não influenciaram o PDI.");
+        }
+        else
+        {
+            limitations.Add("Não havia scorecards estruturados válidos no período; a avaliação semântica usou resumos analíticos sanitizados, sem mensagens, áudios ou transcrições brutas.");
+        }
+        return limitations.ToArray();
+    }
+
     private static IReadOnlyCollection<NormalizedItem> NormalizeItems(IndividualCoachResult? synthesis, IReadOnlyCollection<CompetencyCandidate> candidates, IReadOnlyCollection<CompetencyScore> scores, HashSet<string> allowedEvidenceIds)
     {
-        var validKeys = Rules.Select(rule => rule.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var validKeys = scores.Where(score => score.EvidenceCount > 0).Select(score => score.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var modelItems = synthesis?.Items
             .Where(item => validKeys.Contains(item.CompetencyKey))
             .GroupBy(item => item.CompetencyKey, StringComparer.OrdinalIgnoreCase).Select(group => group.First()).Take(3)
@@ -251,12 +407,12 @@ public sealed class SkoposIndividualCoachProcessor(
             {
                 var score = scores.First(item => item.Key == candidate.Rule.Key).Score;
                 return new NormalizedItem(candidate.Rule.Key, candidate.Rule.Title, score, Math.Min(90, score + 15), DefaultAction(candidate.Rule.Key), DefaultMeasurement(candidate.Rule.Key), "Role-play semanal e revisão de evidências com o gestor.", 30, candidate.Reports.Take(5).Select(report => report.Id.ToString()).ToArray());
-            }).DefaultIfEmpty(new NormalizedItem("execution", "Execução comercial", 70, 85, DefaultAction("execution"), DefaultMeasurement("execution"), "Revisão semanal com o gestor.", 30, [])).ToArray();
+            }).ToArray();
     }
 
     private static IReadOnlyCollection<IndividualCoachStrength> NormalizeStrengths(IndividualCoachResult? synthesis, IReadOnlyCollection<CompetencyScore> scores)
     {
-        var validKeys = Rules.Select(rule => rule.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var validKeys = scores.Where(score => score.EvidenceCount > 0).Select(score => score.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var strengths = synthesis?.Strengths.Where(item => validKeys.Contains(item.Key)).Take(3)
             .Select(item =>
             {
@@ -264,7 +420,8 @@ public sealed class SkoposIndividualCoachProcessor(
                 return item with { Score = Math.Clamp((int)Math.Round((Math.Clamp(item.Score, 0, 100) + deterministicScore) / 2d), 0, 100), Title = Truncate(item.Title, 140), Summary = Truncate(item.Summary, 500) };
             }).ToArray() ?? [];
         if (strengths.Length > 0) return strengths;
-        var best = scores.OrderByDescending(item => item.Score).First();
+        var best = scores.Where(item => item.EvidenceCount > 0).OrderByDescending(item => item.Score).FirstOrDefault();
+        if (best is null) return [];
         return [new(best.Key, best.Title, "Competência relativamente mais consistente dentro da amostra disponível; deve ser preservada durante o ciclo.", best.Score)];
     }
 
@@ -299,9 +456,15 @@ public sealed class SkoposIndividualCoachProcessor(
         foreach (var candidate in candidates)
         foreach (var report in candidate.Reports.Take(10))
         {
+            var signal = candidate.Signals
+                .Where(item => item.Report.Id == report.Id)
+                .OrderByDescending(item => item.Reviewed)
+                .ThenBy(item => item.Score)
+                .FirstOrDefault();
             await using var command = new NpgsqlCommand(sql, connection, transaction);
             command.Parameters.AddWithValue("assessment", assessmentId); command.Parameters.AddWithValue("report", report.Id); command.Parameters.AddWithValue("key", candidate.Rule.Key);
-            command.Parameters.AddWithValue("relevance", Math.Min(95, 65 + candidate.Reports.Length * 3)); command.Parameters.AddWithValue("excerpt", Truncate(SkoposCoachProjectionService.SanitizeForCoach(report.Summary), 280));
+            command.Parameters.AddWithValue("relevance", signal is null ? Math.Min(85, 60 + candidate.Reports.Length * 3) : signal.Reviewed ? 100 : Math.Clamp(signal.Confidence, 1, 95));
+            command.Parameters.AddWithValue("excerpt", Truncate(SkoposCoachProjectionService.SanitizeForCoach(signal?.Justification ?? report.Summary), 280));
             await command.ExecuteNonQueryAsync(cancellationToken);
         }
     }
@@ -371,11 +534,22 @@ public sealed class SkoposIndividualCoachProcessor(
     private static string RemoveDiacritics(string value) => string.Concat(value.Normalize(NormalizationForm.FormD).Where(character => System.Globalization.CharUnicodeInfo.GetUnicodeCategory(character) != System.Globalization.UnicodeCategory.NonSpacingMark));
     private static int Score(CompetencyCandidate candidate, ObjectiveMetrics metrics)
     {
+        if (candidate.Signals.Length > 0)
+            return ScoreStructured(candidate.Signals.Select(signal => new StructuredScoreInput(signal.Score, signal.Confidence, signal.Weight, signal.Reviewed)));
         var issuePenalty = metrics.ReportCount == 0 ? 0 : Math.Min(45, (int)Math.Round(candidate.Reports.Length * 100d / metrics.ReportCount * 0.8));
         var score = 82 - issuePenalty;
         if (candidate.Rule.Key == "execution" && metrics.ActivityCount > 0)
             score = (int)Math.Round(score * .55 + metrics.CompletedActivityCount * 100d / metrics.ActivityCount * .45) - Math.Min(15, metrics.OverdueActivityCount * 3);
         return Math.Clamp(score, 25, 95);
+    }
+    internal static int ScoreStructured(IEnumerable<StructuredScoreInput> values)
+    {
+        var signals = values.Where(value => value.Confidence > 0 && value.Weight > 0).ToArray();
+        if (signals.Length == 0) return 0;
+        var denominator = signals.Sum(value => (double)value.Weight * value.Confidence / 100d * (value.Reviewed ? 2d : 1d));
+        if (denominator <= 0) return 0;
+        var numerator = signals.Sum(value => Math.Clamp(value.Score, 0, 100) * (double)value.Weight * value.Confidence / 100d * (value.Reviewed ? 2d : 1d));
+        return Math.Clamp((int)Math.Round(numerator / denominator), 0, 100);
     }
     internal static int Coverage(ObjectiveMetrics metrics) => Math.Min(100, Math.Min(metrics.ReportCount, 10) * 4 + Math.Min(metrics.OpportunityCount, 3) * 10 + Math.Min(metrics.SourceCount, 2) * 10 + (metrics.ResponseCount > 0 ? 10 : 0));
     internal static int Confidence(ObjectiveMetrics metrics) => Math.Min(95, 35 + Math.Min(metrics.ReportCount, 10) * 3 + Math.Min(metrics.OpportunityCount, 3) * 5 + Math.Min(metrics.SourceCount, 2) * 5 + (metrics.ResponseCount > 0 ? 5 : 0));
@@ -387,7 +561,10 @@ public sealed class SkoposIndividualCoachProcessor(
     private sealed record PlanRequest(Guid Id, Guid CompanyId, Guid UserId, Guid? GroupId, DateOnly From, DateOnly To);
     private sealed record Report(Guid Id, string SourceType, Guid? OpportunityId, string Summary);
     private sealed record CompetencyRule(string Key, string Title, string[] Keywords);
-    private sealed record CompetencyCandidate(CompetencyRule Rule, Report[] Reports);
+    private sealed record CompetencyCandidate(CompetencyRule Rule, Report[] Reports, ScorecardSignal[] Signals);
     private sealed record CompetencyScore(string Key, string Title, int Score, int EvidenceCount);
     private sealed record NormalizedItem(string CompetencyKey, string Title, int BaselineScore, int TargetScore, string Action, string Measurement, string Resource, int DueInDays, IReadOnlyCollection<string> EvidenceIds);
+    private sealed record ScorecardSignal(Report Report, string CriterionKey, string CriterionTitle, decimal Weight, int Score, int Confidence, bool Reviewed, string Justification);
+    internal sealed record StructuredScoreInput(int Score, int Confidence, decimal Weight, bool Reviewed);
+    private sealed record CriterionMapping(string CompetencyKey, string[] Aliases);
 }
