@@ -20,6 +20,15 @@ public sealed class OpenAiResponsesWhatsappConversationAnalysisClient(
         - Quando houver o mesmo intuito, retorne exatamente o id do candidato em activityMatchingSuggestionId, opportunityMatchingSuggestionId ou matchingOpenOpportunityId.
         - Nunca invente ids. Use null quando nenhum candidato representar o mesmo intuito.
         - Para cada nova atividade ou oportunidade, gere também uma semantic intent key curta, estavel e baseada no significado, nao na frase usada. Intuitos equivalentes devem receber a mesma chave; intuitos diferentes devem receber chaves diferentes.
+
+        Scorecard incremental na mesma chamada:
+        - Quando input.scorecardTemplate estiver preenchido, devolva exatamente um scorecardItems para cada criterio recebido.
+        - Avalie a conversa comercial do dia usando newTranscript e previousDailyItems como estado acumulado compacto; nao solicite nem reconstrua o historico bruto anterior.
+        - Atualize a avaliacao anterior somente quando o novo trecho trouxer evidencia adicional, contraditoria ou mais conclusiva.
+        - Evidencias devem ser citacoes literais presentes em newTranscript ou nas evidencias de previousDailyItems. Nunca use previousSummary como evidencia.
+        - Considere os horarios das mensagens para cadencia e tempo de resposta, distinguindo Equipe e Cliente.
+        - Audios transcritos fazem parte de newTranscript e devem ser avaliados como qualquer outra mensagem.
+        - Quando input.scorecardTemplate for null, devolva scorecardItems vazio.
         """;
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web)
     {

@@ -613,11 +613,11 @@ public sealed class PostgresMeetingAudioAnalysisService(
 
         const string scorecardSql = """
             insert into conversation_scorecards
-                (id, company_id, analysis_result_id, recording_id, template_id, template_key,
+                (id, company_id, analysis_result_id, recording_id, activity_id, source_kind, is_current, template_id, template_key,
                  template_version, evaluated_user_id, group_id, ai_score, status, confidence_score,
                  model, prompt_fingerprint)
             values
-                (@id, @companyId, @analysisResultId, @recordingId, @templateId, @templateKey,
+                (@id, @companyId, @analysisResultId, @recordingId, @activityId, @sourceKind, true, @templateId, @templateKey,
                  @templateVersion, @evaluatedUserId, @groupId, @aiScore, 'generated', @confidenceScore,
                  @model, @promptFingerprint)
             """;
@@ -627,6 +627,8 @@ public sealed class PostgresMeetingAudioAnalysisService(
             command.Parameters.AddWithValue("companyId", Guid.Parse(recording.CompanyId!));
             command.Parameters.AddWithValue("analysisResultId", analysisResultId);
             command.Parameters.AddWithValue("recordingId", recordingId);
+            AddNullableGuid(command, "activityId", recording.ActivityId);
+            command.Parameters.AddWithValue("sourceKind", recording.SourceKind);
             command.Parameters.AddWithValue("templateId", template.Id);
             command.Parameters.AddWithValue("templateKey", template.TemplateKey);
             command.Parameters.AddWithValue("templateVersion", template.Version);

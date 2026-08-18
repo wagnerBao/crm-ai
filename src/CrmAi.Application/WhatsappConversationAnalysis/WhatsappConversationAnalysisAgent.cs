@@ -1,13 +1,15 @@
 using CrmAi.Domain;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 
 namespace CrmAi.Application;
 
 public sealed class WhatsappConversationAnalysisAgent(
     IOpenAiWhatsappConversationAnalysisClient openAiClient,
     IAiAgentRuntimeSettingsRepository agentSettingsRepository,
-    IWhatsappSuggestionContextRepository suggestionContextRepository) : IWhatsappConversationAnalysisAgent
+    IWhatsappSuggestionContextRepository suggestionContextRepository,
+    IWhatsappScorecardContextRepository? scorecardContextRepository = null) : IWhatsappConversationAnalysisAgent
 {
     private const string AgentKey = "whatsapp-conversation-analysis";
 
@@ -34,6 +36,10 @@ public sealed class WhatsappConversationAnalysisAgent(
             ExistingSuggestions = semanticContext.ExistingSuggestions,
             ExistingOpenOpportunities = semanticContext.ExistingOpenOpportunities
         };
+        var scorecardContext = scorecardContextRepository is null
+            ? null
+            : await scorecardContextRepository.GetAsync(context.TriggerEvent, cancellationToken);
+        input = input with { ScorecardTemplate = scorecardContext?.ToInput() };
 
         var invocationContext = new AiAgentInvocationContext(
             PlatformArea: "whatsapp",
@@ -53,7 +59,7 @@ public sealed class WhatsappConversationAnalysisAgent(
                 ["processedUntil"] = input.Conversation.ProcessedUntil
             });
 
-        return await AnalyzeCoreAsync(settings, input, invocationContext, cancellationToken);
+        return await AnalyzeCoreAsync(settings, input, scorecardContext, invocationContext, cancellationToken);
     }
 
     public async Task<WhatsappConversationAnalysisResult?> AnalyzeContactAsync(OpportunityEvent opportunityEvent, CancellationToken cancellationToken)
@@ -75,6 +81,10 @@ public sealed class WhatsappConversationAnalysisAgent(
             ExistingSuggestions = semanticContext.ExistingSuggestions,
             ExistingOpenOpportunities = semanticContext.ExistingOpenOpportunities
         };
+        var scorecardContext = scorecardContextRepository is null
+            ? null
+            : await scorecardContextRepository.GetAsync(opportunityEvent, cancellationToken);
+        input = input with { ScorecardTemplate = scorecardContext?.ToInput() };
 
         var invocationContext = new AiAgentInvocationContext(
             PlatformArea: "whatsapp",
@@ -93,17 +103,23 @@ public sealed class WhatsappConversationAnalysisAgent(
                 ["latestMessageAt"] = input.Conversation.LatestMessageAt
             });
 
-        return await AnalyzeCoreAsync(settings, input, invocationContext, cancellationToken);
+        return await AnalyzeCoreAsync(settings, input, scorecardContext, invocationContext, cancellationToken);
     }
 
     private async Task<WhatsappConversationAnalysisResult> AnalyzeCoreAsync(
         AiAgentRuntimeSettings settings,
         WhatsappConversationAnalysisInput input,
+        WhatsappScorecardContext? scorecardContext,
         AiAgentInvocationContext invocationContext,
         CancellationToken cancellationToken)
     {
         var response = await openAiClient.AnalyzeAsync(settings, input, invocationContext, cancellationToken);
         var dueAt = ParseDateTime(response.ActivityDueAt);
+        var scorecard = NormalizeScorecard(scorecardContext, response.ScorecardItems ?? [], input.NewTranscript);
+        var fingerprintInput = string.Concat(
+            settings.Instructions,
+            "\nwhatsapp-scorecard-schema:1.0\n",
+            JsonSerializer.Serialize(input.ScorecardTemplate));
 
         return new WhatsappConversationAnalysisResult(
             ConversationSummary: CleanText(response.ConversationSummary, input.PreviousSummary ?? input.NewTranscript),
@@ -130,7 +146,66 @@ public sealed class WhatsappConversationAnalysisAgent(
             ConfidenceScore: Math.Clamp(response.ConfidenceScore, 0, 100),
             Reasons: Clean(response.Reasons),
             GenerationModel: settings.Model,
-            PromptFingerprint: Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(settings.Instructions))).ToLowerInvariant());
+            PromptFingerprint: Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(fingerprintInput))).ToLowerInvariant(),
+            Scorecard: scorecard);
+    }
+
+    private static WhatsappConversationScorecardResult? NormalizeScorecard(
+        WhatsappScorecardContext? context,
+        IReadOnlyCollection<OpenAiConversationScorecardItem> modelItems,
+        string newTranscript)
+    {
+        if (context is null) return null;
+        var byKey = modelItems
+            .Where(item => !string.IsNullOrWhiteSpace(item.CriterionKey))
+            .GroupBy(item => item.CriterionKey.Trim(), StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
+        var previousEvidence = context.PreviousDailyItems
+            .SelectMany(item => item.Evidence)
+            .Select(item => item.Excerpt);
+        var evidenceCorpus = NormalizeWhitespace(string.Join("\n", previousEvidence.Prepend(newTranscript)));
+
+        var items = context.Criteria.Select(criterion =>
+        {
+            if (!byKey.TryGetValue(criterion.Key, out var modelItem))
+            {
+                return new WhatsappConversationScorecardItemResult(
+                    criterion.Id, criterion.Key, criterion.Title, criterion.Weight, criterion.ScoreMin, 0,
+                    "Sem cobertura suficiente para avaliar este critério.", null, []);
+            }
+
+            var evidence = (modelItem.Evidence ?? [])
+                .Where(item => !string.IsNullOrWhiteSpace(item.Excerpt))
+                .Where(item => evidenceCorpus.Contains(NormalizeWhitespace(item.Excerpt), StringComparison.OrdinalIgnoreCase))
+                .Select(item => new WhatsappConversationScorecardEvidenceResult(
+                    Truncate(item.Excerpt.Trim(), 500),
+                    string.IsNullOrWhiteSpace(item.Participant) ? null : Truncate(item.Participant.Trim(), 120),
+                    "transcript",
+                    Math.Clamp(item.ConfidenceScore, 0, 100)))
+                .DistinctBy(item => item.Excerpt, StringComparer.OrdinalIgnoreCase)
+                .Take(5)
+                .ToArray();
+            var covered = evidence.Length > 0;
+            return new WhatsappConversationScorecardItemResult(
+                criterion.Id,
+                criterion.Key,
+                criterion.Title,
+                criterion.Weight,
+                Math.Clamp(modelItem.Score, criterion.ScoreMin, criterion.ScoreMax),
+                covered ? Math.Clamp(modelItem.ConfidenceScore, 0, 100) : 0,
+                covered
+                    ? Truncate(string.IsNullOrWhiteSpace(modelItem.Justification) ? "Avaliação sustentada pelas evidências registradas." : modelItem.Justification.Trim(), 1500)
+                    : "Sem cobertura suficiente: nenhuma evidência literal válida foi localizada na conversa do dia.",
+                string.IsNullOrWhiteSpace(modelItem.Recommendation) ? null : Truncate(modelItem.Recommendation.Trim(), 1000),
+                evidence);
+        }).ToArray();
+
+        return new WhatsappConversationScorecardResult(
+            context.TemplateId,
+            context.TemplateKey,
+            context.TemplateVersion,
+            context.TemplateName,
+            items);
     }
 
     private static string? GetString(OpportunityEvent opportunityEvent, string key) =>
@@ -154,6 +229,12 @@ public sealed class WhatsappConversationAnalysisAgent(
 
     private static string? CleanNullableText(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private static string NormalizeWhitespace(string value) =>
+        string.Join(' ', (value ?? string.Empty).Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+
+    private static string Truncate(string value, int maxLength) =>
+        value.Length <= maxLength ? value : value[..maxLength];
 
     private static string? ValidateSuggestionMatch(
         string? value,

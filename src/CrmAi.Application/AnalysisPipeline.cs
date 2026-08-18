@@ -83,6 +83,11 @@ public interface IWhatsappSuggestionContextRepository
     Task<WhatsappSuggestionSemanticContext> GetAsync(string? companyId, string? contactId, CancellationToken cancellationToken);
 }
 
+public interface IWhatsappScorecardContextRepository
+{
+    Task<WhatsappScorecardContext?> GetAsync(OpportunityEvent opportunityEvent, CancellationToken cancellationToken);
+}
+
 public interface IWhatsappConversationActionStore
 {
     Task ApplyAsync(OpportunityAnalysisContext context, WhatsappConversationAnalysisResult result, CancellationToken cancellationToken);

@@ -27,7 +27,8 @@ internal static class WhatsappConversationAnalysisJsonSchema
             "opportunityIntentKey",
             "matchingOpenOpportunityId",
             "confidenceScore",
-            "reasons"
+            "reasons",
+            "scorecardItems"
         },
         properties = new
         {
@@ -55,7 +56,8 @@ internal static class WhatsappConversationAnalysisJsonSchema
                 type = "array",
                 minItems = 1,
                 items = new { type = "string" }
-            }
+            },
+            scorecardItems = ConversationScorecardJsonSchema.Value
         }
     };
 }

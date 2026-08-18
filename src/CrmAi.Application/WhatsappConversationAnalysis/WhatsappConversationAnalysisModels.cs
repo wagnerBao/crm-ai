@@ -22,7 +22,74 @@ public sealed record OpenAiWhatsappConversationAnalysisResponse(
     string? ActivityIntentKey = null,
     string? OpportunityMatchingSuggestionId = null,
     string? OpportunityIntentKey = null,
-    string? MatchingOpenOpportunityId = null);
+    string? MatchingOpenOpportunityId = null,
+    IReadOnlyCollection<OpenAiConversationScorecardItem>? ScorecardItems = null);
+
+public sealed record WhatsappScorecardTemplateInput(
+    string Id,
+    string Name,
+    int Version,
+    IReadOnlyCollection<WhatsappScorecardCriterionInput> Criteria,
+    IReadOnlyCollection<WhatsappPreviousScorecardItemInput> PreviousDailyItems);
+
+public sealed record WhatsappScorecardCriterionInput(
+    string Key,
+    string Title,
+    string? Description,
+    decimal Weight,
+    string EvaluationInstruction,
+    IReadOnlyCollection<string> PositiveExamples,
+    IReadOnlyCollection<string> NegativeExamples,
+    int ScoreMin,
+    int ScoreMax,
+    bool IsRequired);
+
+public sealed record WhatsappPreviousScorecardItemInput(
+    string CriterionKey,
+    int Score,
+    int ConfidenceScore,
+    string Justification,
+    string? Recommendation,
+    IReadOnlyCollection<OpenAiConversationEvidence> Evidence);
+
+public sealed record WhatsappScorecardContext(
+    string TemplateId,
+    string TemplateKey,
+    int TemplateVersion,
+    string TemplateName,
+    IReadOnlyCollection<WhatsappScorecardCriterionContext> Criteria,
+    IReadOnlyCollection<WhatsappPreviousScorecardItemInput> PreviousDailyItems)
+{
+    public WhatsappScorecardTemplateInput ToInput() => new(
+        TemplateId,
+        TemplateName,
+        TemplateVersion,
+        Criteria.Select(criterion => new WhatsappScorecardCriterionInput(
+            criterion.Key,
+            criterion.Title,
+            criterion.Description,
+            criterion.Weight,
+            criterion.EvaluationInstruction,
+            criterion.PositiveExamples,
+            criterion.NegativeExamples,
+            criterion.ScoreMin,
+            criterion.ScoreMax,
+            criterion.IsRequired)).ToArray(),
+        PreviousDailyItems);
+}
+
+public sealed record WhatsappScorecardCriterionContext(
+    string Id,
+    string Key,
+    string Title,
+    string? Description,
+    decimal Weight,
+    string EvaluationInstruction,
+    IReadOnlyCollection<string> PositiveExamples,
+    IReadOnlyCollection<string> NegativeExamples,
+    int ScoreMin,
+    int ScoreMax,
+    bool IsRequired);
 
 public sealed record WhatsappSuggestionSemanticContext(
     IReadOnlyCollection<WhatsappSuggestionCandidate> ExistingSuggestions,
@@ -66,6 +133,7 @@ public sealed record WhatsappConversationAnalysisInput(
 {
     public IReadOnlyCollection<WhatsappSuggestionCandidate> ExistingSuggestions { get; init; } = [];
     public IReadOnlyCollection<WhatsappOpenOpportunityCandidate> ExistingOpenOpportunities { get; init; } = [];
+    public WhatsappScorecardTemplateInput? ScorecardTemplate { get; init; }
 
     public static WhatsappConversationAnalysisInput FromContext(
         OpportunityAnalysisContext context,

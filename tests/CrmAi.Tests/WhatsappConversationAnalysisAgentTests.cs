@@ -137,10 +137,74 @@ public sealed class WhatsappConversationAnalysisAgentTests
         Assert.Null(result.MatchingOpenOpportunityId);
     }
 
+    [Fact]
+    public async Task AnalyzeAsync_Generates_Incremental_Scorecard_In_The_Same_OpenAi_Call()
+    {
+        var criterionId = Guid.NewGuid().ToString();
+        var template = new WhatsappScorecardContext(
+            Guid.NewGuid().ToString(),
+            Guid.NewGuid().ToString(),
+            2,
+            "Atendimento WhatsApp",
+            [new WhatsappScorecardCriterionContext(
+                criterionId,
+                "response_cadence",
+                "Cadência de resposta",
+                null,
+                100m,
+                "Avalie tempo e continuidade.",
+                [],
+                [],
+                0,
+                100,
+                true)],
+            [new WhatsappPreviousScorecardItemInput(
+                "response_cadence",
+                70,
+                80,
+                "A equipe respondeu no mesmo turno.",
+                null,
+                [new OpenAiConversationEvidence("Equipe: retorno em seguida", "Equipe", null, null, "transcript", 80)])]);
+        var openAiClient = new FakeOpenAiWhatsappConversationAnalysisClient(new OpenAiWhatsappConversationAnalysisResponse(
+            "Cliente recebeu o retorno.",
+            false,
+            null,
+            false,
+            null,
+            null,
+            null,
+            88,
+            ["Atendimento atualizado."],
+            ScorecardItems: [new OpenAiConversationScorecardItem(
+                "response_cadence",
+                90,
+                92,
+                "Resposta objetiva no novo trecho.",
+                "Manter o padrão.",
+                [new OpenAiConversationEvidence("[2026-08-18 10:05] Equipe: Já confirmei para você.", "Equipe", null, null, "transcript", 92)])]));
+        var scorecardRepository = new FakeScorecardContextRepository(template);
+        var agent = CreateAgent(openAiClient, scorecardRepository: scorecardRepository);
+
+        var result = await agent.AnalyzeAsync(
+            CreateContext("[2026-08-18 10:05] Equipe: Já confirmei para você.", "Resumo anterior."),
+            CancellationToken.None);
+
+        Assert.NotNull(result?.Scorecard);
+        Assert.Equal(1, openAiClient.Calls);
+        Assert.Equal(2, openAiClient.LastInput!.ScorecardTemplate!.Version);
+        Assert.Single(openAiClient.LastInput.ScorecardTemplate.PreviousDailyItems);
+        var item = Assert.Single(result.Scorecard.Items);
+        Assert.Equal(criterionId, item.CriterionId);
+        Assert.Equal(90, item.Score);
+        Assert.Equal(92, item.ConfidenceScore);
+        Assert.Single(item.Evidence);
+    }
+
     private static WhatsappConversationAnalysisAgent CreateAgent(
         IOpenAiWhatsappConversationAnalysisClient openAiClient,
-        WhatsappSuggestionSemanticContext? semanticContext = null) =>
-        new(openAiClient, new FakeAgentSettingsRepository(), new FakeSuggestionContextRepository(semanticContext));
+        WhatsappSuggestionSemanticContext? semanticContext = null,
+        IWhatsappScorecardContextRepository? scorecardRepository = null) =>
+        new(openAiClient, new FakeAgentSettingsRepository(), new FakeSuggestionContextRepository(semanticContext), scorecardRepository);
 
     private static OpportunityAnalysisContext CreateContext(string text, string? previousSummary)
     {
@@ -196,6 +260,12 @@ public sealed class WhatsappConversationAnalysisAgentTests
     {
         public Task<WhatsappSuggestionSemanticContext> GetAsync(string? companyId, string? contactId, CancellationToken cancellationToken) =>
             Task.FromResult(context ?? WhatsappSuggestionSemanticContext.Empty);
+    }
+
+    private sealed class FakeScorecardContextRepository(WhatsappScorecardContext context) : IWhatsappScorecardContextRepository
+    {
+        public Task<WhatsappScorecardContext?> GetAsync(OpportunityEvent opportunityEvent, CancellationToken cancellationToken) =>
+            Task.FromResult<WhatsappScorecardContext?>(context);
     }
 
     private sealed class FakeAgentSettingsRepository : IAiAgentRuntimeSettingsRepository

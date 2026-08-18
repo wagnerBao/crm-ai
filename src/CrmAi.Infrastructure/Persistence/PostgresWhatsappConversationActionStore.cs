@@ -37,7 +37,7 @@ public sealed class PostgresWhatsappConversationActionStore(NpgsqlDataSource dat
             await UpdateConversationSummaryAsync(connection, conversationId.Value, result.ConversationSummary, cancellationToken);
         }
 
-        var activityWasCreated = await UpsertSkoposAnalysisActivityAsync(
+        var activity = await UpsertSkoposAnalysisActivityAsync(
             connection,
             opportunityId,
             accountId,
@@ -48,7 +48,7 @@ public sealed class PostgresWhatsappConversationActionStore(NpgsqlDataSource dat
             context,
             result,
             cancellationToken);
-        if (activityWasCreated)
+        if (activity.WasCreated)
         {
             await InsertHistoryAsync(
                 connection,
@@ -59,6 +59,8 @@ public sealed class PostgresWhatsappConversationActionStore(NpgsqlDataSource dat
                 cancellationToken);
         }
 
+        await PersistStructuredAnalysisAndScorecardAsync(
+            connection, runId, activity.Id, companyId, userId, result, cancellationToken);
         await InsertAgentSuggestionsAsync(connection, companyId, contactId, conversationId, runId, opportunityId, result, cancellationToken);
         await InsertInsightAsync(connection, opportunityId, companyId, context, result, cancellationToken);
         await CompleteQueuedRunAsync(connection, runId, conversationId, result.ConversationSummary, cancellationToken);
@@ -85,7 +87,7 @@ public sealed class PostgresWhatsappConversationActionStore(NpgsqlDataSource dat
             return;
         }
 
-        await UpsertContactOnlyWhatsappActivityAsync(
+        var activity = await UpsertContactOnlyWhatsappActivityAsync(
             connection,
             accountId,
             contactId.Value,
@@ -95,6 +97,8 @@ public sealed class PostgresWhatsappConversationActionStore(NpgsqlDataSource dat
             opportunityEvent,
             result,
             cancellationToken);
+        await PersistStructuredAnalysisAndScorecardAsync(
+            connection, runId, activity.Id, companyId, userId, result, cancellationToken);
         await InsertAgentSuggestionsAsync(connection, companyId, contactId, conversationId, runId, null, result, cancellationToken);
         await CompleteQueuedRunAsync(connection, runId, conversationId, result.ConversationSummary, cancellationToken);
     }
@@ -171,7 +175,7 @@ public sealed class PostgresWhatsappConversationActionStore(NpgsqlDataSource dat
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
-    private static async Task<bool> UpsertSkoposAnalysisActivityAsync(
+    private static async Task<DailyActivityUpsertResult> UpsertSkoposAnalysisActivityAsync(
         NpgsqlConnection connection,
         Guid opportunityId,
         Guid? accountId,
@@ -196,7 +200,7 @@ public sealed class PostgresWhatsappConversationActionStore(NpgsqlDataSource dat
             notesBlock, completedNotes, eventMarker, cancellationToken);
     }
 
-    private static async Task<bool> UpsertContactOnlyWhatsappActivityAsync(
+    private static async Task<DailyActivityUpsertResult> UpsertContactOnlyWhatsappActivityAsync(
         NpgsqlConnection connection,
         Guid? accountId,
         Guid contactId,
@@ -222,7 +226,7 @@ public sealed class PostgresWhatsappConversationActionStore(NpgsqlDataSource dat
             $"[agent_skopos_event:{opportunityEvent.EventId}]", cancellationToken);
     }
 
-    private static async Task<bool> UpsertDailyAnalysisActivityAsync(
+    private static async Task<DailyActivityUpsertResult> UpsertDailyAnalysisActivityAsync(
         NpgsqlConnection connection,
         Guid? opportunityId,
         Guid? accountId,
@@ -291,7 +295,10 @@ public sealed class PostgresWhatsappConversationActionStore(NpgsqlDataSource dat
                 where not exists (select 1 from changed)
                 returning id
             )
-            select exists (select 1 from inserted);
+            select id, true as was_created from inserted
+            union all
+            select id, false as was_created from changed
+            limit 1;
             """;
 
         await using var command = new NpgsqlCommand(sql, connection, transaction);
@@ -308,7 +315,15 @@ public sealed class PostgresWhatsappConversationActionStore(NpgsqlDataSource dat
         command.Parameters.AddWithValue("notes", notesBlock);
         command.Parameters.AddWithValue("eventMarker", $"%{eventMarker}%");
         command.Parameters.AddWithValue("completedNotes", completedNotes);
-        var wasInserted = (bool)(await command.ExecuteScalarAsync(cancellationToken) ?? false);
+        Guid persistedActivityId;
+        bool wasInserted;
+        await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
+        {
+            if (!await reader.ReadAsync(cancellationToken))
+                throw new InvalidOperationException("Não foi possível consolidar a atividade diária do WhatsApp.");
+            persistedActivityId = reader.GetGuid(0);
+            wasInserted = reader.GetBoolean(1);
+        }
 
         if (opportunityId is not null)
         {
@@ -322,7 +337,157 @@ public sealed class PostgresWhatsappConversationActionStore(NpgsqlDataSource dat
         }
 
         await transaction.CommitAsync(cancellationToken);
-        return wasInserted;
+        return new DailyActivityUpsertResult(persistedActivityId, wasInserted);
+    }
+
+    private static async Task PersistStructuredAnalysisAndScorecardAsync(
+        NpgsqlConnection connection,
+        Guid? runId,
+        Guid activityId,
+        Guid? companyId,
+        Guid? evaluatedUserId,
+        WhatsappConversationAnalysisResult result,
+        CancellationToken cancellationToken)
+    {
+        if (runId is null || companyId is null) return;
+
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        const string analysisSql = """
+            update whatsapp_conversation_analysis_runs
+            set activity_id = @activityId,
+                analysis_json = @analysisJson,
+                confidence_score = @confidenceScore,
+                model = @model,
+                prompt_fingerprint = @promptFingerprint,
+                updated_at = now()
+            where id = @runId and company_id = @companyId
+            """;
+        await using (var command = new NpgsqlCommand(analysisSql, connection, transaction))
+        {
+            command.Parameters.AddWithValue("runId", runId.Value);
+            command.Parameters.AddWithValue("companyId", companyId.Value);
+            command.Parameters.AddWithValue("activityId", activityId);
+            command.Parameters.Add("analysisJson", NpgsqlDbType.Jsonb).Value = JsonSerializer.Serialize(result, SerializerOptions);
+            command.Parameters.AddWithValue("confidenceScore", Math.Clamp(result.ConfidenceScore, 0, 100));
+            command.Parameters.Add("model", NpgsqlDbType.Text).Value = string.IsNullOrWhiteSpace(result.GenerationModel) ? DBNull.Value : result.GenerationModel;
+            command.Parameters.Add("promptFingerprint", NpgsqlDbType.Text).Value = string.IsNullOrWhiteSpace(result.PromptFingerprint) ? DBNull.Value : result.PromptFingerprint;
+            if (await command.ExecuteNonQueryAsync(cancellationToken) != 1)
+                throw new InvalidOperationException("A execução da análise do WhatsApp não pertence à empresa informada.");
+        }
+
+        if (result.Scorecard is null
+            || !Guid.TryParse(result.Scorecard.TemplateId, out var templateId)
+            || !Guid.TryParse(result.Scorecard.TemplateKey, out var templateKey))
+        {
+            await transaction.CommitAsync(cancellationToken);
+            return;
+        }
+
+        await using (var command = new NpgsqlCommand(
+            "select pg_advisory_xact_lock(hashtextextended(@key, 0));",
+            connection,
+            transaction))
+        {
+            command.Parameters.AddWithValue("key", $"whatsapp-scorecard:{companyId}:{activityId}");
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        const string existingSql = """
+            select exists (
+                select 1 from conversation_scorecards
+                where company_id = @companyId and whatsapp_analysis_run_id = @runId
+            )
+            """;
+        await using (var command = new NpgsqlCommand(existingSql, connection, transaction))
+        {
+            command.Parameters.AddWithValue("companyId", companyId.Value);
+            command.Parameters.AddWithValue("runId", runId.Value);
+            if ((bool)(await command.ExecuteScalarAsync(cancellationToken) ?? false))
+            {
+                await transaction.CommitAsync(cancellationToken);
+                return;
+            }
+        }
+
+        await using (var command = new NpgsqlCommand("""
+            update conversation_scorecards
+            set is_current = false, updated_at = now()
+            where company_id = @companyId
+              and activity_id = @activityId
+              and source_kind = 'whatsapp_conversation'
+              and is_current
+            """, connection, transaction))
+        {
+            command.Parameters.AddWithValue("companyId", companyId.Value);
+            command.Parameters.AddWithValue("activityId", activityId);
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        var coveredItems = result.Scorecard.Items.Where(item => item.ConfidenceScore > 0 && item.Evidence.Count > 0).ToArray();
+        var coveredWeight = coveredItems.Sum(item => item.Weight);
+        var overallScore = coveredWeight <= 0
+            ? 0m
+            : Math.Round(coveredItems.Sum(item => item.Score * item.Weight) / coveredWeight, 2);
+        var overallConfidence = coveredWeight <= 0
+            ? 0
+            : Math.Clamp((int)Math.Round(coveredItems.Sum(item => item.ConfidenceScore * item.Weight) / coveredWeight), 0, 100);
+        var scorecardId = Guid.NewGuid();
+
+        const string scorecardSql = """
+            insert into conversation_scorecards
+                (id, company_id, analysis_result_id, recording_id, whatsapp_analysis_run_id, activity_id,
+                 source_kind, is_current, template_id, template_key, template_version,
+                 evaluated_user_id, group_id, ai_score, status, confidence_score, model, prompt_fingerprint)
+            select
+                @id, @companyId, null, null, @runId, @activityId,
+                'whatsapp_conversation', true, @templateId, @templateKey, @templateVersion,
+                @evaluatedUserId, owner.group_id, @aiScore, 'generated', @confidenceScore, @model, @promptFingerprint
+            from (select 1) seed
+            left join users owner on owner.id = @evaluatedUserId and owner.company_id = @companyId
+            """;
+        await using (var command = new NpgsqlCommand(scorecardSql, connection, transaction))
+        {
+            command.Parameters.AddWithValue("id", scorecardId);
+            command.Parameters.AddWithValue("companyId", companyId.Value);
+            command.Parameters.AddWithValue("runId", runId.Value);
+            command.Parameters.AddWithValue("activityId", activityId);
+            command.Parameters.AddWithValue("templateId", templateId);
+            command.Parameters.AddWithValue("templateKey", templateKey);
+            command.Parameters.AddWithValue("templateVersion", result.Scorecard.TemplateVersion);
+            command.Parameters.Add("evaluatedUserId", NpgsqlDbType.Uuid).Value = evaluatedUserId ?? (object)DBNull.Value;
+            command.Parameters.AddWithValue("aiScore", overallScore);
+            command.Parameters.AddWithValue("confidenceScore", overallConfidence);
+            command.Parameters.Add("model", NpgsqlDbType.Text).Value = string.IsNullOrWhiteSpace(result.GenerationModel) ? DBNull.Value : result.GenerationModel;
+            command.Parameters.Add("promptFingerprint", NpgsqlDbType.Text).Value = string.IsNullOrWhiteSpace(result.PromptFingerprint) ? DBNull.Value : result.PromptFingerprint;
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        const string itemSql = """
+            insert into conversation_scorecard_items
+                (id, scorecard_id, criterion_id, criterion_key, criterion_title, weight,
+                 ai_score, confidence_score, justification, recommendation, evidence_json)
+            values
+                (gen_random_uuid(), @scorecardId, @criterionId, @criterionKey, @criterionTitle, @weight,
+                 @score, @confidenceScore, @justification, @recommendation, @evidenceJson)
+            """;
+        foreach (var item in result.Scorecard.Items)
+        {
+            if (!Guid.TryParse(item.CriterionId, out var criterionId)) continue;
+            await using var command = new NpgsqlCommand(itemSql, connection, transaction);
+            command.Parameters.AddWithValue("scorecardId", scorecardId);
+            command.Parameters.AddWithValue("criterionId", criterionId);
+            command.Parameters.AddWithValue("criterionKey", item.CriterionKey);
+            command.Parameters.AddWithValue("criterionTitle", item.CriterionTitle);
+            command.Parameters.AddWithValue("weight", item.Weight);
+            command.Parameters.AddWithValue("score", Math.Clamp(item.Score, 0, 100));
+            command.Parameters.AddWithValue("confidenceScore", Math.Clamp(item.ConfidenceScore, 0, 100));
+            command.Parameters.AddWithValue("justification", item.Justification);
+            command.Parameters.Add("recommendation", NpgsqlDbType.Text).Value = string.IsNullOrWhiteSpace(item.Recommendation) ? DBNull.Value : item.Recommendation;
+            command.Parameters.Add("evidenceJson", NpgsqlDbType.Jsonb).Value = JsonSerializer.Serialize(item.Evidence, SerializerOptions);
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
     }
 
     private static DateTime ResolveActivityDate(OpportunityAnalysisContext context)
@@ -704,4 +869,6 @@ public sealed class PostgresWhatsappConversationActionStore(NpgsqlDataSource dat
 
         return value.Length <= maxLength ? value : value[..maxLength];
     }
+
+    private sealed record DailyActivityUpsertResult(Guid Id, bool WasCreated);
 }

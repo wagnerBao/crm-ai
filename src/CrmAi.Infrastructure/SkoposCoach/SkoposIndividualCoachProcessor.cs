@@ -189,14 +189,23 @@ public sealed class SkoposIndividualCoachProcessor(
                    item.confidence_score, scorecard.status = 'reviewed' reviewed,
                    item.justification
             FROM conversation_scorecards scorecard
-            JOIN conversation_analysis_results analysis
-              ON analysis.id = scorecard.analysis_result_id AND analysis.is_current
+            LEFT JOIN conversation_analysis_results analysis
+              ON analysis.id = scorecard.analysis_result_id
             JOIN conversation_scorecard_items item ON item.scorecard_id = scorecard.id
             JOIN skopos_coach_agent_reports report
               ON report.company_id = scorecard.company_id
-             AND report.source_type = 'meeting'
-             AND report.source_id = scorecard.recording_id
              AND report.owner_user_id = @userId
+             AND (
+                  (scorecard.source_kind <> 'whatsapp_conversation'
+                   AND analysis.is_current
+                   AND report.source_type = 'meeting'
+                   AND report.source_id = scorecard.recording_id)
+                  OR
+                  (scorecard.source_kind = 'whatsapp_conversation'
+                   AND scorecard.is_current
+                   AND report.source_type = 'whatsapp'
+                   AND report.source_id = scorecard.whatsapp_analysis_run_id)
+             )
             WHERE scorecard.company_id = @companyId
               AND scorecard.evaluated_user_id = @userId
               AND scorecard.status <> 'invalidated'

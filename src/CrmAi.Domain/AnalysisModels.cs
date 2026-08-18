@@ -132,7 +132,32 @@ public sealed record WhatsappConversationAnalysisResult(
     string? OpportunityIntentKey = null,
     string? MatchingOpenOpportunityId = null,
     string? GenerationModel = null,
-    string? PromptFingerprint = null);
+    string? PromptFingerprint = null,
+    WhatsappConversationScorecardResult? Scorecard = null);
+
+public sealed record WhatsappConversationScorecardResult(
+    string TemplateId,
+    string TemplateKey,
+    int TemplateVersion,
+    string TemplateName,
+    IReadOnlyCollection<WhatsappConversationScorecardItemResult> Items);
+
+public sealed record WhatsappConversationScorecardItemResult(
+    string CriterionId,
+    string CriterionKey,
+    string CriterionTitle,
+    decimal Weight,
+    int Score,
+    int ConfidenceScore,
+    string Justification,
+    string? Recommendation,
+    IReadOnlyCollection<WhatsappConversationScorecardEvidenceResult> Evidence);
+
+public sealed record WhatsappConversationScorecardEvidenceResult(
+    string Excerpt,
+    string? Participant,
+    string Source,
+    int ConfidenceScore);
 
 public enum RiskLevel
 {
