@@ -35,7 +35,7 @@ public sealed record OpenAiMeetingAudioAnalysisResponse(
     IReadOnlyCollection<OpenAiConversationScorecardItem>? ScorecardItems = null);
 
 public sealed record OpenAiConversationScorecardItem(string CriterionKey, int Score, int ConfidenceScore, string Justification, string? Recommendation, IReadOnlyCollection<OpenAiConversationEvidence> Evidence);
-public sealed record OpenAiConversationEvidence(string Excerpt, string? Participant, int? StartMs, int? EndMs, string Source, int ConfidenceScore);
+public sealed record OpenAiConversationEvidence(string Excerpt, string? Participant, long? StartMs, long? EndMs, string Source, int ConfidenceScore);
 
 public sealed record MeetingAudioRecordingPayload(
     string Id,

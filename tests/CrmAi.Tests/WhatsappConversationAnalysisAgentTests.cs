@@ -181,7 +181,7 @@ public sealed class WhatsappConversationAnalysisAgentTests
                 92,
                 "Resposta objetiva no novo trecho.",
                 "Manter o padrão.",
-                [new OpenAiConversationEvidence("[2026-08-18 10:05] Equipe: Já confirmei para você.", "Equipe", null, null, "transcript", 92)])]));
+                [new OpenAiConversationEvidence("[2026-08-18 10:05] Equipe: Já confirmei para você.", "Equipe", 4_294_967_296L, 4_294_967_396L, "transcript", 92)])]));
         var scorecardRepository = new FakeScorecardContextRepository(template);
         var agent = CreateAgent(openAiClient, scorecardRepository: scorecardRepository);
 

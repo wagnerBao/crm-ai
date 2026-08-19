@@ -1,3 +1,6 @@
+using System.Text.Json;
+using CrmAi.Application;
+
 namespace CrmAi.Tests;
 
 public sealed class WhatsappConversationPersistenceRegressionTests
@@ -60,6 +63,46 @@ public sealed class WhatsappConversationPersistenceRegressionTests
             "from ai_agent_suggestions",
             "ReadOpenOpportunitiesAsync",
             "payload ->> 'semanticIntentKey'");
+    }
+
+    [Fact]
+    public void WhatsappScorecard_Should_Deserialize_Large_Model_Offsets_Without_Losing_The_Analysis()
+    {
+        const string json = """
+            {
+              "conversationSummary": "Atendimento analisado.",
+              "shouldCreateNote": false,
+              "noteText": null,
+              "shouldCreateActivity": false,
+              "activityTitle": null,
+              "activityNotes": null,
+              "activityDueAt": null,
+              "confidenceScore": 80,
+              "reasons": ["Evidência localizada."],
+              "scorecardItems": [{
+                "criterionKey": "response_cadence",
+                "score": 80,
+                "confidenceScore": 80,
+                "justification": "Resposta adequada.",
+                "recommendation": null,
+                "evidence": [{
+                  "excerpt": "Equipe: retorno em seguida",
+                  "participant": "Equipe",
+                  "startMs": 4294967296,
+                  "endMs": 4294967396,
+                  "source": "transcript",
+                  "confidenceScore": 80
+                }]
+              }]
+            }
+            """;
+
+        var result = JsonSerializer.Deserialize<OpenAiWhatsappConversationAnalysisResponse>(json,
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+
+        var evidence = Assert.Single(Assert.Single(result!.ScorecardItems!).Evidence);
+        Assert.Equal(4_294_967_296L, evidence.StartMs);
+        Assert.Equal(4_294_967_396L, evidence.EndMs);
     }
 
     private static string ReadSource(string relativePath)
