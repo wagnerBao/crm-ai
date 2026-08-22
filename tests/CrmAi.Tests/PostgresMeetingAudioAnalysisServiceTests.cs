@@ -53,6 +53,20 @@ public sealed class PostgresMeetingAudioAnalysisServiceTests
     }
 
     [Fact]
+    public void DiarizedTranscription_PersistsSegmentsAndOnlyRetranscribesWhenExplicitlyForced()
+    {
+        var source = ReadSource("src/CrmAi.Infrastructure/Persistence/PostgresMeetingAudioAnalysisService.cs");
+
+        Assert.Contains("forceRetranscription", source, StringComparison.Ordinal);
+        Assert.Contains("string.IsNullOrWhiteSpace(transcript) || forceRetranscription", source, StringComparison.Ordinal);
+        Assert.Contains("meeting_audio_transcription_versions", source, StringComparison.Ordinal);
+        Assert.Contains("meeting_audio_transcription_speakers", source, StringComparison.Ordinal);
+        Assert.Contains("meeting_audio_transcription_segments", source, StringComparison.Ordinal);
+        Assert.Contains("Voz {segment.SpeakerLabel} · Desconhecido", source, StringComparison.Ordinal);
+        Assert.Contains("string.Equals(reader.GetString(0), \"google_meet\"", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void PromptFingerprint_CoversSystemAndContextInstructions()
     {
         var first = new AiAgentRuntimeSettings("meeting-service-analysis", true, "openai", "model", null, "system", 1, "context", []);

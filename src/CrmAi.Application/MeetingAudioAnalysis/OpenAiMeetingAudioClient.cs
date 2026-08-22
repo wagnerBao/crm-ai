@@ -17,8 +17,8 @@ public sealed class OpenAiMeetingAudioClient(
     {
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
     };
-    private const string DefaultTranscriptionModel = "gpt-4o-transcribe";
-    private const string DefaultFallbackTranscriptionModel = "whisper-1";
+    private const string DefaultTranscriptionModel = "gpt-4o-transcribe-diarize";
+    private const string DefaultFallbackTranscriptionModel = "gpt-4o-transcribe";
     private const int MaxOpenAiAudioUploadBytes = 24 * 1024 * 1024;
     private const int DefaultSegmentSeconds = 600;
     private const string CallSuggestionInstructions = """
@@ -36,7 +36,7 @@ public sealed class OpenAiMeetingAudioClient(
         explique a ausencia de evidencia e nao presuma desempenho ruim. Quando nao houver template, devolva array vazio.
         """;
 
-    public async Task<string> TranscribeAsync(
+    public async Task<MeetingAudioTranscriptionResult> TranscribeAsync(
         AiAgentRuntimeSettings settings,
         string fileName,
         string mimeType,
@@ -50,7 +50,7 @@ public sealed class OpenAiMeetingAudioClient(
         var startedAt = DateTime.UtcNow;
         var transcriptionModel = Environment.GetEnvironmentVariable("OPENAI_TRANSCRIPTION_MODEL") ?? DefaultTranscriptionModel;
         var fallbackTranscriptionModel = Environment.GetEnvironmentVariable("OPENAI_TRANSCRIPTION_FALLBACK_MODEL") ?? DefaultFallbackTranscriptionModel;
-        var requestJson = BuildTranscriptionRequestJson(transcriptionModel, fileName, mimeType, content.Length, null);
+        var requestJson = BuildTranscriptionRequestJson(transcriptionModel, fileName, mimeType, content.Length, RequiresDiarization(transcriptionModel) ? "auto" : null);
 
         if (string.IsNullOrWhiteSpace(apiKey))
         {
@@ -86,7 +86,7 @@ public sealed class OpenAiMeetingAudioClient(
                 true,
                 BuildTranscriptionRequestJson(transcriptionModel, fileName, mimeType, content.Length, "ffmpeg_segment"),
                 null,
-                JsonSerializer.Serialize(new { text = segmentedTranscript }, SerializerOptions),
+                JsonSerializer.Serialize(new { text = segmentedTranscript.Text, segments = segmentedTranscript.Segments.Count }, SerializerOptions),
                 modelOverride: transcriptionModel), cancellationToken);
             return segmentedTranscript;
         }
@@ -98,10 +98,10 @@ public sealed class OpenAiMeetingAudioClient(
             fileName,
             mimeType,
             content,
-            null,
+            RequiresDiarization(transcriptionModel) ? "auto" : null,
             cancellationToken);
 
-        if (!attempt.IsSuccessStatusCode && SupportsAudioChunking(transcriptionModel) && IsInputTooLarge(attempt.ResponseBody))
+        if (!attempt.IsSuccessStatusCode && !RequiresDiarization(transcriptionModel) && SupportsAudioChunking(transcriptionModel) && IsInputTooLarge(attempt.ResponseBody))
         {
             await LogTranscriptionFailureAsync(settings, transcriptionModel, endpoint, invocationContext, attempt, cancellationToken);
 
@@ -117,7 +117,7 @@ public sealed class OpenAiMeetingAudioClient(
         }
 
         if (!attempt.IsSuccessStatusCode
-            && IsInputTooLarge(attempt.ResponseBody)
+            && (IsInputTooLarge(attempt.ResponseBody) || CanFallbackFromDiarization(transcriptionModel, attempt.StatusCode))
             && !string.Equals(fallbackTranscriptionModel, transcriptionModel, StringComparison.OrdinalIgnoreCase))
         {
             await LogTranscriptionFailureAsync(settings, transcriptionModel, endpoint, invocationContext, attempt, cancellationToken);
@@ -149,7 +149,7 @@ public sealed class OpenAiMeetingAudioClient(
                 true,
                 BuildTranscriptionRequestJson(transcriptionModel, fileName, mimeType, content.Length, "ffmpeg_segment"),
                 null,
-                JsonSerializer.Serialize(new { text = segmentedTranscript }, SerializerOptions),
+                JsonSerializer.Serialize(new { text = segmentedTranscript.Text, segments = segmentedTranscript.Segments.Count }, SerializerOptions),
                 modelOverride: transcriptionModel), cancellationToken);
             return segmentedTranscript;
         }
@@ -177,13 +177,10 @@ public sealed class OpenAiMeetingAudioClient(
             throw exception;
         }
 
-        string transcript;
+        MeetingAudioTranscriptionResult transcript;
         try
         {
-            using var document = JsonDocument.Parse(attempt.ResponseBody);
-            transcript = document.RootElement.TryGetProperty("text", out var textElement)
-                ? textElement.GetString() ?? string.Empty
-                : string.Empty;
+            transcript = ParseTranscriptionResponse(attempt.ResponseBody, transcriptionModel).Result;
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
@@ -215,7 +212,7 @@ public sealed class OpenAiMeetingAudioClient(
             true,
             attempt.RequestJson,
             OpenAiInvocationLogBuilder.NormalizeJsonBody(attempt.ResponseBody),
-            JsonSerializer.Serialize(new { text = transcript }, SerializerOptions),
+            JsonSerializer.Serialize(new { text = transcript.Text, segments = transcript.Segments.Count }, SerializerOptions),
             modelOverride: transcriptionModel), cancellationToken);
 
         return transcript;
@@ -423,6 +420,10 @@ public sealed class OpenAiMeetingAudioClient(
         using var form = new MultipartFormDataContent();
         form.Add(new StringContent(transcriptionModel), "model");
         form.Add(new StringContent("pt"), "language");
+        if (RequiresDiarization(transcriptionModel))
+        {
+            form.Add(new StringContent("diarized_json"), "response_format");
+        }
         if (!string.IsNullOrWhiteSpace(chunkingStrategy))
         {
             form.Add(new StringContent(chunkingStrategy), "chunking_strategy");
@@ -439,7 +440,7 @@ public sealed class OpenAiMeetingAudioClient(
         return new TranscriptionAttempt(startedAt, (int)response.StatusCode, response.IsSuccessStatusCode, requestJson, responseBody);
     }
 
-    private async Task<string> TranscribeSegmentedAudioAsync(
+    private async Task<MeetingAudioTranscriptionResult> TranscribeSegmentedAudioAsync(
         string apiKey,
         string endpoint,
         string transcriptionModel,
@@ -450,6 +451,10 @@ public sealed class OpenAiMeetingAudioClient(
     {
         var chunks = await SplitAudioWithFfmpegAsync(fileName, mimeType, content, cancellationToken);
         var transcripts = new List<string>();
+        var segments = new List<MeetingAudioTranscriptionSegment>();
+        var speakerLabels = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var elapsedMs = 0;
+        var chunkIndex = 0;
         foreach (var chunk in chunks)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -460,7 +465,7 @@ public sealed class OpenAiMeetingAudioClient(
                 chunk.FileName,
                 chunk.MimeType,
                 chunk.Content,
-                null,
+                RequiresDiarization(transcriptionModel) ? "auto" : null,
                 cancellationToken);
 
             if (!attempt.IsSuccessStatusCode && SupportsAudioChunking(transcriptionModel) && IsInputTooLarge(attempt.ResponseBody))
@@ -484,17 +489,38 @@ public sealed class OpenAiMeetingAudioClient(
                     attempt.ResponseBody);
             }
 
-            using var document = JsonDocument.Parse(attempt.ResponseBody);
-            var transcript = document.RootElement.TryGetProperty("text", out var textElement)
-                ? textElement.GetString() ?? string.Empty
-                : string.Empty;
-            if (!string.IsNullOrWhiteSpace(transcript))
+            var parsed = ParseTranscriptionResponse(attempt.ResponseBody, transcriptionModel);
+            if (!string.IsNullOrWhiteSpace(parsed.Result.Text))
             {
-                transcripts.Add(transcript.Trim());
+                transcripts.Add(parsed.Result.Text.Trim());
             }
+
+            foreach (var segment in parsed.Result.Segments)
+            {
+                var chunkSpeakerKey = $"{chunkIndex}:{segment.SpeakerLabel}";
+                if (!speakerLabels.TryGetValue(chunkSpeakerKey, out var speakerLabel))
+                {
+                    speakerLabel = SpeakerLabel(speakerLabels.Count);
+                    speakerLabels[chunkSpeakerKey] = speakerLabel;
+                }
+
+                segments.Add(segment with
+                {
+                    Id = $"chunk-{chunkIndex + 1}-{segment.Id}",
+                    SpeakerLabel = speakerLabel,
+                    StartMs = elapsedMs + segment.StartMs,
+                    EndMs = elapsedMs + segment.EndMs
+                });
+            }
+
+            elapsedMs += parsed.DurationMs;
+            chunkIndex += 1;
         }
 
-        return string.Join("\n\n", transcripts).Trim();
+        return new MeetingAudioTranscriptionResult(
+            string.Join("\n\n", transcripts).Trim(),
+            segments.Count > 0 ? "openai_diarization" : "openai_plain",
+            segments);
     }
 
     private static async Task<IReadOnlyCollection<AudioChunk>> SplitAudioWithFfmpegAsync(
@@ -636,6 +662,7 @@ public sealed class OpenAiMeetingAudioClient(
         {
             model = transcriptionModel,
             language = "pt",
+            response_format = RequiresDiarization(transcriptionModel) ? "diarized_json" : "json",
             chunking_strategy = chunkingStrategy,
             file = new
             {
@@ -648,6 +675,59 @@ public sealed class OpenAiMeetingAudioClient(
     private static bool SupportsAudioChunking(string model) =>
         model.StartsWith("gpt-4o", StringComparison.OrdinalIgnoreCase)
         && model.Contains("transcribe", StringComparison.OrdinalIgnoreCase);
+
+    private static bool RequiresDiarization(string model) =>
+        model.Contains("transcribe-diarize", StringComparison.OrdinalIgnoreCase);
+
+    private static bool CanFallbackFromDiarization(string model, int statusCode) =>
+        RequiresDiarization(model) && statusCode is not (401 or 403 or 429);
+
+    private static ParsedTranscription ParseTranscriptionResponse(string responseBody, string model)
+    {
+        using var document = JsonDocument.Parse(responseBody);
+        var root = document.RootElement;
+        var text = root.TryGetProperty("text", out var textElement) ? textElement.GetString() ?? string.Empty : string.Empty;
+        var durationMs = root.TryGetProperty("duration", out var durationElement) && durationElement.TryGetDouble(out var durationSeconds)
+            ? Math.Max(0, (int)Math.Round(durationSeconds * 1000d))
+            : 0;
+        if (!RequiresDiarization(model)
+            || !root.TryGetProperty("segments", out var segmentItems)
+            || segmentItems.ValueKind != JsonValueKind.Array)
+        {
+            return new ParsedTranscription(new MeetingAudioTranscriptionResult(text, "openai_plain", []), durationMs);
+        }
+
+        var segments = segmentItems.EnumerateArray()
+            .Select((segment, index) => new MeetingAudioTranscriptionSegment(
+                segment.TryGetProperty("id", out var id) ? id.GetString() ?? $"segment-{index + 1}" : $"segment-{index + 1}",
+                segment.TryGetProperty("speaker", out var speaker) ? speaker.GetString() ?? "A" : "A",
+                ReadMilliseconds(segment, "start"),
+                ReadMilliseconds(segment, "end"),
+                segment.TryGetProperty("text", out var segmentText) ? segmentText.GetString()?.Trim() ?? string.Empty : string.Empty))
+            .Where(segment => !string.IsNullOrWhiteSpace(segment.Text))
+            .ToArray();
+        return new ParsedTranscription(
+            new MeetingAudioTranscriptionResult(text, segments.Length > 0 ? "openai_diarization" : "openai_plain", segments),
+            durationMs > 0 ? durationMs : segments.LastOrDefault()?.EndMs ?? 0);
+    }
+
+    private static int ReadMilliseconds(JsonElement element, string propertyName) =>
+        element.TryGetProperty(propertyName, out var value) && value.TryGetDouble(out var seconds)
+            ? Math.Max(0, (int)Math.Round(seconds * 1000d))
+            : 0;
+
+    private static string SpeakerLabel(int index)
+    {
+        var value = index + 1;
+        var builder = new StringBuilder();
+        while (value > 0)
+        {
+            value -= 1;
+            builder.Insert(0, (char)('A' + value % 26));
+            value /= 26;
+        }
+        return builder.ToString();
+    }
 
     private static bool IsInputTooLarge(string? responseBody)
     {
@@ -701,6 +781,7 @@ public sealed class OpenAiMeetingAudioClient(
     private sealed record OpenAiOutputContent(string Type, string? Text);
 
     private sealed record TranscriptionAttempt(DateTime StartedAt, int StatusCode, bool IsSuccessStatusCode, string RequestJson, string ResponseBody);
+    private sealed record ParsedTranscription(MeetingAudioTranscriptionResult Result, int DurationMs);
 
     private sealed record AudioChunk(string FileName, string MimeType, byte[] Content);
 

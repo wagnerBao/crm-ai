@@ -37,6 +37,18 @@ public sealed record OpenAiMeetingAudioAnalysisResponse(
 public sealed record OpenAiConversationScorecardItem(string CriterionKey, int Score, int ConfidenceScore, string Justification, string? Recommendation, IReadOnlyCollection<OpenAiConversationEvidence> Evidence);
 public sealed record OpenAiConversationEvidence(string Excerpt, string? Participant, long? StartMs, long? EndMs, string Source, int ConfidenceScore);
 
+public sealed record MeetingAudioTranscriptionSegment(
+    string Id,
+    string SpeakerLabel,
+    int StartMs,
+    int EndMs,
+    string Text);
+
+public sealed record MeetingAudioTranscriptionResult(
+    string Text,
+    string Source,
+    IReadOnlyCollection<MeetingAudioTranscriptionSegment> Segments);
+
 public sealed record MeetingAudioRecordingPayload(
     string Id,
     string MeetingId,
@@ -58,4 +70,5 @@ public sealed record MeetingAudioRecordingPayload(
     string? PipelineId = null,
     string? StageId = null,
     string? GroupId = null,
-    string? ActivityType = null);
+    string? ActivityType = null,
+    string? TranscriptionVersionId = null);

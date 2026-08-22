@@ -63,10 +63,12 @@ public sealed class PostgresMeetingAudioAnalysisService(
 
             var invocationContext = BuildInvocationContext(recording, settings);
             var transcript = recording.Transcript;
-            if (string.IsNullOrWhiteSpace(transcript))
+            var forceRetranscription = GetBoolean(opportunityEvent.Data, "forceRetranscription");
+            if (string.IsNullOrWhiteSpace(transcript) || forceRetranscription)
             {
                 await UpdateStatusAsync(parsedRecordingId, "transcribing", null, cancellationToken);
-                transcript = await openAiClient.TranscribeAsync(settings, recording.FileName, recording.MimeType, recording.Content, invocationContext, cancellationToken);
+                var transcription = await openAiClient.TranscribeAsync(settings, recording.FileName, recording.MimeType, recording.Content, invocationContext, cancellationToken);
+                transcript = await PersistTranscriptionVersionAsync(recording, parsedRecordingId, transcription, cancellationToken);
             }
             else
             {
@@ -80,10 +82,6 @@ public sealed class PostgresMeetingAudioAnalysisService(
                 return false;
             }
 
-            if (string.IsNullOrWhiteSpace(recording.Transcript))
-            {
-                await UpdateTranscriptAsync(parsedRecordingId, transcript, "analyzing", cancellationToken);
-            }
             var selectedContext = await LoadSelectedContextAsync(recording, settings.ContextEntityKeys, cancellationToken);
             var scorecardTemplate = await LoadScorecardTemplateAsync(recording, GetGuid(opportunityEvent.Data, "scorecardTemplateId"), cancellationToken);
             var analysis = await openAiClient.AnalyzeAsync(settings, new MeetingAudioAnalysisInput(
@@ -123,8 +121,28 @@ public sealed class PostgresMeetingAudioAnalysisService(
             {
                 await MarkAnalysisFailedBestEffortAsync(analysisResultId.Value, exception.Message);
             }
+            await MarkCurrentTranscriptionAnalysisFailedBestEffortAsync(parsedRecordingId);
             await UpdateStatusAsync(parsedRecordingId, "failed", exception.Message, CancellationToken.None);
             throw;
+        }
+    }
+
+    private async Task MarkCurrentTranscriptionAnalysisFailedBestEffortAsync(Guid recordingId)
+    {
+        try
+        {
+            await using var connection = await dataSource.OpenConnectionAsync(CancellationToken.None);
+            await using var command = new NpgsqlCommand("""
+                update meeting_audio_transcription_versions
+                set analysis_status = 'failed', updated_at = now()
+                where recording_id = @recordingId and is_current;
+                """, connection);
+            command.Parameters.AddWithValue("recordingId", recordingId);
+            await command.ExecuteNonQueryAsync(CancellationToken.None);
+        }
+        catch
+        {
+            // Preserva a falha original do processamento.
         }
     }
 
@@ -262,13 +280,20 @@ public sealed class PostgresMeetingAudioAnalysisService(
                 o.pipeline_id,
                 o.stage_id,
                 owner.group_id,
-                act.activity_type
+                act.activity_type,
+                current_version.id as current_version_id
             from meeting_audio_recordings mar
             left join opportunities o on o.id = mar.opportunity_id and o.company_id = mar.company_id
             left join accounts a on a.id = mar.account_id and a.company_id = mar.company_id
             left join activities act on act.id = mar.activity_id and act.company_id = mar.company_id
             left join contacts contact on contact.id = act.contact_id and contact.company_id = mar.company_id
             left join users owner on owner.id = act.owner_user_id and owner.company_id = mar.company_id
+            left join lateral (
+                select version.id
+                from meeting_audio_transcription_versions version
+                where version.recording_id = mar.id and version.company_id = mar.company_id and version.is_current
+                limit 1
+            ) current_version on true
             where mar.id = @recordingId and mar.company_id is not null
               and (mar.opportunity_id is null or o.id is not null)
               and (mar.account_id is null or a.id is not null)
@@ -307,7 +332,8 @@ public sealed class PostgresMeetingAudioAnalysisService(
             ReadNullableGuid(reader, 17),
             ReadNullableGuid(reader, 18),
             ReadNullableGuid(reader, 19),
-            ReadNullableString(reader, 20));
+            ReadNullableString(reader, 20),
+            ReadNullableGuid(reader, 21));
     }
 
     private async Task<Guid?> BeginAnalysisAsync(
@@ -503,6 +529,170 @@ public sealed class PostgresMeetingAudioAnalysisService(
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
+    private async Task<string> PersistTranscriptionVersionAsync(
+        MeetingAudioRecordingPayload recording,
+        Guid recordingId,
+        MeetingAudioTranscriptionResult transcription,
+        CancellationToken cancellationToken)
+    {
+        if (!Guid.TryParse(recording.CompanyId, out var companyId))
+        {
+            throw new InvalidOperationException("A gravacao nao possui empresa valida para versionar a transcricao.");
+        }
+
+        var labels = transcription.Segments
+            .Select(segment => segment.SpeakerLabel.Trim())
+            .Where(label => !string.IsNullOrWhiteSpace(label))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Select((label, index) => new { Original = label, Normalized = SpeakerLabel(index) })
+            .ToDictionary(item => item.Original, item => item.Normalized, StringComparer.OrdinalIgnoreCase);
+        var normalizedSegments = transcription.Segments
+            .Select((segment, index) => segment with
+            {
+                Id = string.IsNullOrWhiteSpace(segment.Id) ? $"segment-{index + 1}" : segment.Id,
+                SpeakerLabel = labels.TryGetValue(segment.SpeakerLabel.Trim(), out var label) ? label : "A",
+                StartMs = Math.Max(0, segment.StartMs),
+                EndMs = Math.Max(Math.Max(0, segment.StartMs), segment.EndMs),
+                Text = segment.Text.Trim()
+            })
+            .Where(segment => !string.IsNullOrWhiteSpace(segment.Text))
+            .OrderBy(segment => segment.StartMs)
+            .ThenBy(segment => segment.EndMs)
+            .ToArray();
+        var consolidatedTranscript = normalizedSegments.Length > 0
+            ? FormatDiarizedTranscript(normalizedSegments)
+            : transcription.Text.Trim();
+        if (string.IsNullOrWhiteSpace(consolidatedTranscript))
+        {
+            return string.Empty;
+        }
+
+        var source = normalizedSegments.Length > 0 ? "openai_diarization" : "openai_plain";
+        var versionId = Guid.NewGuid();
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await using (var currentVersionCommand = new NpgsqlCommand("""
+            select source, transcript
+            from meeting_audio_transcription_versions
+            where recording_id = @recordingId and company_id = @companyId and is_current
+            for update;
+            """, connection, transaction))
+        {
+            currentVersionCommand.Parameters.AddWithValue("recordingId", recordingId);
+            currentVersionCommand.Parameters.AddWithValue("companyId", companyId);
+            await using var reader = await currentVersionCommand.ExecuteReaderAsync(cancellationToken);
+            if (await reader.ReadAsync(cancellationToken)
+                && string.Equals(reader.GetString(0), "google_meet", StringComparison.OrdinalIgnoreCase))
+            {
+                var googleTranscript = reader.GetString(1);
+                await reader.DisposeAsync();
+                await transaction.RollbackAsync(cancellationToken);
+                return googleTranscript;
+            }
+        }
+        await using (var supersede = new NpgsqlCommand("""
+            update meeting_audio_transcription_versions
+            set is_current = false, superseded_at = now(), updated_at = now()
+            where recording_id = @recordingId and company_id = @companyId and is_current;
+            """, connection, transaction))
+        {
+            supersede.Parameters.AddWithValue("recordingId", recordingId);
+            supersede.Parameters.AddWithValue("companyId", companyId);
+            await supersede.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await using (var versionCommand = new NpgsqlCommand("""
+            insert into meeting_audio_transcription_versions
+                (id, company_id, recording_id, source, transcript, identification_status, analysis_status, is_current)
+            values
+                (@id, @companyId, @recordingId, @source, @transcript, 'unidentified', 'provisional', true);
+            """, connection, transaction))
+        {
+            versionCommand.Parameters.AddWithValue("id", versionId);
+            versionCommand.Parameters.AddWithValue("companyId", companyId);
+            versionCommand.Parameters.AddWithValue("recordingId", recordingId);
+            versionCommand.Parameters.AddWithValue("source", source);
+            versionCommand.Parameters.AddWithValue("transcript", consolidatedTranscript);
+            await versionCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        foreach (var speaker in normalizedSegments.GroupBy(segment => segment.SpeakerLabel, StringComparer.OrdinalIgnoreCase))
+        {
+            var sample = speaker.OrderByDescending(segment => segment.EndMs - segment.StartMs).First();
+            await using var speakerCommand = new NpgsqlCommand("""
+                insert into meeting_audio_transcription_speakers
+                    (id, company_id, version_id, speaker_label, display_name, role, identity_kind, sample_start_ms, sample_end_ms)
+                values
+                    (gen_random_uuid(), @companyId, @versionId, @speakerLabel, @displayName, 'unknown', 'unknown', @sampleStartMs, @sampleEndMs);
+                """, connection, transaction);
+            speakerCommand.Parameters.AddWithValue("companyId", companyId);
+            speakerCommand.Parameters.AddWithValue("versionId", versionId);
+            speakerCommand.Parameters.AddWithValue("speakerLabel", speaker.Key);
+            speakerCommand.Parameters.AddWithValue("displayName", $"Voz {speaker.Key}");
+            speakerCommand.Parameters.AddWithValue("sampleStartMs", sample.StartMs);
+            speakerCommand.Parameters.AddWithValue("sampleEndMs", sample.EndMs);
+            await speakerCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        for (var position = 0; position < normalizedSegments.Length; position += 1)
+        {
+            var segment = normalizedSegments[position];
+            await using var segmentCommand = new NpgsqlCommand("""
+                insert into meeting_audio_transcription_segments
+                    (id, company_id, version_id, position, speaker_label, start_ms, end_ms, text, provider_segment_id)
+                values
+                    (gen_random_uuid(), @companyId, @versionId, @position, @speakerLabel, @startMs, @endMs, @text, @providerSegmentId);
+                """, connection, transaction);
+            segmentCommand.Parameters.AddWithValue("companyId", companyId);
+            segmentCommand.Parameters.AddWithValue("versionId", versionId);
+            segmentCommand.Parameters.AddWithValue("position", position);
+            segmentCommand.Parameters.AddWithValue("speakerLabel", segment.SpeakerLabel);
+            segmentCommand.Parameters.AddWithValue("startMs", segment.StartMs);
+            segmentCommand.Parameters.AddWithValue("endMs", segment.EndMs);
+            segmentCommand.Parameters.AddWithValue("text", segment.Text);
+            segmentCommand.Parameters.AddWithValue("providerSegmentId", NpgsqlDbType.Text, segment.Id);
+            await segmentCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await using (var recordingCommand = new NpgsqlCommand("""
+            update meeting_audio_recordings
+            set transcript = @transcript, status = 'analyzing', processing_error = null, updated_at = now()
+            where id = @recordingId and company_id = @companyId;
+            """, connection, transaction))
+        {
+            recordingCommand.Parameters.AddWithValue("recordingId", recordingId);
+            recordingCommand.Parameters.AddWithValue("companyId", companyId);
+            recordingCommand.Parameters.AddWithValue("transcript", consolidatedTranscript);
+            await recordingCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+        return consolidatedTranscript;
+    }
+
+    private static string FormatDiarizedTranscript(IEnumerable<MeetingAudioTranscriptionSegment> segments) =>
+        string.Join('\n', segments.Select(segment =>
+            $"[{FormatTimestamp(segment.StartMs)}] Voz {segment.SpeakerLabel} · Desconhecido: {segment.Text}"));
+
+    private static string FormatTimestamp(int milliseconds)
+    {
+        var value = TimeSpan.FromMilliseconds(Math.Max(0, milliseconds));
+        return value.TotalHours >= 1 ? value.ToString(@"hh\:mm\:ss") : value.ToString(@"mm\:ss");
+    }
+
+    private static string SpeakerLabel(int index)
+    {
+        var value = index + 1;
+        var builder = new StringBuilder();
+        while (value > 0)
+        {
+            value -= 1;
+            builder.Insert(0, (char)('A' + value % 26));
+            value /= 26;
+        }
+        return builder.ToString();
+    }
+
     private async Task SaveAnalysisAsync(
         MeetingAudioRecordingPayload recording,
         Guid recordingId,
@@ -534,6 +724,15 @@ public sealed class PostgresMeetingAudioAnalysisService(
         command.Parameters.AddWithValue("transcript", transcript);
         command.Parameters.AddWithValue("summary", summary);
         await command.ExecuteNonQueryAsync(cancellationToken);
+
+        await using var versionCommand = new NpgsqlCommand("""
+            update meeting_audio_transcription_versions
+            set analysis_status = case when identification_status = 'complete' then 'ready' else 'provisional' end,
+                updated_at = now()
+            where recording_id = @recordingId and is_current;
+            """, connection, transaction);
+        versionCommand.Parameters.AddWithValue("recordingId", recordingId);
+        await versionCommand.ExecuteNonQueryAsync(cancellationToken);
 
         await using var supersedeCommand = new NpgsqlCommand("""
             update conversation_analysis_results

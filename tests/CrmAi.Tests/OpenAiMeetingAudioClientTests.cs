@@ -49,14 +49,14 @@ public sealed class OpenAiMeetingAudioClientTests
     }
 
     [Fact]
-    public async Task TranscribeAsync_SendsSingleRequestWithoutChunking_WhenAudioFits()
+    public async Task TranscribeAsync_RequestsDiarizedJsonAndAutomaticChunking()
     {
         var previousModel = Environment.GetEnvironmentVariable("OPENAI_TRANSCRIPTION_MODEL");
         Environment.SetEnvironmentVariable("OPENAI_TRANSCRIPTION_MODEL", null);
 
         try
         {
-            var handler = new CapturingHandler((HttpStatusCode.OK, """{"text":"Transcricao ok"}"""));
+            var handler = new CapturingHandler((HttpStatusCode.OK, """{"text":"Transcricao ok","duration":2.5,"segments":[{"id":"seg-1","start":0.2,"end":2.4,"text":"Transcricao ok","speaker":"A"}]}"""));
             var client = CreateClient(handler);
 
             var transcript = await client.TranscribeAsync(
@@ -67,11 +67,18 @@ public sealed class OpenAiMeetingAudioClientTests
                 AiAgentInvocationContext.Unknown,
                 CancellationToken.None);
 
-            Assert.Equal("Transcricao ok", transcript);
+            Assert.Equal("Transcricao ok", transcript.Text);
+            var segment = Assert.Single(transcript.Segments);
+            Assert.Equal("A", segment.SpeakerLabel);
+            Assert.Equal(200, segment.StartMs);
+            Assert.Equal(2400, segment.EndMs);
+            Assert.Equal("openai_diarization", transcript.Source);
             var requestBody = Assert.Single(handler.RequestBodies);
-            Assert.DoesNotContain("name=chunking_strategy", requestBody);
+            Assert.Contains("name=chunking_strategy", requestBody);
+            Assert.Contains("name=response_format", requestBody);
+            Assert.Contains("diarized_json", requestBody);
             Assert.Contains("name=model", requestBody);
-            Assert.Contains("gpt-4o-transcribe", requestBody);
+            Assert.Contains("gpt-4o-transcribe-diarize", requestBody);
         }
         finally
         {
@@ -100,7 +107,7 @@ public sealed class OpenAiMeetingAudioClientTests
                 AiAgentInvocationContext.Unknown,
                 CancellationToken.None);
 
-            Assert.Equal("Transcricao ok", transcript);
+            Assert.Equal("Transcricao ok", transcript.Text);
             Assert.Equal(2, handler.RequestBodies.Count);
             Assert.DoesNotContain("name=chunking_strategy", handler.RequestBodies[0]);
             Assert.Contains("name=chunking_strategy", handler.RequestBodies[1]);
@@ -113,12 +120,43 @@ public sealed class OpenAiMeetingAudioClientTests
     }
 
     [Fact]
+    public async Task TranscribeAsync_FallsBackToPlainTranscription_WhenDiarizationIsUnavailable()
+    {
+        var previousModel = Environment.GetEnvironmentVariable("OPENAI_TRANSCRIPTION_MODEL");
+        var previousFallbackModel = Environment.GetEnvironmentVariable("OPENAI_TRANSCRIPTION_FALLBACK_MODEL");
+        Environment.SetEnvironmentVariable("OPENAI_TRANSCRIPTION_MODEL", null);
+        Environment.SetEnvironmentVariable("OPENAI_TRANSCRIPTION_FALLBACK_MODEL", null);
+
+        try
+        {
+            var handler = new CapturingHandler(
+                (HttpStatusCode.NotFound, """{"error":{"message":"model unavailable"}}"""),
+                (HttpStatusCode.OK, """{"text":"Transcricao sem diarizacao"}"""));
+            var transcript = await CreateClient(handler).TranscribeAsync(
+                CreateSettings(), "meet-audio.webm", "audio/webm", [1, 2, 3],
+                AiAgentInvocationContext.Unknown, CancellationToken.None);
+
+            Assert.Equal("openai_plain", transcript.Source);
+            Assert.Empty(transcript.Segments);
+            Assert.Equal(2, handler.RequestBodies.Count);
+            Assert.Contains("gpt-4o-transcribe-diarize", handler.RequestBodies[0]);
+            Assert.Contains("gpt-4o-transcribe", handler.RequestBodies[1]);
+            Assert.DoesNotContain("diarized_json", handler.RequestBodies[1]);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("OPENAI_TRANSCRIPTION_MODEL", previousModel);
+            Environment.SetEnvironmentVariable("OPENAI_TRANSCRIPTION_FALLBACK_MODEL", previousFallbackModel);
+        }
+    }
+
+    [Fact]
     public async Task TranscribeAsync_FallsBackToWhisper_WhenChunkingStillExceedsInputLimit()
     {
         var previousModel = Environment.GetEnvironmentVariable("OPENAI_TRANSCRIPTION_MODEL");
         var previousFallbackModel = Environment.GetEnvironmentVariable("OPENAI_TRANSCRIPTION_FALLBACK_MODEL");
         Environment.SetEnvironmentVariable("OPENAI_TRANSCRIPTION_MODEL", "gpt-4o-transcribe");
-        Environment.SetEnvironmentVariable("OPENAI_TRANSCRIPTION_FALLBACK_MODEL", null);
+        Environment.SetEnvironmentVariable("OPENAI_TRANSCRIPTION_FALLBACK_MODEL", "whisper-1");
 
         try
         {
@@ -137,7 +175,7 @@ public sealed class OpenAiMeetingAudioClientTests
                 AiAgentInvocationContext.Unknown,
                 CancellationToken.None);
 
-            Assert.Equal("Transcricao via fallback", transcript);
+            Assert.Equal("Transcricao via fallback", transcript.Text);
             Assert.Equal(3, handler.RequestBodies.Count);
             Assert.Contains("gpt-4o-transcribe", handler.RequestBodies[0]);
             Assert.Contains("name=chunking_strategy", handler.RequestBodies[1]);

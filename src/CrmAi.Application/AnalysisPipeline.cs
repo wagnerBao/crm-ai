@@ -32,7 +32,7 @@ public interface IOpenAiWhatsappConversationAnalysisClient
 
 public interface IOpenAiMeetingAudioClient
 {
-    Task<string> TranscribeAsync(
+    Task<MeetingAudioTranscriptionResult> TranscribeAsync(
         AiAgentRuntimeSettings settings,
         string fileName,
         string mimeType,
