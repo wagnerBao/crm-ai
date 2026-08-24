@@ -155,11 +155,20 @@ public sealed class PostgresInstagramConversationAnalysisService(
         }
 
         await using (var summaryCommand = new NpgsqlCommand(
-            "update instagram_conversations set summary = @summary, updated_at = now() where id = @conversationId and company_id = @companyId;",
+            """
+            update instagram_conversations
+            set summary = @summary,
+                last_analyzed_message_at = greatest(coalesce(last_analyzed_message_at, '-infinity'::timestamptz), @processedUntil),
+                last_analysis_status = 'completed',
+                last_analysis_at = now(),
+                updated_at = now()
+            where id = @conversationId and company_id = @companyId;
+            """,
             connection,
             transaction))
         {
             summaryCommand.Parameters.AddWithValue("summary", summary);
+            summaryCommand.Parameters.AddWithValue("processedUntil", ReadEventDate(opportunityEvent, "processedUntil") ?? opportunityEvent.OccurredAt);
             summaryCommand.Parameters.AddWithValue("conversationId", conversation.Id);
             summaryCommand.Parameters.AddWithValue("companyId", conversation.CompanyId!.Value);
             await summaryCommand.ExecuteNonQueryAsync(cancellationToken);
@@ -242,6 +251,16 @@ public sealed class PostgresInstagramConversationAnalysisService(
     {
         value = Guid.Empty;
         return opportunityEvent.Data.TryGetValue(key, out var raw) && Guid.TryParse(raw?.ToString(), out value);
+    }
+
+    private static DateTime? ReadEventDate(OpportunityEvent opportunityEvent, string key)
+    {
+        if (!opportunityEvent.Data.TryGetValue(key, out var raw) || raw is null)
+        {
+            return null;
+        }
+
+        return DateTime.TryParse(raw.ToString(), out var parsed) ? parsed.ToUniversalTime() : null;
     }
 
     private static Guid? ReadNullableGuid(NpgsqlDataReader reader, string name)

@@ -22,6 +22,21 @@ public sealed class WhatsappConversationPersistenceRegressionTests
     }
 
     [Fact]
+    public void Instagram_analysis_should_only_process_consolidated_batches_and_complete_the_checkpoint()
+    {
+        var pipeline = ReadSource("src/CrmAi.Application/AnalysisPipeline.cs");
+        var service = ReadSource("src/CrmAi.Infrastructure/Persistence/PostgresInstagramConversationAnalysisService.cs");
+        var rabbit = ReadSource("src/CrmAi.Infrastructure/RabbitMq/RabbitMqOptions.cs");
+
+        Assert.Contains("opportunity.instagram.conversation.batch", pipeline);
+        Assert.Contains("Individual message events only reset the conversation inactivity clock", pipeline);
+        Assert.Contains("last_analyzed_message_at = greatest", service);
+        Assert.Contains("last_analysis_status = 'completed'", service);
+        Assert.Contains("crm.events.opportunity.instagram.conversation.batch", rabbit);
+        Assert.DoesNotContain("crm.events.opportunity.instagram.message.created", rabbit);
+    }
+
+    [Fact]
     public void Agent_Authored_Portuguese_Text_Should_Remain_Utf8()
     {
         var source = ReadSource("src/CrmAi.Infrastructure/Persistence/PostgresWhatsappConversationActionStore.cs");

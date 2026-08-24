@@ -32,10 +32,11 @@ public sealed class OpportunityAnalysisEventProcessorTests
     }
 
     [Fact]
-    public async Task ProcessAsync_RunsInstagramConversationAnalysis_ForInstagramMessageEvents()
+    public async Task ProcessAsync_RunsInstagramConversationAnalysis_OnlyForConsolidatedBatchEvents()
     {
         var instagramService = new CountingInstagramConversationAnalysisService();
-        var opportunityEvent = CreateEvent("opportunity.instagram.message.created");
+        var messageEvent = CreateEvent("opportunity.instagram.message.created");
+        var batchEvent = CreateEvent("opportunity.instagram.conversation.batch");
         var processor = new OpportunityAnalysisEventProcessor(
             new CountingOpportunityContextRepository(),
             new CountingRiskAnalysisAgent(),
@@ -46,10 +47,13 @@ public sealed class OpportunityAnalysisEventProcessorTests
             new NullMeetingAudioAnalysisService(),
             instagramService);
 
-        await processor.ProcessAsync(opportunityEvent, CancellationToken.None);
+        await processor.ProcessAsync(messageEvent, CancellationToken.None);
+        Assert.Equal(0, instagramService.Calls);
+
+        await processor.ProcessAsync(batchEvent, CancellationToken.None);
 
         Assert.Equal(1, instagramService.Calls);
-        Assert.Same(opportunityEvent, instagramService.LastEvent);
+        Assert.Same(batchEvent, instagramService.LastEvent);
     }
 
     [Fact]

@@ -169,15 +169,18 @@ public sealed class OpportunityAnalysisEventProcessor(
 
         if (string.Equals(opportunityEvent.Type, "opportunity.instagram.message.created", StringComparison.OrdinalIgnoreCase))
         {
+            // Individual message events only reset the conversation inactivity clock.
+            // The consumers service publishes the consolidated batch after the configured delay.
+            return;
+        }
+
+        if (string.Equals(opportunityEvent.Type, "opportunity.instagram.conversation.batch", StringComparison.OrdinalIgnoreCase))
+        {
             if (instagramConversationAnalysisService is not null)
             {
                 await instagramConversationAnalysisService.ProcessAsync(opportunityEvent, cancellationToken);
             }
-            if (!Guid.TryParse(opportunityEvent.OpportunityId, out var instagramOpportunityId)
-                || instagramOpportunityId == Guid.Empty)
-            {
-                return;
-            }
+            return;
         }
 
         var isWhatsappBatch = string.Equals(
