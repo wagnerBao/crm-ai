@@ -29,6 +29,11 @@ public sealed class PostgresOpportunityContextRepository(NpgsqlDataSource dataSo
             var whatsappSettings = await settingsRepository.GetAsync("whatsapp-conversation-analysis", opportunity.CompanyId, cancellationToken);
             enabled.UnionWith(whatsappSettings.ContextEntityKeys);
         }
+        if (string.Equals(triggerEvent.Type, "opportunity.instagram.message.created", StringComparison.OrdinalIgnoreCase))
+        {
+            var instagramSettings = await settingsRepository.GetAsync("instagram-conversation-analysis", opportunity.CompanyId, cancellationToken);
+            enabled.UnionWith(instagramSettings.ContextEntityKeys);
+        }
 
         var stage = await ReadStageAsync(connection, Guid.Parse(opportunity.StageId), cancellationToken)
             ?? new PipelineStageSnapshot(opportunity.StageId, "Fase atual", 0);

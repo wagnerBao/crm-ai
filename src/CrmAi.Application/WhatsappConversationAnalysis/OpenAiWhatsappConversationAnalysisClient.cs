@@ -46,6 +46,10 @@ public sealed class OpenAiResponsesWhatsappConversationAnalysisClient(
         var endpoint = configuredOptions.ResponsesEndpoint;
         var startedAt = DateTime.UtcNow;
         var model = string.IsNullOrWhiteSpace(settings.Model) ? configuredOptions.Model : settings.Model;
+        var channel = string.Equals(invocationContext.PlatformArea, "instagram", StringComparison.OrdinalIgnoreCase)
+            ? "instagram"
+            : "whatsapp";
+        var operation = $"responses.{channel}-conversation-analysis";
         var payload = new
         {
             model,
@@ -57,7 +61,7 @@ public sealed class OpenAiResponsesWhatsappConversationAnalysisClient(
                 format = new
                 {
                     type = "json_schema",
-                    name = "whatsapp_conversation_analysis_result",
+                    name = "conversation_analysis_result",
                     strict = true,
                     schema = WhatsappConversationAnalysisJsonSchema.Value
                 }
@@ -71,7 +75,7 @@ public sealed class OpenAiResponsesWhatsappConversationAnalysisClient(
             await invocationLogStore.SaveBestEffortAsync(OpenAiInvocationLogBuilder.Create(
                 settings,
                 configuredOptions.Model,
-                "responses.whatsapp-conversation-analysis",
+                operation,
                 endpoint,
                 invocationContext,
                 startedAt,
@@ -100,7 +104,7 @@ public sealed class OpenAiResponsesWhatsappConversationAnalysisClient(
             await invocationLogStore.SaveBestEffortAsync(OpenAiInvocationLogBuilder.Create(
                 settings,
                 configuredOptions.Model,
-                "responses.whatsapp-conversation-analysis",
+                operation,
                 endpoint,
                 invocationContext,
                 startedAt,
@@ -116,13 +120,13 @@ public sealed class OpenAiResponsesWhatsappConversationAnalysisClient(
         if (!response.IsSuccessStatusCode)
         {
             var exception = new OpenAiRequestException(
-                $"OpenAI WhatsApp conversation analysis failed with status {(int)response.StatusCode}: {responseBody}",
+                $"OpenAI {channel} conversation analysis failed with status {(int)response.StatusCode}: {responseBody}",
                 (int)response.StatusCode,
                 responseBody);
             await invocationLogStore.SaveBestEffortAsync(OpenAiInvocationLogBuilder.Create(
                 settings,
                 configuredOptions.Model,
-                "responses.whatsapp-conversation-analysis",
+                operation,
                 endpoint,
                 invocationContext,
                 startedAt,
@@ -148,7 +152,7 @@ public sealed class OpenAiResponsesWhatsappConversationAnalysisClient(
             await invocationLogStore.SaveBestEffortAsync(OpenAiInvocationLogBuilder.Create(
                 settings,
                 configuredOptions.Model,
-                "responses.whatsapp-conversation-analysis",
+                operation,
                 endpoint,
                 invocationContext,
                 startedAt,
@@ -164,7 +168,7 @@ public sealed class OpenAiResponsesWhatsappConversationAnalysisClient(
         await invocationLogStore.SaveBestEffortAsync(OpenAiInvocationLogBuilder.Create(
             settings,
             configuredOptions.Model,
-            "responses.whatsapp-conversation-analysis",
+            operation,
             endpoint,
             invocationContext,
             startedAt,

@@ -32,6 +32,27 @@ public sealed class OpportunityAnalysisEventProcessorTests
     }
 
     [Fact]
+    public async Task ProcessAsync_RunsInstagramConversationAnalysis_ForInstagramMessageEvents()
+    {
+        var instagramService = new CountingInstagramConversationAnalysisService();
+        var opportunityEvent = CreateEvent("opportunity.instagram.message.created");
+        var processor = new OpportunityAnalysisEventProcessor(
+            new CountingOpportunityContextRepository(),
+            new CountingRiskAnalysisAgent(),
+            new CountingAnalysisResultStore(),
+            new NullWhatsappConversationAnalysisAgent(),
+            new CountingWhatsappConversationActionStore(),
+            new CountingWhatsappConversationAnalysisScheduler(),
+            new NullMeetingAudioAnalysisService(),
+            instagramService);
+
+        await processor.ProcessAsync(opportunityEvent, CancellationToken.None);
+
+        Assert.Equal(1, instagramService.Calls);
+        Assert.Same(opportunityEvent, instagramService.LastEvent);
+    }
+
+    [Fact]
     public async Task ProcessAsync_AppliesWhatsappResultAndRunsRiskAnalysis_ForWhatsappConversationBatchEvents()
     {
         var initialContext = CreateContext(CreateEvent("opportunity.whatsapp.conversation.batch"));
@@ -350,6 +371,19 @@ public sealed class OpportunityAnalysisEventProcessorTests
         public Task CompleteAsync(string eventId, CancellationToken cancellationToken) => Task.CompletedTask;
 
         public Task FailAsync(string eventId, string error, CancellationToken cancellationToken) => Task.CompletedTask;
+    }
+
+    private sealed class CountingInstagramConversationAnalysisService : IInstagramConversationAnalysisService
+    {
+        public int Calls { get; private set; }
+        public OpportunityEvent? LastEvent { get; private set; }
+
+        public Task ProcessAsync(OpportunityEvent opportunityEvent, CancellationToken cancellationToken)
+        {
+            Calls++;
+            LastEvent = opportunityEvent;
+            return Task.CompletedTask;
+        }
     }
 
     private sealed class NullMeetingAudioAnalysisService : IMeetingAudioAnalysisService

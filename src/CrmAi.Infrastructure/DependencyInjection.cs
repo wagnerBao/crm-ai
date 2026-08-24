@@ -30,6 +30,7 @@ public static class DependencyInjection
         services.AddScoped<IWhatsappSuggestionContextRepository, PostgresWhatsappSuggestionContextRepository>();
         services.AddScoped<IWhatsappScorecardContextRepository, PostgresWhatsappScorecardContextRepository>();
         services.AddScoped<IWhatsappConversationAnalysisScheduler, PostgresWhatsappConversationAnalysisScheduler>();
+        services.AddScoped<IInstagramConversationAnalysisService, PostgresInstagramConversationAnalysisService>();
         services.AddScoped<IMeetingAudioAnalysisService, PostgresMeetingAudioAnalysisService>();
         services.AddScoped<IDailyCheckinProjectionService, PostgresDailyCheckinProjectionService>();
         services.AddScoped<IDailyCheckoutSnapshotService, PostgresDailyCheckoutSnapshotService>();

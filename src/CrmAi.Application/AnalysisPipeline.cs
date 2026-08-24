@@ -103,6 +103,11 @@ public interface IWhatsappConversationAnalysisScheduler
     Task FailAsync(string eventId, string error, CancellationToken cancellationToken);
 }
 
+public interface IInstagramConversationAnalysisService
+{
+    Task ProcessAsync(OpportunityEvent opportunityEvent, CancellationToken cancellationToken);
+}
+
 public interface IMeetingAudioAnalysisService
 {
     Task<bool> ProcessAsync(OpportunityEvent opportunityEvent, CancellationToken cancellationToken);
@@ -137,7 +142,8 @@ public sealed class OpportunityAnalysisEventProcessor(
     IWhatsappConversationAnalysisAgent whatsappConversationAnalysisAgent,
     IWhatsappConversationActionStore whatsappConversationActionStore,
     IWhatsappConversationAnalysisScheduler whatsappConversationAnalysisScheduler,
-    IMeetingAudioAnalysisService meetingAudioAnalysisService) : IOpportunityAnalysisEventProcessor
+    IMeetingAudioAnalysisService meetingAudioAnalysisService,
+    IInstagramConversationAnalysisService? instagramConversationAnalysisService = null) : IOpportunityAnalysisEventProcessor
 {
     public async Task ProcessAsync(OpportunityEvent opportunityEvent, CancellationToken cancellationToken)
     {
@@ -159,6 +165,19 @@ public sealed class OpportunityAnalysisEventProcessor(
         {
             await whatsappConversationAnalysisScheduler.ScheduleAsync(opportunityEvent, cancellationToken);
             return;
+        }
+
+        if (string.Equals(opportunityEvent.Type, "opportunity.instagram.message.created", StringComparison.OrdinalIgnoreCase))
+        {
+            if (instagramConversationAnalysisService is not null)
+            {
+                await instagramConversationAnalysisService.ProcessAsync(opportunityEvent, cancellationToken);
+            }
+            if (!Guid.TryParse(opportunityEvent.OpportunityId, out var instagramOpportunityId)
+                || instagramOpportunityId == Guid.Empty)
+            {
+                return;
+            }
         }
 
         var isWhatsappBatch = string.Equals(

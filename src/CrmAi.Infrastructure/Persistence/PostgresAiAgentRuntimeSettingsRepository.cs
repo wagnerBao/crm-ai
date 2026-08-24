@@ -118,6 +118,7 @@ public sealed class PostgresAiAgentRuntimeSettingsRepository(NpgsqlDataSource da
         "risk-analysis" => new(agentKey, true, "openai", "gpt-5.6-terra", null, "Voce e o Risk Analysis Agent do CRM. Responda apenas com JSON valido no schema solicitado.", 1, null, ["opportunity", "account", "products", "activities", "notes", "contacts", "users", "history", "agent_insights"]),
         "daily-checkout" => new(agentKey, true, "openai", "gpt-5.6-terra", null, "Voce e o Daily Checkout Agent do CRM. Gere fechamento operacional do dia e responda apenas com JSON valido no schema solicitado.", 1, "Considere metas, atividades, contatos, oportunidades abertas, ganhas, perdidas, riscos e recomendacoes para amanha.", ["daily_metrics", "opportunities", "activities", "contacts", "users", "groups", "commercial_rules"]),
         "whatsapp-conversation-analysis" => new(agentKey, true, "openai", "gpt-5.6-luna", null, WhatsappConversationAnalysisPrompt, 10, null, ["opportunity", "account", "activities", "notes", "contacts", "users", "history", "agent_insights"]),
+        "instagram-conversation-analysis" => new(agentKey, true, "openai", "gpt-5.6-luna", null, InstagramConversationAnalysisPrompt, 10, null, ["opportunity", "account", "activities", "notes", "contacts", "agent_insights"]),
         "meeting-service-analysis" => new(agentKey, true, "openai", "gpt-5.6-terra", null, "Voce e o Agent de Analise do Atendimento do CRM. Avalie transcricoes de reunioes do Google Meet. Identifique objecoes, oportunidades para quebra-las e proximo passo. Responda apenas com JSON valido no schema solicitado.", 1, "Analise reunioes gravadas do Google Meet. Priorize quebra de objecoes, oportunidades comerciais e proximo passo de qualificacao.", ["opportunity", "account", "activities", "notes", "contacts", "agent_insights"]),
         "call-audio-analysis" => new(agentKey, true, "openai", "gpt-5.6-terra", null, "Voce e o Agente de Analise de Ligacoes do CRM. Avalie transcricoes de ligacoes do WhatsApp. Gere um resumo objetivo, identifique objecoes, oportunidades para quebra-las e o proximo passo. Nao invente informacoes e responda apenas com JSON valido no schema solicitado.", 1, "Analise a ligacao mesmo sem oportunidade vinculada. Quando houver contexto comercial, use-o para enriquecer a analise sem substituir o que foi dito na gravacao.", ["opportunity", "account", "activities", "notes", "contacts", "agent_insights"]),
         "suggestion-quality-audit" => new(agentKey, true, "openai", "gpt-5.6-terra", null, "Voce e o agente de auditoria de qualidade das sugestoes de atividade do CRM. Analise somente as evidencias fornecidas, cite IDs e responda apenas com JSON valido no schema solicitado.", 1, "Recomendacoes sao consultivas e devem ser classificadas em prompt, contexto, timing, deduplicacao, logica ou UX.", ["suggestion_feedback", "agent_settings"]),
@@ -192,5 +193,14 @@ public sealed class PostgresAiAgentRuntimeSettingsRepository(NpgsqlDataSource da
         - Objetivo.
         - Sem exageros.
         - Sem inventar informacoes ausentes.
+        """;
+
+    private const string InstagramConversationAnalysisPrompt = """
+        Voce e o Instagram Conversation Analysis Agent do CRM.
+        Consolide o resumo anterior com a nova mensagem do Instagram sem perder fatos comerciais.
+        Identifique intencao de compra, objecoes, urgencia e proximos passos.
+        Crie nota somente quando houver informacao comercial relevante.
+        Crie atividade somente quando existir uma acao clara, prazo, reuniao, proposta, pagamento ou follow-up.
+        Responda exclusivamente no JSON solicitado e escreva em portugues.
         """;
 }
