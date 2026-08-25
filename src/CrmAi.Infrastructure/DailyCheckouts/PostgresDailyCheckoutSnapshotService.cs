@@ -1118,8 +1118,7 @@ public sealed class PostgresDailyCheckoutSnapshotService(
 
     private static async Task UpsertSnapshotAsync(NpgsqlConnection connection, string? companyId, DateOnly date, object payload, CancellationToken cancellationToken)
     {
-        var json = JsonSerializer.Serialize(payload, SerializerOptions)
-            .Replace("\\u0000", string.Empty, StringComparison.OrdinalIgnoreCase);
+        var json = SerializeSnapshotPayload(payload);
         const string sql = """
             insert into daily_checkout_snapshots (id, snapshot_date, snapshot_at, payload_json, company_id, created_at, updated_at)
             values (@id, @snapshotDate, @snapshotAt, @payload::jsonb, @companyId, @snapshotAt, @snapshotAt)
@@ -1136,6 +1135,48 @@ public sealed class PostgresDailyCheckoutSnapshotService(
         command.Parameters.AddWithValue("payload", json);
         AddCompanyParameter(command, companyId);
         await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    internal static string SerializeSnapshotPayload(object payload)
+    {
+        var node = JsonSerializer.SerializeToNode(payload, SerializerOptions)
+            ?? throw new InvalidOperationException("Daily checkout payload could not be serialized.");
+        RemoveNullCharacters(node);
+        return node.ToJsonString(SerializerOptions);
+    }
+
+    private static void RemoveNullCharacters(JsonNode node)
+    {
+        if (node is JsonObject jsonObject)
+        {
+            foreach (var property in jsonObject.ToArray())
+            {
+                if (property.Value is JsonValue value && value.TryGetValue<string>(out var text))
+                {
+                    jsonObject[property.Key] = text.Replace("\0", string.Empty, StringComparison.Ordinal);
+                }
+                else if (property.Value is not null)
+                {
+                    RemoveNullCharacters(property.Value);
+                }
+            }
+            return;
+        }
+
+        if (node is JsonArray jsonArray)
+        {
+            for (var index = 0; index < jsonArray.Count; index++)
+            {
+                if (jsonArray[index] is JsonValue value && value.TryGetValue<string>(out var text))
+                {
+                    jsonArray[index] = text.Replace("\0", string.Empty, StringComparison.Ordinal);
+                }
+                else if (jsonArray[index] is not null)
+                {
+                    RemoveNullCharacters(jsonArray[index]!);
+                }
+            }
+        }
     }
 
     private static async Task<Dictionary<string, object?>> ReadOneAsync(NpgsqlConnection connection, string sql, string? companyId, DateTime startsAt, DateTime endsAt, CancellationToken cancellationToken) =>

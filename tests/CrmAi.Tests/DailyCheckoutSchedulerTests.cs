@@ -80,6 +80,23 @@ public sealed class DailyCheckoutSchedulerTests
     }
 
     [Fact]
+    public void SnapshotSerialization_MustRemoveActualNullsWithoutCorruptingLiteralEscapes()
+    {
+        var json = PostgresDailyCheckoutSnapshotService.SerializeSnapshotPayload(new
+        {
+            actualNull = "antes\0depois",
+            literalEscape = @"antes\u0000depois",
+            nested = new[] { @"cotacao\Em andamento", "ok\0agora" }
+        });
+
+        using var document = System.Text.Json.JsonDocument.Parse(json);
+        Assert.Equal("antesdepois", document.RootElement.GetProperty("actualNull").GetString());
+        Assert.Equal(@"antes\u0000depois", document.RootElement.GetProperty("literalEscape").GetString());
+        Assert.Equal(@"cotacao\Em andamento", document.RootElement.GetProperty("nested")[0].GetString());
+        Assert.Equal("okagora", document.RootElement.GetProperty("nested")[1].GetString());
+    }
+
+    [Fact]
     public void ActiveAgent_MustNotTreatDeterministicFallbackAsCompletedAnalysis()
     {
         var source = ReadSource("src/CrmAi.Infrastructure/DailyCheckouts/PostgresDailyCheckoutSnapshotService.cs");
