@@ -15,8 +15,6 @@ public sealed class PostgresDailyCheckoutSnapshotService(
     ILogger<PostgresDailyCheckoutSnapshotService> logger) : IDailyCheckoutSnapshotService
 {
     private const string AgentKey = "daily-checkout";
-    private const int ScheduledBackfillDays = 30;
-    private const int MaxSnapshotsPerCompanyPerCycle = 1;
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
 
     public async Task GenerateDueSnapshotsAsync(DateTime utcNow, CancellationToken cancellationToken)
@@ -28,6 +26,8 @@ public sealed class PostgresDailyCheckoutSnapshotService(
         {
             try
             {
+                var companyId = setting.CompanyId
+                    ?? throw new InvalidOperationException("Daily checkout setting does not have a company id.");
                 var timeZone = ResolveTimeZone(setting.TimeZoneId);
                 var localNow = TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(utcNow, DateTimeKind.Utc), timeZone);
                 var runAt = ParseRunAt(setting.RunAt);
@@ -35,45 +35,69 @@ public sealed class PostgresDailyCheckoutSnapshotService(
                     localNow,
                     runAt,
                     setting.ConsiderPreviousDayWhenRunBeforeNoon);
-                var generatedCount = 0;
+                var firstOperationalDate = await ReadFirstOperationalDateAsync(
+                    connection,
+                    companyId,
+                    timeZone,
+                    cancellationToken);
+                var agentSettings = await settingsRepository.GetAsync(AgentKey, companyId, cancellationToken);
+                var targetDate = await FindMostRecentMissingSnapshotDateAsync(
+                    connection,
+                    companyId,
+                    firstOperationalDate,
+                    latestDueDate,
+                    cancellationToken);
 
-                for (var dayOffset = 0;
-                     dayOffset < ScheduledBackfillDays && generatedCount < MaxSnapshotsPerCompanyPerCycle;
-                     dayOffset++)
+                if (!targetDate.HasValue)
                 {
-                    var targetDate = latestDueDate.AddDays(-dayOffset);
-                    var runStartedAtUtc = ResolveRunStartedAtUtc(
-                        targetDate,
+                    var latestRunStartedAtUtc = ResolveRunStartedAtUtc(
+                        latestDueDate,
                         runAt,
                         setting.ConsiderPreviousDayWhenRunBeforeNoon,
                         timeZone);
-                    var lockKey = $"daily-checkout:{setting.CompanyId}:{targetDate:yyyy-MM-dd}";
-                    if (!await TryAcquireRunLockAsync(connection, lockKey, cancellationToken))
+                    if (await SnapshotAlreadyGeneratedForRunAsync(
+                            connection,
+                            companyId,
+                            latestDueDate,
+                            latestRunStartedAtUtc,
+                            RequiresOpenAiAnalysis(agentSettings),
+                            cancellationToken))
                     {
                         continue;
                     }
 
-                    try
-                    {
-                        var agentSettings = await settingsRepository.GetAsync(AgentKey, setting.CompanyId, cancellationToken);
-                        if (await SnapshotAlreadyGeneratedForRunAsync(
-                                connection,
-                                setting.CompanyId,
-                                targetDate,
-                                runStartedAtUtc,
-                                RequiresOpenAiAnalysis(agentSettings),
-                                cancellationToken))
-                        {
-                            continue;
-                        }
+                    targetDate = latestDueDate;
+                }
 
-                        await GenerateSnapshotAsync(connection, setting, targetDate, timeZone, agentSettings, cancellationToken);
-                        generatedCount++;
-                    }
-                    finally
+                var runStartedAtUtc = ResolveRunStartedAtUtc(
+                    targetDate.Value,
+                    runAt,
+                    setting.ConsiderPreviousDayWhenRunBeforeNoon,
+                    timeZone);
+                var lockKey = $"daily-checkout:{companyId}:{targetDate.Value:yyyy-MM-dd}";
+                if (!await TryAcquireRunLockAsync(connection, lockKey, cancellationToken))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    if (await SnapshotAlreadyGeneratedForRunAsync(
+                            connection,
+                            companyId,
+                            targetDate.Value,
+                            runStartedAtUtc,
+                            RequiresOpenAiAnalysis(agentSettings),
+                            cancellationToken))
                     {
-                        await ReleaseRunLockAsync(connection, lockKey, CancellationToken.None);
+                        continue;
                     }
+
+                    await GenerateSnapshotAsync(connection, setting, targetDate.Value, timeZone, agentSettings, cancellationToken);
+                }
+                finally
+                {
+                    await ReleaseRunLockAsync(connection, lockKey, CancellationToken.None);
                 }
             }
             catch (Exception exception) when (exception is not OperationCanceledException)
@@ -917,6 +941,78 @@ public sealed class PostgresDailyCheckoutSnapshotService(
             """;
 
         return await ReadRowsAsync(connection, sql, companyId, startsAt, endsAt, cancellationToken);
+    }
+
+    private static async Task<DateOnly> ReadFirstOperationalDateAsync(
+        NpgsqlConnection connection,
+        string companyId,
+        TimeZoneInfo timeZone,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            select min(first_at)
+            from (
+                select created_at as first_at from companies where id = @companyId
+                union all
+                select min(created_at) from contacts where company_id = @companyId
+                union all
+                select min(created_at) from opportunities where company_id = @companyId
+                union all
+                select min(created_at) from activities where company_id = @companyId
+                union all
+                select min(created_at) from whatsapp_conversations where company_id = @companyId
+                union all
+                select min(message_at) from whatsapp_messages where company_id = @companyId
+                union all
+                select min(created_at) from opportunity_history where company_id = @companyId
+            ) operational_dates
+            """;
+
+        await using var command = new NpgsqlCommand(sql, connection);
+        AddCompanyParameter(command, companyId);
+        var firstAt = await command.ExecuteScalarAsync(cancellationToken);
+        if (firstAt is not DateTime timestamp)
+        {
+            throw new InvalidOperationException($"Company '{companyId}' does not have an operational start date.");
+        }
+
+        var utcTimestamp = timestamp.Kind == DateTimeKind.Utc
+            ? timestamp
+            : DateTime.SpecifyKind(timestamp, DateTimeKind.Utc);
+        return DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeFromUtc(utcTimestamp, timeZone));
+    }
+
+    private static async Task<DateOnly?> FindMostRecentMissingSnapshotDateAsync(
+        NpgsqlConnection connection,
+        string companyId,
+        DateOnly firstDate,
+        DateOnly latestDate,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            select candidate::date
+            from generate_series(@firstDate::date, @latestDate::date, interval '1 day') candidate
+            where not exists (
+                select 1
+                from daily_checkout_snapshots snapshot
+                where snapshot.company_id = @companyId
+                  and snapshot.snapshot_date = candidate::date
+            )
+            order by candidate desc
+            limit 1
+            """;
+
+        await using var command = new NpgsqlCommand(sql, connection);
+        AddCompanyParameter(command, companyId);
+        command.Parameters.AddWithValue("firstDate", firstDate);
+        command.Parameters.AddWithValue("latestDate", latestDate);
+        var value = await command.ExecuteScalarAsync(cancellationToken);
+        return value switch
+        {
+            DateOnly date => date,
+            DateTime timestamp => DateOnly.FromDateTime(timestamp),
+            _ => null
+        };
     }
 
     private static async Task<IReadOnlyCollection<DailyCheckoutSettingsSnapshot>> ReadCompanySettingsAsync(NpgsqlConnection connection, CancellationToken cancellationToken)

@@ -68,12 +68,14 @@ public sealed class DailyCheckoutSchedulerTests
     }
 
     [Fact]
-    public void Scheduler_MustBackfillMissingDatesAndIsolateCompanies()
+    public void Scheduler_MustBackfillTheEntireOperationalHistoryAndIsolateCompanies()
     {
         var source = ReadSource("src/CrmAi.Infrastructure/DailyCheckouts/PostgresDailyCheckoutSnapshotService.cs");
 
-        Assert.Contains("ScheduledBackfillDays = 30", source);
-        Assert.Contains("MaxSnapshotsPerCompanyPerCycle = 1", source);
+        Assert.Contains("ReadFirstOperationalDateAsync", source);
+        Assert.Contains("FindMostRecentMissingSnapshotDateAsync", source);
+        Assert.Contains("generate_series(@firstDate::date, @latestDate::date", source);
+        Assert.DoesNotContain("ScheduledBackfillDays", source);
         Assert.Contains("Failed to generate scheduled daily checkout snapshots for company", source);
     }
 
