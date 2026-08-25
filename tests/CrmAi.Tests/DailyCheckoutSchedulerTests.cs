@@ -46,6 +46,38 @@ public sealed class DailyCheckoutSchedulerTests
     }
 
     [Fact]
+    public void BeforeScheduledTime_MustRecoverThePreviousDueDate()
+    {
+        var latestDueDate = PostgresDailyCheckoutSnapshotService.ResolveLatestDueTargetDate(
+            new DateTime(2026, 8, 25, 14, 0, 0),
+            TimeSpan.FromHours(17.5),
+            considerPreviousDayWhenRunBeforeNoon: true);
+
+        Assert.Equal(new DateOnly(2026, 8, 24), latestDueDate);
+    }
+
+    [Fact]
+    public void AfterScheduledTime_MustIncludeTheCurrentDueDate()
+    {
+        var latestDueDate = PostgresDailyCheckoutSnapshotService.ResolveLatestDueTargetDate(
+            new DateTime(2026, 8, 25, 17, 31, 0),
+            TimeSpan.FromHours(17.5),
+            considerPreviousDayWhenRunBeforeNoon: true);
+
+        Assert.Equal(new DateOnly(2026, 8, 25), latestDueDate);
+    }
+
+    [Fact]
+    public void Scheduler_MustBackfillMissingDatesAndIsolateCompanies()
+    {
+        var source = ReadSource("src/CrmAi.Infrastructure/DailyCheckouts/PostgresDailyCheckoutSnapshotService.cs");
+
+        Assert.Contains("ScheduledBackfillDays = 30", source);
+        Assert.Contains("MaxSnapshotsPerCompanyPerCycle = 1", source);
+        Assert.Contains("Failed to generate scheduled daily checkout snapshots for company", source);
+    }
+
+    [Fact]
     public void ActiveAgent_MustNotTreatDeterministicFallbackAsCompletedAnalysis()
     {
         var source = ReadSource("src/CrmAi.Infrastructure/DailyCheckouts/PostgresDailyCheckoutSnapshotService.cs");

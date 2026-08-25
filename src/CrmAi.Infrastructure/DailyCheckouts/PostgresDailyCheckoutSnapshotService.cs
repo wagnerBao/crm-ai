@@ -15,6 +15,8 @@ public sealed class PostgresDailyCheckoutSnapshotService(
     ILogger<PostgresDailyCheckoutSnapshotService> logger) : IDailyCheckoutSnapshotService
 {
     private const string AgentKey = "daily-checkout";
+    private const int ScheduledBackfillDays = 30;
+    private const int MaxSnapshotsPerCompanyPerCycle = 1;
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
 
     public async Task GenerateDueSnapshotsAsync(DateTime utcNow, CancellationToken cancellationToken)
@@ -24,41 +26,62 @@ public sealed class PostgresDailyCheckoutSnapshotService(
 
         foreach (var setting in settings)
         {
-            var timeZone = ResolveTimeZone(setting.TimeZoneId);
-            var localNow = TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(utcNow, DateTimeKind.Utc), timeZone);
-            var runAt = ParseRunAt(setting.RunAt);
-            if (localNow.TimeOfDay < runAt)
-            {
-                continue;
-            }
-
-            var targetDate = ResolveTargetDate(localNow, runAt, setting.ConsiderPreviousDayWhenRunBeforeNoon);
-            var runStartedAtUtc = ToUtc(targetDate.ToDateTime(TimeOnly.FromTimeSpan(runAt)), timeZone);
-            var lockKey = $"daily-checkout:{setting.CompanyId}:{targetDate:yyyy-MM-dd}";
-            if (!await TryAcquireRunLockAsync(connection, lockKey, cancellationToken))
-            {
-                continue;
-            }
-
             try
             {
-                var agentSettings = await settingsRepository.GetAsync(AgentKey, setting.CompanyId, cancellationToken);
-                if (await SnapshotAlreadyGeneratedForRunAsync(
-                        connection,
-                        setting.CompanyId,
-                        targetDate,
-                        runStartedAtUtc,
-                        RequiresOpenAiAnalysis(agentSettings),
-                        cancellationToken))
-                {
-                    continue;
-                }
+                var timeZone = ResolveTimeZone(setting.TimeZoneId);
+                var localNow = TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(utcNow, DateTimeKind.Utc), timeZone);
+                var runAt = ParseRunAt(setting.RunAt);
+                var latestDueDate = ResolveLatestDueTargetDate(
+                    localNow,
+                    runAt,
+                    setting.ConsiderPreviousDayWhenRunBeforeNoon);
+                var generatedCount = 0;
 
-                await GenerateSnapshotAsync(connection, setting, targetDate, timeZone, agentSettings, cancellationToken);
+                for (var dayOffset = 0;
+                     dayOffset < ScheduledBackfillDays && generatedCount < MaxSnapshotsPerCompanyPerCycle;
+                     dayOffset++)
+                {
+                    var targetDate = latestDueDate.AddDays(-dayOffset);
+                    var runStartedAtUtc = ResolveRunStartedAtUtc(
+                        targetDate,
+                        runAt,
+                        setting.ConsiderPreviousDayWhenRunBeforeNoon,
+                        timeZone);
+                    var lockKey = $"daily-checkout:{setting.CompanyId}:{targetDate:yyyy-MM-dd}";
+                    if (!await TryAcquireRunLockAsync(connection, lockKey, cancellationToken))
+                    {
+                        continue;
+                    }
+
+                    try
+                    {
+                        var agentSettings = await settingsRepository.GetAsync(AgentKey, setting.CompanyId, cancellationToken);
+                        if (await SnapshotAlreadyGeneratedForRunAsync(
+                                connection,
+                                setting.CompanyId,
+                                targetDate,
+                                runStartedAtUtc,
+                                RequiresOpenAiAnalysis(agentSettings),
+                                cancellationToken))
+                        {
+                            continue;
+                        }
+
+                        await GenerateSnapshotAsync(connection, setting, targetDate, timeZone, agentSettings, cancellationToken);
+                        generatedCount++;
+                    }
+                    finally
+                    {
+                        await ReleaseRunLockAsync(connection, lockKey, CancellationToken.None);
+                    }
+                }
             }
-            finally
+            catch (Exception exception) when (exception is not OperationCanceledException)
             {
-                await ReleaseRunLockAsync(connection, lockKey, CancellationToken.None);
+                logger.LogError(
+                    exception,
+                    "Failed to generate scheduled daily checkout snapshots for company {CompanyId}.",
+                    setting.CompanyId);
             }
         }
     }
@@ -98,6 +121,24 @@ public sealed class PostgresDailyCheckoutSnapshotService(
     {
         var usePreviousDay = considerPreviousDayWhenRunBeforeNoon && runAt < TimeSpan.FromHours(12);
         return DateOnly.FromDateTime(usePreviousDay ? localNow.Date.AddDays(-1) : localNow.Date);
+    }
+
+    internal static DateOnly ResolveLatestDueTargetDate(DateTime localNow, TimeSpan runAt, bool considerPreviousDayWhenRunBeforeNoon)
+    {
+        var scheduledDate = localNow.TimeOfDay >= runAt ? localNow.Date : localNow.Date.AddDays(-1);
+        var usePreviousDay = considerPreviousDayWhenRunBeforeNoon && runAt < TimeSpan.FromHours(12);
+        return DateOnly.FromDateTime(usePreviousDay ? scheduledDate.AddDays(-1) : scheduledDate);
+    }
+
+    private static DateTime ResolveRunStartedAtUtc(
+        DateOnly targetDate,
+        TimeSpan runAt,
+        bool considerPreviousDayWhenRunBeforeNoon,
+        TimeZoneInfo timeZone)
+    {
+        var useFollowingMorning = considerPreviousDayWhenRunBeforeNoon && runAt < TimeSpan.FromHours(12);
+        var scheduledDate = useFollowingMorning ? targetDate.AddDays(1) : targetDate;
+        return ToUtc(scheduledDate.ToDateTime(TimeOnly.FromTimeSpan(runAt)), timeZone);
     }
 
     internal static bool RequiresOpenAiAnalysis(AiAgentRuntimeSettings settings) =>
