@@ -13,6 +13,8 @@ public sealed class PostgresInstagramConversationAnalysisService(
     IOpenAiWhatsappConversationAnalysisClient openAiClient) : IInstagramConversationAnalysisService
 {
     private const string AgentKey = "instagram-conversation-analysis";
+    private const string SkoposActivityType = "agent-skopos";
+    private const string InstagramChannel = "instagram";
 
     public async Task ProcessAsync(OpportunityEvent opportunityEvent, CancellationToken cancellationToken)
     {
@@ -195,6 +197,18 @@ public sealed class PostgresInstagramConversationAnalysisService(
             await noteCommand.ExecuteNonQueryAsync(cancellationToken);
         }
 
+        if (opportunityId is not null || conversation.ContactId is not null)
+        {
+            await UpsertConversationActivityAsync(
+                connection,
+                transaction,
+                conversation,
+                opportunityId,
+                opportunityEvent,
+                summary,
+                cancellationToken);
+        }
+
         if (response.ShouldCreateActivity && !string.IsNullOrWhiteSpace(response.ActivityTitle))
         {
             const string activitySql = """
@@ -245,6 +259,104 @@ public sealed class PostgresInstagramConversationAnalysisService(
         }
 
         await transaction.CommitAsync(cancellationToken);
+    }
+
+    private static async Task UpsertConversationActivityAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        InstagramConversationRow conversation,
+        Guid? opportunityId,
+        OpportunityEvent opportunityEvent,
+        string summary,
+        CancellationToken cancellationToken)
+    {
+        var activityId = Guid.NewGuid();
+        var activityDate = ReadEventDate(opportunityEvent, "latestMessageAt") ?? opportunityEvent.OccurredAt;
+        var eventMarker = $"[agent_skopos_event:{opportunityEvent.EventId}]";
+        var notes = string.Join("\n", new[]
+        {
+            "Atividade criada automaticamente pelo Agent Skopos após análise da conversa do Instagram.",
+            $"[instagram_conversation_id:{conversation.Id}]",
+            eventMarker,
+            "",
+            "Resumo:",
+            summary
+        });
+
+        const string sql = """
+            with settings as (
+                select coalesce(
+                    (select time_zone_id from daily_checkout_settings where company_id = @companyId limit 1),
+                    'America/Sao_Paulo') as time_zone_id
+            ), existing as (
+                select activity.id
+                from activities activity
+                cross join settings
+                where activity.company_id = @companyId
+                  and activity.activity_type = @activityType
+                  and activity.channel = @channel
+                  and (
+                    (@contactId is not null and activity.contact_id = @contactId)
+                    or (@contactId is null and @opportunityId is not null and activity.opportunity_id = @opportunityId)
+                  )
+                  and (activity.date_at at time zone settings.time_zone_id)::date =
+                      (@dateAt at time zone settings.time_zone_id)::date
+                order by activity.created_at
+                limit 1
+            ), changed as (
+                update activities activity
+                set opportunity_id = coalesce(activity.opportunity_id, @opportunityId),
+                    account_id = coalesce(activity.account_id, @accountId),
+                    contact_id = coalesce(activity.contact_id, @contactId),
+                    owner_user_id = coalesce(activity.owner_user_id, @ownerUserId),
+                    date_at = greatest(activity.date_at, @dateAt),
+                    notes = case
+                        when activity.notes like @eventMarker then activity.notes
+                        else concat_ws(E'\n\n---\n\n', nullif(activity.notes, ''), @notes)
+                    end,
+                    completion_notes = @completionNotes,
+                    completed_notes = @completionNotes,
+                    updated_at = now()
+                where activity.id = (select id from existing)
+                returning activity.id
+            )
+            insert into activities
+                (id, account_id, opportunity_id, contact_id, owner_user_id, title, activity_type, channel,
+                 status, date_at, notes, completion_notes, completed_notes, company_id, created_at, updated_at)
+            select
+                @id, @accountId, @opportunityId, @contactId, @ownerUserId,
+                'Conversa Instagram analisada pelo Agent Skopos', @activityType, @channel,
+                'done', @dateAt, @notes, @completionNotes, @completionNotes, @companyId, now(), now()
+            where not exists (select 1 from changed);
+            """;
+
+        await using (var activityCommand = new NpgsqlCommand(sql, connection, transaction))
+        {
+            activityCommand.Parameters.AddWithValue("id", activityId);
+            AddNullableGuid(activityCommand, "accountId", conversation.AccountId);
+            AddNullableGuid(activityCommand, "opportunityId", opportunityId);
+            AddNullableGuid(activityCommand, "contactId", conversation.ContactId);
+            AddNullableGuid(activityCommand, "ownerUserId", conversation.OwnerUserId);
+            activityCommand.Parameters.AddWithValue("companyId", conversation.CompanyId!.Value);
+            activityCommand.Parameters.AddWithValue("activityType", SkoposActivityType);
+            activityCommand.Parameters.AddWithValue("channel", InstagramChannel);
+            activityCommand.Parameters.AddWithValue("dateAt", activityDate.ToUniversalTime());
+            activityCommand.Parameters.AddWithValue("notes", notes);
+            activityCommand.Parameters.AddWithValue("eventMarker", $"%{eventMarker}%");
+            activityCommand.Parameters.AddWithValue("completionNotes", summary.Length <= 2000 ? summary : summary[..2000]);
+            await activityCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        if (opportunityId is not null)
+        {
+            await using var opportunityCommand = new NpgsqlCommand(
+                "update opportunities set last_activity_at = greatest(coalesce(last_activity_at, @dateAt), @dateAt), updated_at = now() where id = @opportunityId;",
+                connection,
+                transaction);
+            opportunityCommand.Parameters.AddWithValue("opportunityId", opportunityId.Value);
+            opportunityCommand.Parameters.AddWithValue("dateAt", activityDate.ToUniversalTime());
+            await opportunityCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
     }
 
     private static bool TryGetGuid(OpportunityEvent opportunityEvent, string key, out Guid value)

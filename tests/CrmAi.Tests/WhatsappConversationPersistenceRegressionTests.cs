@@ -32,6 +32,10 @@ public sealed class WhatsappConversationPersistenceRegressionTests
         Assert.Contains("Individual message events only reset the conversation inactivity clock", pipeline);
         Assert.Contains("last_analyzed_message_at = greatest", service);
         Assert.Contains("last_analysis_status = 'completed'", service);
+        Assert.Contains("Conversa Instagram analisada pelo Agent Skopos", service);
+        Assert.Contains("activity.channel = @channel", service);
+        Assert.Contains("activity.activity_type = @activityType", service);
+        Assert.Contains("'done', @dateAt", service);
         Assert.Contains("crm.events.opportunity.instagram.conversation.batch", rabbit);
         Assert.DoesNotContain("crm.events.opportunity.instagram.message.created", rabbit);
     }
