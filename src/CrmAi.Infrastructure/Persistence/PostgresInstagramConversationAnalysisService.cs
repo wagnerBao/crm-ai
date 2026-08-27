@@ -10,6 +10,7 @@ public sealed class PostgresInstagramConversationAnalysisService(
     NpgsqlDataSource dataSource,
     IAiAgentRuntimeSettingsRepository settingsRepository,
     IOpportunityContextRepository contextRepository,
+    IWhatsappSuggestionContextRepository suggestionContextRepository,
     IOpenAiWhatsappConversationAnalysisClient openAiClient) : IInstagramConversationAnalysisService
 {
     private const string AgentKey = "instagram-conversation-analysis";
@@ -66,6 +67,17 @@ public sealed class PostgresInstagramConversationAnalysisService(
             return;
         }
 
+        var semanticContext = await suggestionContextRepository.GetAsync(
+            conversation.CompanyId.ToString(),
+            conversation.ContactId?.ToString(),
+            AgentKey,
+            cancellationToken);
+        input = input with
+        {
+            ExistingSuggestions = semanticContext.ExistingSuggestions,
+            ExistingOpenOpportunities = semanticContext.ExistingOpenOpportunities
+        };
+
         var invocationContext = new AiAgentInvocationContext(
             PlatformArea: "instagram",
             CompanyId: conversation.CompanyId.ToString(),
@@ -84,7 +96,7 @@ public sealed class PostgresInstagramConversationAnalysisService(
 
         var response = await openAiClient.AnalyzeAsync(settings, input, invocationContext, cancellationToken);
         var summary = FirstNotEmpty(response.ConversationSummary, conversation.Summary, input.NewTranscript);
-        await PersistAsync(connection, conversation, opportunityId, opportunityEvent, response, summary, cancellationToken);
+        await PersistAsync(connection, conversation, opportunityId, opportunityEvent, response, summary, settings.Model, cancellationToken);
     }
 
     private static async Task<InstagramConversationRow?> ReadConversationAsync(
@@ -146,6 +158,7 @@ public sealed class PostgresInstagramConversationAnalysisService(
         OpportunityEvent opportunityEvent,
         OpenAiWhatsappConversationAnalysisResponse response,
         string summary,
+        string? generationModel,
         CancellationToken cancellationToken)
     {
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
@@ -209,28 +222,15 @@ public sealed class PostgresInstagramConversationAnalysisService(
                 cancellationToken);
         }
 
-        if (response.ShouldCreateActivity && !string.IsNullOrWhiteSpace(response.ActivityTitle))
-        {
-            const string activitySql = """
-                insert into activities
-                    (id, account_id, opportunity_id, contact_id, owner_user_id, title, activity_type, channel,
-                     status, date_at, notes, company_id, created_at, updated_at)
-                values
-                    (@id, @accountId, @opportunityId, @contactId, @ownerUserId, @title, 'follow-up', 'instagram',
-                     'pending', @dateAt, @notes, @companyId, now(), now());
-                """;
-            await using var activityCommand = new NpgsqlCommand(activitySql, connection, transaction);
-            activityCommand.Parameters.AddWithValue("id", Guid.NewGuid());
-            AddNullableGuid(activityCommand, "accountId", conversation.AccountId);
-            AddNullableGuid(activityCommand, "opportunityId", opportunityId);
-            AddNullableGuid(activityCommand, "contactId", conversation.ContactId);
-            AddNullableGuid(activityCommand, "ownerUserId", conversation.OwnerUserId);
-            activityCommand.Parameters.AddWithValue("title", response.ActivityTitle.Trim());
-            activityCommand.Parameters.AddWithValue("dateAt", ParseDateTime(response.ActivityDueAt) ?? DateTime.UtcNow.AddDays(1));
-            activityCommand.Parameters.Add("notes", NpgsqlDbType.Text).Value = string.IsNullOrWhiteSpace(response.ActivityNotes) ? DBNull.Value : response.ActivityNotes.Trim();
-            activityCommand.Parameters.AddWithValue("companyId", conversation.CompanyId.Value);
-            await activityCommand.ExecuteNonQueryAsync(cancellationToken);
-        }
+        await UpsertAgentSuggestionsAsync(
+            connection,
+            transaction,
+            conversation,
+            opportunityId,
+            opportunityEvent,
+            response,
+            generationModel,
+            cancellationToken);
 
         const string insightSql = """
             insert into ai_insights
@@ -305,17 +305,8 @@ public sealed class PostgresInstagramConversationAnalysisService(
                 limit 1
             ), changed as (
                 update activities activity
-                set opportunity_id = coalesce(activity.opportunity_id, @opportunityId),
-                    account_id = coalesce(activity.account_id, @accountId),
-                    contact_id = coalesce(activity.contact_id, @contactId),
-                    owner_user_id = coalesce(activity.owner_user_id, @ownerUserId),
+                set status = 'done',
                     date_at = greatest(activity.date_at, @dateAt),
-                    notes = case
-                        when activity.notes like @eventMarker then activity.notes
-                        else concat_ws(E'\n\n---\n\n', nullif(activity.notes, ''), @notes)
-                    end,
-                    completion_notes = @completionNotes,
-                    completed_notes = @completionNotes,
                     updated_at = now()
                 where activity.id = (select id from existing)
                 returning activity.id
@@ -342,7 +333,6 @@ public sealed class PostgresInstagramConversationAnalysisService(
             activityCommand.Parameters.AddWithValue("channel", InstagramChannel);
             activityCommand.Parameters.AddWithValue("dateAt", activityDate.ToUniversalTime());
             activityCommand.Parameters.AddWithValue("notes", notes);
-            activityCommand.Parameters.AddWithValue("eventMarker", $"%{eventMarker}%");
             activityCommand.Parameters.AddWithValue("completionNotes", summary.Length <= 2000 ? summary : summary[..2000]);
             await activityCommand.ExecuteNonQueryAsync(cancellationToken);
         }
@@ -357,6 +347,215 @@ public sealed class PostgresInstagramConversationAnalysisService(
             opportunityCommand.Parameters.AddWithValue("dateAt", activityDate.ToUniversalTime());
             await opportunityCommand.ExecuteNonQueryAsync(cancellationToken);
         }
+    }
+
+    private static async Task UpsertAgentSuggestionsAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        InstagramConversationRow conversation,
+        Guid? opportunityId,
+        OpportunityEvent opportunityEvent,
+        OpenAiWhatsappConversationAnalysisResponse response,
+        string? generationModel,
+        CancellationToken cancellationToken)
+    {
+        if (conversation.ContactId is null || conversation.CompanyId is null)
+        {
+            return;
+        }
+
+        var runId = Guid.TryParse(opportunityEvent.EventId, out var parsedRunId)
+            ? parsedRunId
+            : (Guid?)null;
+
+        if (response.ShouldCreateActivity && !string.IsNullOrWhiteSpace(response.ActivityTitle))
+        {
+            var description = string.IsNullOrWhiteSpace(response.ActivityNotes)
+                ? response.ActivityTitle
+                : response.ActivityNotes;
+            var payload = JsonSerializer.Serialize(new
+            {
+                activityType = "follow-up",
+                channel = InstagramChannel,
+                dueAt = response.ActivityDueAt,
+                notes = response.ActivityNotes,
+                semanticIntentKey = response.ActivityIntentKey
+            });
+            await UpsertAgentSuggestionAsync(
+                connection,
+                transaction,
+                conversation.CompanyId.Value,
+                conversation.ContactId.Value,
+                conversation.Id,
+                runId,
+                "activity",
+                response.ActivityTitle,
+                description!,
+                ParseDateTime(response.ActivityDueAt),
+                payload,
+                response.ActivityMatchingSuggestionId,
+                response.ActivityIntentKey,
+                generationModel,
+                response,
+                cancellationToken);
+        }
+
+        if (response.ShouldCreateOpportunity
+            && !string.IsNullOrWhiteSpace(response.OpportunityTitle)
+            && !await HasMatchedOpenOpportunityAsync(
+                connection,
+                transaction,
+                conversation.ContactId.Value,
+                opportunityId,
+                response.MatchingOpenOpportunityId,
+                cancellationToken))
+        {
+            var description = string.IsNullOrWhiteSpace(response.OpportunityDescription)
+                ? response.OpportunityTitle
+                : response.OpportunityDescription;
+            var payload = JsonSerializer.Serialize(new
+            {
+                origin = "Instagram",
+                description = response.OpportunityDescription,
+                semanticIntentKey = response.OpportunityIntentKey
+            });
+            await UpsertAgentSuggestionAsync(
+                connection,
+                transaction,
+                conversation.CompanyId.Value,
+                conversation.ContactId.Value,
+                conversation.Id,
+                runId,
+                "opportunity",
+                response.OpportunityTitle,
+                description!,
+                null,
+                payload,
+                response.OpportunityMatchingSuggestionId,
+                response.OpportunityIntentKey,
+                generationModel,
+                response,
+                cancellationToken);
+        }
+    }
+
+    private static async Task UpsertAgentSuggestionAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        Guid companyId,
+        Guid contactId,
+        Guid conversationId,
+        Guid? runId,
+        string suggestionType,
+        string title,
+        string description,
+        DateTime? dueAt,
+        string payload,
+        string? matchingSuggestionId,
+        string? semanticIntentKey,
+        string? generationModel,
+        OpenAiWhatsappConversationAnalysisResponse response,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            with existing as (
+                select id
+                from ai_agent_suggestions
+                where company_id = @companyId
+                  and agent_key = @agentKey
+                  and suggestion_type = @suggestionType
+                  and contact_id = @contactId
+                  and status in ('pending', 'rejected')
+                  and (
+                    id = @matchingSuggestionId
+                    or (@semanticIntentKey is not null and payload ->> 'semanticIntentKey' = @semanticIntentKey)
+                  )
+                order by case when status = 'pending' then 0 else 1 end, updated_at desc
+                limit 1
+            ), changed as (
+                update ai_agent_suggestions suggestion
+                set conversation_id = @conversationId,
+                    run_id = @runId,
+                    title = @title,
+                    description = @description,
+                    suggested_due_at = @dueAt,
+                    payload = @payload,
+                    generation_model = @generationModel,
+                    confidence_score = @confidenceScore,
+                    generation_reasons = @generationReasons,
+                    updated_at = now()
+                where suggestion.id = (select id from existing)
+                returning suggestion.id
+            )
+            insert into ai_agent_suggestions
+                (id, company_id, agent_key, suggestion_type, status, contact_id, conversation_id, run_id,
+                 title, description, suggested_due_at, payload, generation_model, confidence_score,
+                 generation_reasons, created_at, updated_at)
+            select
+                @id, @companyId, @agentKey, @suggestionType, 'pending', @contactId, @conversationId, @runId,
+                @title, @description, @dueAt, @payload, @generationModel, @confidenceScore,
+                @generationReasons, now(), now()
+            where not exists (select 1 from changed)
+            on conflict (run_id, suggestion_type) where run_id is not null do nothing;
+            """;
+        await using var command = new NpgsqlCommand(sql, connection, transaction);
+        command.Parameters.AddWithValue("id", Guid.NewGuid());
+        command.Parameters.AddWithValue("companyId", companyId);
+        command.Parameters.AddWithValue("agentKey", AgentKey);
+        command.Parameters.AddWithValue("suggestionType", suggestionType);
+        command.Parameters.AddWithValue("contactId", contactId);
+        command.Parameters.AddWithValue("conversationId", conversationId);
+        command.Parameters.Add("runId", NpgsqlDbType.Uuid).Value = runId is null ? DBNull.Value : runId.Value;
+        command.Parameters.Add("matchingSuggestionId", NpgsqlDbType.Uuid).Value =
+            Guid.TryParse(matchingSuggestionId, out var parsedSuggestionId) ? parsedSuggestionId : DBNull.Value;
+        command.Parameters.Add("semanticIntentKey", NpgsqlDbType.Text).Value =
+            string.IsNullOrWhiteSpace(semanticIntentKey) ? DBNull.Value : semanticIntentKey.Trim();
+        command.Parameters.AddWithValue("title", Truncate(title.Trim(), 300));
+        command.Parameters.AddWithValue("description", Truncate(description.Trim(), 3000));
+        command.Parameters.Add("dueAt", NpgsqlDbType.TimestampTz).Value = dueAt is null ? DBNull.Value : dueAt.Value;
+        command.Parameters.Add("payload", NpgsqlDbType.Jsonb).Value = payload;
+        command.Parameters.Add("generationModel", NpgsqlDbType.Text).Value =
+            string.IsNullOrWhiteSpace(generationModel) ? DBNull.Value : generationModel;
+        command.Parameters.AddWithValue("confidenceScore", Math.Clamp(response.ConfidenceScore, 0, 100));
+        command.Parameters.Add("generationReasons", NpgsqlDbType.Jsonb).Value = JsonSerializer.Serialize(response.Reasons);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task<bool> HasMatchedOpenOpportunityAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        Guid contactId,
+        Guid? currentOpportunityId,
+        string? matchingOpenOpportunityId,
+        CancellationToken cancellationToken)
+    {
+        if (!Guid.TryParse(matchingOpenOpportunityId, out var parsedOpportunityId))
+        {
+            return false;
+        }
+
+        const string sql = """
+            select exists (
+                select 1
+                from opportunities opportunity
+                where opportunity.status = 'active'
+                  and opportunity.id = @matchingOpenOpportunityId
+                  and (
+                    opportunity.id = @currentOpportunityId
+                    or exists (
+                        select 1 from opportunity_contacts link
+                        where link.opportunity_id = opportunity.id
+                          and link.contact_id = @contactId
+                    )
+                    or opportunity.account_id = (select account_id from contacts where id = @contactId)
+                  )
+            );
+            """;
+        await using var command = new NpgsqlCommand(sql, connection, transaction);
+        command.Parameters.AddWithValue("matchingOpenOpportunityId", parsedOpportunityId);
+        AddNullableGuid(command, "currentOpportunityId", currentOpportunityId);
+        command.Parameters.AddWithValue("contactId", contactId);
+        return (bool)(await command.ExecuteScalarAsync(cancellationToken) ?? false);
     }
 
     private static bool TryGetGuid(OpportunityEvent opportunityEvent, string key, out Guid value)
@@ -395,6 +594,9 @@ public sealed class PostgresInstagramConversationAnalysisService(
 
     private static string FirstNotEmpty(params string?[] values) =>
         values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))?.Trim() ?? "Conversa do Instagram analisada.";
+
+    private static string Truncate(string value, int maxLength) =>
+        value.Length <= maxLength ? value : value[..maxLength];
 
     private sealed record InstagramConversationRow(
         Guid Id,

@@ -35,9 +35,25 @@ public sealed class WhatsappConversationPersistenceRegressionTests
         Assert.Contains("Conversa Instagram analisada pelo Agent Skopos", service);
         Assert.Contains("activity.channel = @channel", service);
         Assert.Contains("activity.activity_type = @activityType", service);
+        Assert.Contains("set status = 'done'", service);
         Assert.Contains("'done', @dateAt", service);
+        Assert.Contains("insert into ai_agent_suggestions", service);
+        Assert.Contains("agent_key = @agentKey", service);
+        Assert.Contains("channel = InstagramChannel", service);
+        Assert.Contains("ExistingSuggestions = semanticContext.ExistingSuggestions", service);
+        Assert.DoesNotContain("'follow-up', 'instagram',\n                     'pending'", service);
         Assert.Contains("crm.events.opportunity.instagram.conversation.batch", rabbit);
         Assert.DoesNotContain("crm.events.opportunity.instagram.message.created", rabbit);
+    }
+
+    [Fact]
+    public void Suggestion_context_should_be_scoped_to_the_active_channel_agent()
+    {
+        var repository = ReadSource("src/CrmAi.Infrastructure/Persistence/PostgresWhatsappSuggestionContextRepository.cs");
+
+        Assert.Contains("and agent_key = @agentKey", repository);
+        Assert.Contains("command.Parameters.AddWithValue(\"agentKey\", agentKey)", repository);
+        Assert.DoesNotContain("and agent_key = 'whatsapp-conversation-analysis'", repository);
     }
 
     [Fact]

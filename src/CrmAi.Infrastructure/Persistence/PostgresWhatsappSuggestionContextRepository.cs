@@ -9,6 +9,13 @@ public sealed class PostgresWhatsappSuggestionContextRepository(NpgsqlDataSource
     public async Task<WhatsappSuggestionSemanticContext> GetAsync(
         string? companyId,
         string? contactId,
+        CancellationToken cancellationToken) =>
+        await GetAsync(companyId, contactId, "whatsapp-conversation-analysis", cancellationToken);
+
+    public async Task<WhatsappSuggestionSemanticContext> GetAsync(
+        string? companyId,
+        string? contactId,
+        string agentKey,
         CancellationToken cancellationToken)
     {
         if (!Guid.TryParse(companyId, out var parsedCompanyId) || !Guid.TryParse(contactId, out var parsedContactId))
@@ -17,7 +24,7 @@ public sealed class PostgresWhatsappSuggestionContextRepository(NpgsqlDataSource
         }
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        var suggestions = await ReadSuggestionsAsync(connection, parsedCompanyId, parsedContactId, cancellationToken);
+        var suggestions = await ReadSuggestionsAsync(connection, parsedCompanyId, parsedContactId, agentKey, cancellationToken);
         var opportunities = await ReadOpenOpportunitiesAsync(connection, parsedCompanyId, parsedContactId, cancellationToken);
         return new WhatsappSuggestionSemanticContext(suggestions, opportunities);
     }
@@ -26,6 +33,7 @@ public sealed class PostgresWhatsappSuggestionContextRepository(NpgsqlDataSource
         NpgsqlConnection connection,
         Guid companyId,
         Guid contactId,
+        string agentKey,
         CancellationToken cancellationToken)
     {
         const string sql = """
@@ -33,7 +41,7 @@ public sealed class PostgresWhatsappSuggestionContextRepository(NpgsqlDataSource
                    payload ->> 'semanticIntentKey' as semantic_intent_key, updated_at
             from ai_agent_suggestions
             where company_id = @companyId
-              and agent_key = 'whatsapp-conversation-analysis'
+              and agent_key = @agentKey
               and contact_id = @contactId
               and status in ('pending', 'rejected')
             order by updated_at desc
@@ -42,6 +50,7 @@ public sealed class PostgresWhatsappSuggestionContextRepository(NpgsqlDataSource
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue("companyId", companyId);
         command.Parameters.AddWithValue("contactId", contactId);
+        command.Parameters.AddWithValue("agentKey", agentKey);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         var rows = new List<WhatsappSuggestionCandidate>();
         while (await reader.ReadAsync(cancellationToken))
