@@ -117,6 +117,7 @@ public sealed class OpenAiMeetingAudioClient(
         }
 
         if (!attempt.IsSuccessStatusCode
+            && !IsAudioDurationLimitFailure(attempt.ResponseBody)
             && (IsInputTooLarge(attempt.ResponseBody) || CanFallbackFromDiarization(transcriptionModel, attempt.StatusCode))
             && !string.Equals(fallbackTranscriptionModel, transcriptionModel, StringComparison.OrdinalIgnoreCase))
         {
@@ -754,12 +755,18 @@ public sealed class OpenAiMeetingAudioClient(
         }
     }
 
-    private static bool IsLargeAudioFailure(string? responseBody) =>
+    internal static bool IsLargeAudioFailure(string? responseBody) =>
         IsInputTooLarge(responseBody)
+        || IsAudioDurationLimitFailure(responseBody)
         || (!string.IsNullOrWhiteSpace(responseBody)
             && (responseBody.Contains("25 MB", StringComparison.OrdinalIgnoreCase)
                 || responseBody.Contains("maximum content size", StringComparison.OrdinalIgnoreCase)
                 || responseBody.Contains("file is too large", StringComparison.OrdinalIgnoreCase)));
+
+    private static bool IsAudioDurationLimitFailure(string? responseBody) =>
+        !string.IsNullOrWhiteSpace(responseBody)
+        && responseBody.Contains("audio duration", StringComparison.OrdinalIgnoreCase)
+        && responseBody.Contains("maximum", StringComparison.OrdinalIgnoreCase);
 
     private static string ExtractOutputText(string responseBody)
     {

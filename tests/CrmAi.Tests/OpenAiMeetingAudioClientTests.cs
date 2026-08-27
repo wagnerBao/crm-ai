@@ -190,6 +190,22 @@ public sealed class OpenAiMeetingAudioClientTests
         }
     }
 
+    [Fact]
+    public void IsLargeAudioFailure_RecognizesOpenAiDurationLimitResponse()
+    {
+        const string response = """{"error":{"code":"invalid_value","message":"audio duration 1476.06 seconds is longer than 1400 seconds which is the maximum for this model"}}""";
+
+        Assert.True(OpenAiMeetingAudioClient.IsLargeAudioFailure(response));
+    }
+
+    [Fact]
+    public void IsLargeAudioFailure_DoesNotClassifyGenericInvalidValueAsLargeAudio()
+    {
+        const string response = """{"error":{"code":"invalid_value","message":"audio format is not supported"}}""";
+
+        Assert.False(OpenAiMeetingAudioClient.IsLargeAudioFailure(response));
+    }
+
     private static OpenAiMeetingAudioClient CreateClient(HttpMessageHandler handler) =>
         new(
             new HttpClient(handler),
