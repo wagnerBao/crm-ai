@@ -16,27 +16,30 @@ public sealed class PostgresMeetingAudioAnalysisServiceTests
     }
 
     [Fact]
-    public void ShouldCreateCallSuggestion_RequiresWhatsappCallContactAndCompleteAction()
+    public void ShouldCreateActivitySuggestion_RequiresSupportedSourceContactAndCompleteAction()
     {
         var recording = CreateRecording("whatsapp_call", Guid.NewGuid().ToString());
         var analysis = new OpenAiMeetingAudioAnalysisResponse(
             "Resumo", [], [], "Enviar material ao cliente.", true,
             "Enviar material solicitado", "Enviar os prints e áudios combinados.", null, 92, ["Ação combinada durante a ligação."]);
 
-        Assert.True(PostgresMeetingAudioAnalysisService.ShouldCreateCallSuggestion(recording, analysis));
-        Assert.False(PostgresMeetingAudioAnalysisService.ShouldCreateCallSuggestion(CreateRecording("google_meet", recording.ContactId), analysis));
-        Assert.False(PostgresMeetingAudioAnalysisService.ShouldCreateCallSuggestion(CreateRecording("whatsapp_call", null), analysis));
-        Assert.False(PostgresMeetingAudioAnalysisService.ShouldCreateCallSuggestion(recording, analysis with { ShouldCreateActivity = false }));
+        Assert.True(PostgresMeetingAudioAnalysisService.ShouldCreateActivitySuggestion(recording, analysis));
+        Assert.True(PostgresMeetingAudioAnalysisService.ShouldCreateActivitySuggestion(CreateRecording("google_meet", recording.ContactId), analysis));
+        Assert.False(PostgresMeetingAudioAnalysisService.ShouldCreateActivitySuggestion(CreateRecording("manual_upload", recording.ContactId), analysis));
+        Assert.False(PostgresMeetingAudioAnalysisService.ShouldCreateActivitySuggestion(CreateRecording("whatsapp_call", null), analysis));
+        Assert.False(PostgresMeetingAudioAnalysisService.ShouldCreateActivitySuggestion(recording, analysis with { ShouldCreateActivity = false }));
     }
 
     [Fact]
-    public void CallSuggestionPersistence_IsIdempotentByRecordingAndDoesNotRunForMeet()
+    public void ActivitySuggestionPersistence_IsIdempotentAndUsesTheSourceAgentAndChannel()
     {
         var source = ReadSource("src/CrmAi.Infrastructure/Persistence/PostgresMeetingAudioAnalysisService.cs");
 
-        Assert.Contains("'call-audio-analysis', 'activity', 'pending'", source, StringComparison.Ordinal);
+        Assert.Contains("@agentKey, 'activity', 'pending'", source, StringComparison.Ordinal);
+        Assert.Contains("ResolveAgentKey(recording.SourceKind)", source, StringComparison.Ordinal);
+        Assert.Contains("? \"call\"", source, StringComparison.Ordinal);
+        Assert.Contains(": \"meeting\"", source, StringComparison.Ordinal);
         Assert.Contains("on conflict (run_id, suggestion_type)", source, StringComparison.Ordinal);
-        Assert.Contains("string.Equals(recording.SourceKind, \"whatsapp_call\"", source, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -111,6 +114,9 @@ public sealed class PostgresMeetingAudioAnalysisServiceTests
 
         Assert.Contains("conversation_scorecards", source, StringComparison.Ordinal);
         Assert.Contains("conversation_scorecard_items", source, StringComparison.Ordinal);
+        Assert.Contains("update conversation_scorecards", source, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("recording_id = @recordingId", source, StringComparison.Ordinal);
+        Assert.Contains("and is_current", source, StringComparison.Ordinal);
         Assert.Contains("items.Where(item => item.IsCovered)", source, StringComparison.Ordinal);
         Assert.Contains("template_version", source, StringComparison.Ordinal);
     }

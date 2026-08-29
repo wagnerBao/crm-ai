@@ -3,14 +3,14 @@ namespace CrmAi.Tests;
 public sealed class WhatsappCallRabbitMqRoutingTests
 {
     [Fact]
-    public void OpportunityConsumer_AllowsWhatsappCallWithoutOpportunityId()
+    public void OpportunityConsumer_AllowsMeetingAudioWithoutOpportunityId()
     {
         var consumer = ReadSource("src/CrmAi.Infrastructure/OpportunityAnalysis/RabbitMqOpportunityAnalysisConsumer.cs");
         var baseConsumer = ReadSource("src/CrmAi.Infrastructure/RabbitMq/RabbitMqOpportunityEventConsumerBase.cs");
 
         Assert.Contains("CanProcessWithoutOpportunityId", consumer);
-        Assert.Contains("sourceKind", consumer);
-        Assert.Contains("whatsapp_call", consumer);
+        Assert.Contains("opportunity.meeting_audio.recording.created", consumer);
+        Assert.DoesNotContain("sourceKind", consumer);
         Assert.Contains("!CanProcessWithoutOpportunityId(opportunityEvent)", baseConsumer);
     }
 

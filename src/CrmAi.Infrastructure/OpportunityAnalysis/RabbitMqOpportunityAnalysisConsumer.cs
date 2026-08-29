@@ -19,9 +19,7 @@ public sealed class RabbitMqOpportunityAnalysisConsumer(
 
     protected override bool CanProcessWithoutOpportunityId(OpportunityEvent opportunityEvent) =>
         string.Equals(opportunityEvent.Type, "opportunity.instagram.message.created", StringComparison.OrdinalIgnoreCase)
-        || (string.Equals(opportunityEvent.Type, "opportunity.meeting_audio.recording.created", StringComparison.OrdinalIgnoreCase)
-            && opportunityEvent.Data.TryGetValue("sourceKind", out var sourceKind)
-            && string.Equals(sourceKind?.ToString(), "whatsapp_call", StringComparison.OrdinalIgnoreCase));
+        || string.Equals(opportunityEvent.Type, "opportunity.meeting_audio.recording.created", StringComparison.OrdinalIgnoreCase);
 
     protected override Task ProcessAsync(IServiceProvider services, OpportunityEvent opportunityEvent, CancellationToken cancellationToken) =>
         services.GetRequiredService<IOpportunityAnalysisEventProcessor>().ProcessAsync(opportunityEvent, cancellationToken);

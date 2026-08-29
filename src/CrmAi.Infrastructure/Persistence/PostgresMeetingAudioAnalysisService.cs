@@ -778,9 +778,9 @@ public sealed class PostgresMeetingAudioAnalysisService(
                 scorecardTemplate, analysis, transcript, settings.Model, promptFingerprint, cancellationToken);
         }
 
-        if (ShouldCreateCallSuggestion(recording, analysis))
+        if (ShouldCreateActivitySuggestion(recording, analysis))
         {
-            await InsertCallSuggestionAsync(connection, transaction, recording, recordingId, analysis, settings, cancellationToken);
+            await InsertActivitySuggestionAsync(connection, transaction, recording, recordingId, analysis, settings, cancellationToken);
         }
 
         await transaction.CommitAsync(cancellationToken);
@@ -809,6 +809,19 @@ public sealed class PostgresMeetingAudioAnalysisService(
             ? 0
             : Math.Clamp((int)Math.Round(coveredItems.Sum(item => item.Confidence * item.Criterion.Weight) / coveredWeight), 0, 100);
         var scorecardId = Guid.NewGuid();
+
+        await using (var supersedeCommand = new NpgsqlCommand("""
+            update conversation_scorecards
+            set is_current = false, updated_at = now()
+            where company_id = @companyId
+              and recording_id = @recordingId
+              and is_current;
+            """, connection, transaction))
+        {
+            supersedeCommand.Parameters.AddWithValue("companyId", Guid.Parse(recording.CompanyId!));
+            supersedeCommand.Parameters.AddWithValue("recordingId", recordingId);
+            await supersedeCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
 
         const string scorecardSql = """
             insert into conversation_scorecards
@@ -913,15 +926,16 @@ public sealed class PostgresMeetingAudioAnalysisService(
     private static string NormalizeWhitespace(string value) =>
         string.Join(' ', value.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
 
-    public static bool ShouldCreateCallSuggestion(MeetingAudioRecordingPayload recording, OpenAiMeetingAudioAnalysisResponse analysis) =>
-        string.Equals(recording.SourceKind, "whatsapp_call", StringComparison.OrdinalIgnoreCase)
+    public static bool ShouldCreateActivitySuggestion(MeetingAudioRecordingPayload recording, OpenAiMeetingAudioAnalysisResponse analysis) =>
+        (string.Equals(recording.SourceKind, "google_meet", StringComparison.OrdinalIgnoreCase)
+         || string.Equals(recording.SourceKind, "whatsapp_call", StringComparison.OrdinalIgnoreCase))
         && Guid.TryParse(recording.CompanyId, out _)
         && Guid.TryParse(recording.ContactId, out _)
         && analysis.ShouldCreateActivity
         && !string.IsNullOrWhiteSpace(analysis.ActivityTitle)
         && !string.IsNullOrWhiteSpace(analysis.ActivityNotes);
 
-    private static async Task InsertCallSuggestionAsync(
+    private static async Task InsertActivitySuggestionAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         MeetingAudioRecordingPayload recording,
@@ -936,17 +950,20 @@ public sealed class PostgresMeetingAudioAnalysisService(
                  title, description, suggested_due_at, payload, generation_model, confidence_score,
                  generation_reasons, created_at, updated_at)
             values
-                (gen_random_uuid(), @companyId, 'call-audio-analysis', 'activity', 'pending', @contactId, null, @runId,
+                (gen_random_uuid(), @companyId, @agentKey, 'activity', 'pending', @contactId, null, @runId,
                  @title, @description, @dueAt, @payload, @generationModel, @confidenceScore,
                  @generationReasons, now(), now())
             on conflict (run_id, suggestion_type) where run_id is not null do nothing;
             """;
 
         var dueAt = ParseUtcDateTime(analysis.ActivityDueAt);
+        var channel = string.Equals(recording.SourceKind, "whatsapp_call", StringComparison.OrdinalIgnoreCase)
+            ? "call"
+            : "meeting";
         var payload = JsonSerializer.Serialize(new
         {
             activityType = "follow-up",
-            channel = "call",
+            channel,
             notes = analysis.ActivityNotes!.Trim(),
             dueAt = dueAt?.ToString("O"),
             recordingId = recording.Id,
@@ -959,6 +976,7 @@ public sealed class PostgresMeetingAudioAnalysisService(
 
         await using var command = new NpgsqlCommand(sql, connection, transaction);
         command.Parameters.AddWithValue("companyId", Guid.Parse(recording.CompanyId!));
+        command.Parameters.AddWithValue("agentKey", ResolveAgentKey(recording.SourceKind));
         command.Parameters.AddWithValue("contactId", Guid.Parse(recording.ContactId!));
         command.Parameters.AddWithValue("runId", recordingId);
         command.Parameters.AddWithValue("title", Truncate(analysis.ActivityTitle!.Trim(), 300));
