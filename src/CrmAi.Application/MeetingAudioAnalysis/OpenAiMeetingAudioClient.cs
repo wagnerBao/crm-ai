@@ -74,21 +74,17 @@ public sealed class OpenAiMeetingAudioClient(
 
         if (content.Length > MaxOpenAiAudioUploadBytes)
         {
-            var segmentedTranscript = await TranscribeSegmentedAudioAsync(apiKey, endpoint, transcriptionModel, fileName, mimeType, content, cancellationToken);
-            await invocationLogStore.SaveBestEffortAsync(OpenAiInvocationLogBuilder.Create(
+            return await TranscribeSegmentedAudioWithLoggingAsync(
                 settings,
-                transcriptionModel,
-                "audio.transcription.segmented",
+                apiKey,
                 endpoint,
+                transcriptionModel,
+                fileName,
+                mimeType,
+                content,
                 invocationContext,
                 startedAt,
-                200,
-                true,
-                BuildTranscriptionRequestJson(transcriptionModel, fileName, mimeType, content.Length, "ffmpeg_segment"),
-                null,
-                JsonSerializer.Serialize(new { text = segmentedTranscript.Text, segments = segmentedTranscript.Segments.Count }, SerializerOptions),
-                modelOverride: transcriptionModel), cancellationToken);
-            return segmentedTranscript;
+                cancellationToken);
         }
 
         var attempt = await SendTranscriptionAttemptAsync(
@@ -138,21 +134,17 @@ public sealed class OpenAiMeetingAudioClient(
         if (!attempt.IsSuccessStatusCode && IsLargeAudioFailure(attempt.ResponseBody))
         {
             await LogTranscriptionFailureAsync(settings, transcriptionModel, endpoint, invocationContext, attempt, cancellationToken);
-            var segmentedTranscript = await TranscribeSegmentedAudioAsync(apiKey, endpoint, transcriptionModel, fileName, mimeType, content, cancellationToken);
-            await invocationLogStore.SaveBestEffortAsync(OpenAiInvocationLogBuilder.Create(
+            return await TranscribeSegmentedAudioWithLoggingAsync(
                 settings,
-                transcriptionModel,
-                "audio.transcription.segmented",
+                apiKey,
                 endpoint,
+                transcriptionModel,
+                fileName,
+                mimeType,
+                content,
                 invocationContext,
                 startedAt,
-                200,
-                true,
-                BuildTranscriptionRequestJson(transcriptionModel, fileName, mimeType, content.Length, "ffmpeg_segment"),
-                null,
-                JsonSerializer.Serialize(new { text = segmentedTranscript.Text, segments = segmentedTranscript.Segments.Count }, SerializerOptions),
-                modelOverride: transcriptionModel), cancellationToken);
-            return segmentedTranscript;
+                cancellationToken);
         }
 
         if (!attempt.IsSuccessStatusCode)
@@ -245,6 +237,70 @@ public sealed class OpenAiMeetingAudioClient(
             null,
             exception,
             modelOverride: transcriptionModel), cancellationToken);
+    }
+
+    private async Task<MeetingAudioTranscriptionResult> TranscribeSegmentedAudioWithLoggingAsync(
+        AiAgentRuntimeSettings settings,
+        string apiKey,
+        string endpoint,
+        string transcriptionModel,
+        string fileName,
+        string mimeType,
+        byte[] content,
+        AiAgentInvocationContext invocationContext,
+        DateTime startedAt,
+        CancellationToken cancellationToken)
+    {
+        var requestJson = BuildTranscriptionRequestJson(
+            transcriptionModel,
+            fileName,
+            mimeType,
+            content.Length,
+            "ffmpeg_segment");
+
+        try
+        {
+            var segmentedTranscript = await TranscribeSegmentedAudioAsync(
+                apiKey,
+                endpoint,
+                transcriptionModel,
+                fileName,
+                mimeType,
+                content,
+                cancellationToken);
+            await invocationLogStore.SaveBestEffortAsync(OpenAiInvocationLogBuilder.Create(
+                settings,
+                transcriptionModel,
+                "audio.transcription.segmented",
+                endpoint,
+                invocationContext,
+                startedAt,
+                200,
+                true,
+                requestJson,
+                null,
+                JsonSerializer.Serialize(new { text = segmentedTranscript.Text, segments = segmentedTranscript.Segments.Count }, SerializerOptions),
+                modelOverride: transcriptionModel), cancellationToken);
+            return segmentedTranscript;
+        }
+        catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
+        {
+            await invocationLogStore.SaveBestEffortAsync(OpenAiInvocationLogBuilder.Create(
+                settings,
+                transcriptionModel,
+                "audio.transcription.segmented",
+                endpoint,
+                invocationContext,
+                startedAt,
+                null,
+                false,
+                requestJson,
+                null,
+                null,
+                exception,
+                modelOverride: transcriptionModel), cancellationToken);
+            throw;
+        }
     }
 
     public async Task<OpenAiMeetingAudioAnalysisResponse> AnalyzeAsync(

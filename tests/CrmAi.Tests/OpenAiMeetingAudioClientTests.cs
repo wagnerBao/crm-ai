@@ -1,4 +1,6 @@
 using System.Net;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using CrmAi.Application;
 
@@ -6,6 +8,21 @@ namespace CrmAi.Tests;
 
 public sealed class OpenAiMeetingAudioClientTests
 {
+    [Fact]
+    public void AddApplication_ConfiguresExtendedTimeoutOnlyForMeetingAudioClient()
+    {
+        var services = new ServiceCollection();
+        services.AddApplication(new ConfigurationBuilder().Build());
+        using var provider = services.BuildServiceProvider();
+
+        var clientFactory = provider.GetRequiredService<IHttpClientFactory>();
+        using var meetingAudioClient = clientFactory.CreateClient(nameof(IOpenAiMeetingAudioClient));
+        using var riskAnalysisClient = clientFactory.CreateClient(nameof(IOpenAiRiskAnalysisClient));
+
+        Assert.Equal(TimeSpan.FromMinutes(10), meetingAudioClient.Timeout);
+        Assert.Equal(TimeSpan.FromSeconds(100), riskAnalysisClient.Timeout);
+    }
+
     [Fact]
     public async Task AnalyzeAsync_PreservesMeetSchemaWithoutCallSuggestions()
     {

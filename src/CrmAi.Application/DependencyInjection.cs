@@ -14,7 +14,10 @@ public static class DependencyInjection
         services.AddSingleton<RiskAnalysisAgentInputBuilder>();
         services.AddHttpClient<IOpenAiRiskAnalysisClient, OpenAiResponsesRiskAnalysisClient>();
         services.AddHttpClient<IOpenAiWhatsappConversationAnalysisClient, OpenAiResponsesWhatsappConversationAnalysisClient>();
-        services.AddHttpClient<IOpenAiMeetingAudioClient, OpenAiMeetingAudioClient>();
+        services.AddHttpClient<IOpenAiMeetingAudioClient, OpenAiMeetingAudioClient>(client =>
+        {
+            client.Timeout = TimeSpan.FromMinutes(10);
+        });
         services.AddHttpClient<IOpenAiDailyCheckoutClient, OpenAiResponsesDailyCheckoutClient>();
         services.AddHttpClient<IOpenAiSuggestionQualityAuditClient, OpenAiSuggestionQualityAuditClient>();
         services.AddScoped<IRiskAnalysisAgent, RiskAnalysisAgent>();
