@@ -69,8 +69,24 @@ public sealed class SuggestionCompletionVerificationProcessor(
         string? PreviousEvidenceFingerprint,
         int AttemptCount);
 
-    private sealed record NotificationCandidate(Guid Id, Guid CompanyId, Guid UserId, Guid ContactId);
-    private sealed record NotificationBatch(Guid Id, Guid CompanyId, Guid UserId, string Title, string Message, DateTime CreatedAt, string DedupeKey);
+    private sealed record NotificationCandidate(
+        Guid Id,
+        Guid CompanyId,
+        Guid UserId,
+        Guid ContactId,
+        Guid TargetId,
+        string TargetType);
+    private sealed record NotificationBatch(
+        Guid Id,
+        Guid CompanyId,
+        Guid UserId,
+        string Title,
+        string Message,
+        DateTime CreatedAt,
+        string DedupeKey,
+        string Href,
+        string EntityType,
+        Guid EntityId);
 
     public async Task<bool> ProcessNextAsync(CancellationToken cancellationToken)
     {
@@ -429,7 +445,9 @@ public sealed class SuggestionCompletionVerificationProcessor(
         const string candidatesSql = """
             select suggestion.id, suggestion.company_id,
                    coalesce(responsible.user_id, opportunity.owner_user_id, contact.owner_user_id) as user_id,
-                   suggestion.contact_id
+                   suggestion.contact_id,
+                   coalesce(opportunity.id, suggestion.contact_id) as target_id,
+                   case when opportunity.id is null then 'contact' else 'opportunity' end as target_type
             from ai_agent_suggestions suggestion
             inner join contacts contact on contact.id = suggestion.contact_id and contact.company_id = suggestion.company_id
             left join lateral (
@@ -441,7 +459,7 @@ public sealed class SuggestionCompletionVerificationProcessor(
                 limit 1
             ) responsible on true
             left join lateral (
-                select candidate.owner_user_id
+                select candidate.id, candidate.owner_user_id
                 from opportunity_contacts relation
                 inner join opportunities candidate on candidate.id = relation.opportunity_id
                 where relation.contact_id = contact.id and candidate.company_id = suggestion.company_id and candidate.status = 'active'
@@ -462,7 +480,13 @@ public sealed class SuggestionCompletionVerificationProcessor(
         {
             while (await reader.ReadAsync(cancellationToken))
             {
-                candidates.Add(new(reader.GetGuid(0), reader.GetGuid(1), reader.GetGuid(2), reader.GetGuid(3)));
+                candidates.Add(new(
+                    reader.GetGuid(0),
+                    reader.GetGuid(1),
+                    reader.GetGuid(2),
+                    reader.GetGuid(3),
+                    reader.GetGuid(4),
+                    reader.GetString(5)));
             }
         }
         if (candidates.Count == 0)
@@ -472,7 +496,7 @@ public sealed class SuggestionCompletionVerificationProcessor(
         }
 
         var notifications = new List<NotificationBatch>();
-        foreach (var group in candidates.GroupBy(item => new { item.CompanyId, item.UserId }))
+        foreach (var group in candidates.GroupBy(item => new { item.CompanyId, item.UserId, item.TargetId, item.TargetType }))
         {
             var ids = group.Select(item => item.Id).Order().ToArray();
             var contactCount = group.Select(item => item.ContactId).Distinct().Count();
@@ -481,11 +505,14 @@ public sealed class SuggestionCompletionVerificationProcessor(
             var title = "Ações sugeridas aguardando registro";
             var suggestedActions = suggestionCount == 1 ? "ação sugerida" : "ações sugeridas";
             var message = $"{contactCount} contato{(contactCount == 1 ? " possui" : "s possuem")} {suggestionCount} {suggestedActions} sem registro.";
+            var href = group.Key.TargetType == "opportunity"
+                ? $"/crm/opportunities/{group.Key.TargetId}"
+                : $"/crm/contacts/{group.Key.TargetId}";
             var notificationId = Guid.NewGuid();
             var createdAt = DateTime.UtcNow;
             const string insertSql = """
                 insert into notifications(id,company_id,user_id,event_key,title,message,severity,href,entity_type,entity_id,channels_json,dedupe_key,created_at,updated_at)
-                values(@id,@companyId,@userId,@eventKey,@title,@message,'danger','/activities?suggestionAttention=1','insight',null,
+                values(@id,@companyId,@userId,@eventKey,@title,@message,'danger',@href,@entityType,@entityId,
                        '[{"channel":"system","enabled":true,"status":"sent"},{"channel":"toast","enabled":true,"status":"sent"},{"channel":"browser","enabled":true,"status":"sent"},{"channel":"email","enabled":false,"status":"disabled"},{"channel":"whatsapp","enabled":false,"status":"disabled"}]'::jsonb,
                        @dedupeKey,@createdAt,@createdAt)
                 on conflict do nothing
@@ -498,11 +525,24 @@ public sealed class SuggestionCompletionVerificationProcessor(
             insert.Parameters.AddWithValue("eventKey", NotificationEventKey);
             insert.Parameters.AddWithValue("title", title);
             insert.Parameters.AddWithValue("message", message);
+            insert.Parameters.AddWithValue("href", href);
+            insert.Parameters.AddWithValue("entityType", group.Key.TargetType);
+            insert.Parameters.AddWithValue("entityId", group.Key.TargetId);
             insert.Parameters.AddWithValue("dedupeKey", dedupeKey);
             insert.Parameters.AddWithValue("createdAt", createdAt);
             if (await insert.ExecuteScalarAsync(cancellationToken) is not null)
             {
-                notifications.Add(new(notificationId, group.Key.CompanyId, group.Key.UserId, title, message, createdAt, dedupeKey));
+                notifications.Add(new(
+                    notificationId,
+                    group.Key.CompanyId,
+                    group.Key.UserId,
+                    title,
+                    message,
+                    createdAt,
+                    dedupeKey,
+                    href,
+                    group.Key.TargetType,
+                    group.Key.TargetId));
             }
 
             await using var mark = new NpgsqlCommand("update ai_agent_suggestions set priority_notified_at=now(),updated_at=now() where id=any(@ids) and priority_notified_at is null;", connection, transaction);
@@ -556,9 +596,9 @@ public sealed class SuggestionCompletionVerificationProcessor(
                     severity = "danger",
                     createdAt = notification.CreatedAt,
                     readAt = (DateTime?)null,
-                    href = "/activities?suggestionAttention=1",
-                    entityType = "insight",
-                    entityId = (Guid?)null,
+                    href = notification.Href,
+                    entityType = notification.EntityType,
+                    entityId = notification.EntityId,
                     channels
                 }
             }

@@ -157,6 +157,10 @@ public sealed class WhatsappConversationPersistenceRegressionTests
             "priority_at = case",
             "insert into notifications",
             "activity_suggestion_unfulfilled",
+            "case when opportunity.id is null then 'contact' else 'opportunity' end as target_type",
+            "$\"/crm/opportunities/{group.Key.TargetId}\"",
+            "$\"/crm/contacts/{group.Key.TargetId}\"",
+            "entityType = notification.EntityType",
             "notification.created");
     }
 
