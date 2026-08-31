@@ -43,6 +43,109 @@ public sealed class PostgresMeetingAudioAnalysisServiceTests
     }
 
     [Fact]
+    public void ShouldCreateNoteSuggestion_RequiresSupportedSourceContactSummaryAndMinimumConfidence()
+    {
+        var recording = CreateRecording("google_meet", Guid.NewGuid().ToString());
+        var analysis = new OpenAiMeetingAudioAnalysisResponse(
+            "Resumo", [], [], "Enviar material.", ConfidenceScore: 80, Reasons: ["Resumo sustentado pela conversa."]);
+
+        Assert.True(PostgresMeetingAudioAnalysisService.ShouldCreateNoteSuggestion(recording, analysis, "Resumo estruturado"));
+        Assert.True(PostgresMeetingAudioAnalysisService.ShouldCreateNoteSuggestion(CreateRecording("whatsapp_call", recording.ContactId), analysis, "Resumo estruturado"));
+        Assert.False(PostgresMeetingAudioAnalysisService.ShouldCreateNoteSuggestion(CreateRecording("manual_upload", recording.ContactId), analysis, "Resumo estruturado"));
+        Assert.False(PostgresMeetingAudioAnalysisService.ShouldCreateNoteSuggestion(CreateRecording("google_meet", null), analysis, "Resumo estruturado"));
+        Assert.False(PostgresMeetingAudioAnalysisService.ShouldCreateNoteSuggestion(recording, analysis with { ConfidenceScore = 59 }, "Resumo estruturado"));
+        Assert.False(PostgresMeetingAudioAnalysisService.ShouldCreateNoteSuggestion(recording, analysis, " "));
+    }
+
+    [Fact]
+    public void NoteSuggestionPersistence_IsIdempotentVersionedAndCarriesAnExplicitTarget()
+    {
+        var source = ReadSource("src/CrmAi.Infrastructure/Persistence/PostgresMeetingAudioAnalysisService.cs");
+
+        Assert.Contains("@agentKey, 'note', 'pending'", source, StringComparison.Ordinal);
+        Assert.Contains("targetType", source, StringComparison.Ordinal);
+        Assert.Contains("targetId", source, StringComparison.Ordinal);
+        Assert.Contains("prompt_fingerprint", source, StringComparison.Ordinal);
+        Assert.Contains("on conflict (run_id, suggestion_type)", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TagSuggestions_AcceptOnlyExistingIdsWithLiteralTranscriptEvidence()
+    {
+        var priceTag = new MeetingTagOptionInput(Guid.NewGuid().ToString(), "Objeção de preço", null);
+        var competitorTag = new MeetingTagOptionInput(Guid.NewGuid().ToString(), "Concorrente", null);
+        var unknownId = Guid.NewGuid().ToString();
+        var suggestions = new[]
+        {
+            new OpenAiConversationTagSuggestion(priceTag.Id, "Cliente questionou o valor.", "o preço ficou acima do orçamento"),
+            new OpenAiConversationTagSuggestion(competitorTag.Id, "Concorrente mencionado.", "empresa que não foi mencionada"),
+            new OpenAiConversationTagSuggestion(unknownId, "Tag inventada.", "preço ficou acima"),
+            new OpenAiConversationTagSuggestion(priceTag.Id, "Duplicada.", "preço ficou acima")
+        };
+
+        var result = PostgresMeetingAudioAnalysisService.ValidateTagSuggestions(
+            [priceTag, competitorTag], suggestions, "Cliente: o preço ficou acima do orçamento disponível.");
+
+        var selected = Assert.Single(result);
+        Assert.Equal(priceTag.Id, selected.TagId);
+    }
+
+    [Fact]
+    public void TagSuggestionPersistence_RevalidatesTenantStatusAndExistingContactLinks()
+    {
+        var source = ReadSource("src/CrmAi.Infrastructure/Persistence/PostgresMeetingAudioAnalysisService.cs");
+
+        Assert.Contains("tag.company_id = @companyId", source, StringComparison.Ordinal);
+        Assert.Contains("tag.status = 'active'", source, StringComparison.Ordinal);
+        Assert.Contains("current.entity_type = 'contact'", source, StringComparison.Ordinal);
+        Assert.Contains("@agentKey, 'tags', 'pending'", source, StringComparison.Ordinal);
+        Assert.Contains("on conflict (run_id, suggestion_type)", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ContactFieldSuggestions_RequireExistingTypedFieldsAndLiteralEvidence()
+    {
+        var segment = new MeetingContactFieldOptionInput(
+            Guid.NewGuid().ToString(), "Segmento", "text", ["Enterprise", "SMB"], "SMB");
+        var employees = new MeetingContactFieldOptionInput(
+            Guid.NewGuid().ToString(), "Funcionarios", "number", [], null);
+        var result = PostgresMeetingAudioAnalysisService.ValidateContactFieldSuggestions(
+            [segment, employees],
+            [
+                new OpenAiConversationContactFieldSuggestion(segment.Id, "enterprise", "Porte informado.", "somos uma empresa Enterprise"),
+                new OpenAiConversationContactFieldSuggestion(employees.Id, "120", "Quantidade informada.", "temos 120 funcionários"),
+                new OpenAiConversationContactFieldSuggestion(Guid.NewGuid().ToString(), "inventado", "Campo desconhecido.", "temos 120 funcionários"),
+                new OpenAiConversationContactFieldSuggestion(employees.Id, "130", "Duplicada.", "temos 120 funcionários")
+            ],
+            "Cliente: somos uma empresa Enterprise e temos 120 funcionários.");
+
+        Assert.Collection(result,
+            item =>
+            {
+                Assert.Equal(segment.Id, item.FieldId);
+                Assert.Equal("Enterprise", item.Value);
+            },
+            item =>
+            {
+                Assert.Equal(employees.Id, item.FieldId);
+                Assert.Equal("120", item.Value);
+            });
+    }
+
+    [Fact]
+    public void ContactFieldSuggestionPersistence_RevalidatesTenantDefinitionAndPreviousValue()
+    {
+        var source = ReadSource("src/CrmAi.Infrastructure/Persistence/PostgresMeetingAudioAnalysisService.cs");
+
+        Assert.Contains("definition.company_id = @companyId", source, StringComparison.Ordinal);
+        Assert.Contains("definition.entity_type = 'contact'", source, StringComparison.Ordinal);
+        Assert.Contains("definition.is_active = true", source, StringComparison.Ordinal);
+        Assert.Contains("original.CurrentValue, currentValue", source, StringComparison.Ordinal);
+        Assert.Contains("@agentKey, 'contact_fields', 'pending'", source, StringComparison.Ordinal);
+        Assert.Contains("on conflict (run_id, suggestion_type)", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void StructuredAnalysisPersistence_DualWritesAndPreservesVersionHistory()
     {
         var source = ReadSource("src/CrmAi.Infrastructure/Persistence/PostgresMeetingAudioAnalysisService.cs");

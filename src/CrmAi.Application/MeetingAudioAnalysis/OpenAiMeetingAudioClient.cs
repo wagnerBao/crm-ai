@@ -21,11 +21,11 @@ public sealed class OpenAiMeetingAudioClient(
     private const string DefaultFallbackTranscriptionModel = "gpt-4o-transcribe";
     private const int MaxOpenAiAudioUploadBytes = 24 * 1024 * 1024;
     private const int DefaultSegmentSeconds = 600;
-    private const string CallSuggestionInstructions = """
-        Para ligacoes do WhatsApp, avalie se existe uma acao comercial concreta sustentada pelo que foi dito.
+    private const string ActivitySuggestionInstructions = """
+        Para reunioes e ligacoes, avalie se existe uma acao comercial concreta sustentada pelo que foi dito.
         Marque shouldCreateActivity=true somente quando houver retorno, envio, cobranca, validacao, agendamento,
         feedback ou outro proximo passo executavel. Preencha activityTitle e activityNotes de forma objetiva.
-        Nao crie atividade para conversa social, encerramento generico ou acao sem evidencia na ligacao.
+        Nao crie atividade para conversa social, encerramento generico ou acao sem evidencia na interacao.
         Use activityDueAt somente quando houver prazo claro; caso contrario retorne null.
         """;
     private const string ScorecardInstructions = """
@@ -34,6 +34,20 @@ public sealed class OpenAiMeetingAudioClient(
         contexto fornecido. Toda evidencia deve ser um trecho literal curto da transcricao. Nao invente participante
         ou timestamp: use null quando indisponivel. Quando um criterio nao tiver cobertura, use baixa confianca,
         explique a ausencia de evidencia e nao presuma desempenho ruim. Quando nao houver template, devolva array vazio.
+        """;
+    private const string TagSuggestionInstructions = """
+        Quando input.availableTags estiver preenchido, sugira no maximo cinco tags exclusivamente dessa lista.
+        Use somente o id recebido em tagId e apenas quando houver evidencia literal curta na transcricao.
+        Nao invente tags, nao devolva nomes no lugar de ids e nao sugira tags sem relacao comercial verificavel.
+        Quando nenhuma tag existente for adequada, devolva suggestedTags como array vazio.
+        """;
+    private const string ContactFieldSuggestionInstructions = """
+        Quando input.availableContactFields estiver preenchido, sugira no maximo cinco atualizacoes exclusivamente
+        para os fieldId recebidos. Use somente informacao comercial explicitamente sustentada por um trecho literal
+        curto da transcricao e nao sugira o valor que ja estiver em currentValue. Nunca sugira nome, email, telefone,
+        responsavel, status, consentimento ou qualquer campo que nao esteja na lista. Para number use decimal invariante,
+        para date use YYYY-MM-DD e para boolean use true ou false. Quando options estiver preenchido, use exatamente uma
+        das opcoes recebidas. Nao use valor vazio. Sem atualizacao segura, devolva suggestedContactFields como array vazio.
         """;
 
     public async Task<MeetingAudioTranscriptionResult> TranscribeAsync(
@@ -319,9 +333,7 @@ public sealed class OpenAiMeetingAudioClient(
         {
             model,
             reasoning = OpenAiGpt56RequestOptions.Reasoning(model, "low"),
-            instructions = isWhatsappCall
-                ? string.Join("\n\n", settings.Instructions, CallSuggestionInstructions, ScorecardInstructions)
-                : string.Join("\n\n", settings.Instructions, ScorecardInstructions),
+            instructions = string.Join("\n\n", settings.Instructions, ActivitySuggestionInstructions, TagSuggestionInstructions, ContactFieldSuggestionInstructions, ScorecardInstructions),
             input = JsonSerializer.Serialize(input, SerializerOptions),
             text = new
             {

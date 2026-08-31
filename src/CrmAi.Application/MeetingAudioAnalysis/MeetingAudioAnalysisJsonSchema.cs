@@ -12,9 +12,15 @@ public static class MeetingAudioAnalysisJsonSchema
             "objections",
             "objectionBreakOpportunities",
             "nextStep",
+            "shouldCreateActivity",
+            "activityTitle",
+            "activityNotes",
+            "activityDueAt",
             "confidenceScore",
             "reasons",
-            "scorecardItems"
+            "scorecardItems",
+            "suggestedTags",
+            "suggestedContactFields"
         },
         properties = new
         {
@@ -30,9 +36,23 @@ public static class MeetingAudioAnalysisJsonSchema
                 items = new { type = "string" }
             },
             nextStep = new { type = "string" },
+            shouldCreateActivity = new
+            {
+                type = "boolean",
+                description = "True only when the meeting contains a concrete, useful and commercially supported follow-up action."
+            },
+            activityTitle = new { type = new[] { "string", "null" } },
+            activityNotes = new { type = new[] { "string", "null" } },
+            activityDueAt = new
+            {
+                type = new[] { "string", "null" },
+                description = "ISO 8601 UTC date/time only when the meeting supports a deadline; otherwise null."
+            },
             confidenceScore = new { type = "integer", minimum = 0, maximum = 100 },
             reasons = new { type = "array", minItems = 1, items = new { type = "string" } },
-            scorecardItems = ConversationScorecardJsonSchema.Value
+            scorecardItems = ConversationScorecardJsonSchema.Value,
+            suggestedTags = ConversationTagSuggestionJsonSchema.Value,
+            suggestedContactFields = ConversationContactFieldSuggestionJsonSchema.Value
         }
     };
 }

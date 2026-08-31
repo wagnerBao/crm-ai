@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using CrmAi.Application;
@@ -84,6 +85,8 @@ public sealed class PostgresMeetingAudioAnalysisService(
 
             var selectedContext = await LoadSelectedContextAsync(recording, settings.ContextEntityKeys, cancellationToken);
             var scorecardTemplate = await LoadScorecardTemplateAsync(recording, GetGuid(opportunityEvent.Data, "scorecardTemplateId"), cancellationToken);
+            var availableTags = await LoadAvailableTagsAsync(recording, cancellationToken);
+            var availableContactFields = await LoadAvailableContactFieldsAsync(recording, cancellationToken);
             var analysis = await openAiClient.AnalyzeAsync(settings, new MeetingAudioAnalysisInput(
                 transcript,
                 settings.ContextEntityKeys.Contains("opportunity") ? recording.OpportunityName : null,
@@ -99,7 +102,9 @@ public sealed class PostgresMeetingAudioAnalysisService(
                     scorecardTemplate.Criteria.Select(criterion => new MeetingScorecardCriterionInput(
                         criterion.Key, criterion.Title, criterion.Description, criterion.Weight,
                         criterion.EvaluationInstruction, criterion.PositiveExamples, criterion.NegativeExamples,
-                        criterion.ScoreMin, criterion.ScoreMax, criterion.IsRequired)).ToArray())), invocationContext, cancellationToken);
+                        criterion.ScoreMin, criterion.ScoreMax, criterion.IsRequired)).ToArray()),
+                availableTags,
+                availableContactFields), invocationContext, cancellationToken);
 
             await SaveAnalysisAsync(
                 recording,
@@ -112,6 +117,8 @@ public sealed class PostgresMeetingAudioAnalysisService(
                 agentKey,
                 promptFingerprint,
                 scorecardTemplate,
+                availableTags,
+                availableContactFields,
                 cancellationToken);
             return true;
         }
@@ -174,6 +181,71 @@ public sealed class PostgresMeetingAudioAnalysisService(
     }
 
     private sealed record MeetingSelectedContext(string[] Notes, string[] Contacts, string[] Activities, string[] AgentInsights);
+
+    private async Task<MeetingTagOptionInput[]> LoadAvailableTagsAsync(
+        MeetingAudioRecordingPayload recording,
+        CancellationToken cancellationToken)
+    {
+        if (!Guid.TryParse(recording.CompanyId, out var companyId)) return [];
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = new NpgsqlCommand("""
+            select id::text, name, description
+            from tags
+            where company_id = @companyId and status = 'active'
+            order by name, id
+            limit 200;
+            """, connection);
+        command.Parameters.AddWithValue("companyId", companyId);
+        var values = new List<MeetingTagOptionInput>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            values.Add(new MeetingTagOptionInput(
+                reader.GetString(0),
+                reader.GetString(1),
+                reader.IsDBNull(2) ? null : reader.GetString(2)));
+        }
+        return values.ToArray();
+    }
+
+    private async Task<MeetingContactFieldOptionInput[]> LoadAvailableContactFieldsAsync(
+        MeetingAudioRecordingPayload recording,
+        CancellationToken cancellationToken)
+    {
+        if (!Guid.TryParse(recording.CompanyId, out var companyId)
+            || !Guid.TryParse(recording.ContactId, out var contactId))
+            return [];
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = new NpgsqlCommand("""
+            select definition.id::text, definition.label, definition.field_type,
+                   definition.options_json::text, value.value_text
+            from contact_custom_field_definitions definition
+            left join contact_custom_field_values value
+              on value.field_id = definition.id
+             and value.contact_id = @contactId
+             and value.company_id = definition.company_id
+            where definition.company_id = @companyId
+              and definition.entity_type = 'contact'
+              and definition.is_active = true
+            order by definition.sort_order, definition.label, definition.id
+            limit 100;
+            """, connection);
+        command.Parameters.AddWithValue("companyId", companyId);
+        command.Parameters.AddWithValue("contactId", contactId);
+        var fields = new List<MeetingContactFieldOptionInput>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            fields.Add(new MeetingContactFieldOptionInput(
+                reader.GetString(0),
+                reader.GetString(1),
+                reader.GetString(2),
+                ParseStringArray(reader.GetString(3)),
+                reader.IsDBNull(4) ? null : reader.GetString(4)));
+        }
+        return fields.ToArray();
+    }
 
     private async Task<ScorecardTemplate?> LoadScorecardTemplateAsync(MeetingAudioRecordingPayload recording, Guid? requestedTemplateId, CancellationToken cancellationToken)
     {
@@ -704,6 +776,8 @@ public sealed class PostgresMeetingAudioAnalysisService(
         string agentKey,
         string promptFingerprint,
         ScorecardTemplate? scorecardTemplate,
+        IReadOnlyCollection<MeetingTagOptionInput> availableTags,
+        IReadOnlyCollection<MeetingContactFieldOptionInput> availableContactFields,
         CancellationToken cancellationToken)
     {
         const string sql = """
@@ -780,7 +854,29 @@ public sealed class PostgresMeetingAudioAnalysisService(
 
         if (ShouldCreateActivitySuggestion(recording, analysis))
         {
-            await InsertActivitySuggestionAsync(connection, transaction, recording, recordingId, analysis, settings, cancellationToken);
+            await InsertActivitySuggestionAsync(connection, transaction, recording, recordingId, analysis, settings, promptFingerprint, cancellationToken);
+        }
+
+        if (ShouldCreateNoteSuggestion(recording, analysis, summary))
+        {
+            await InsertNoteSuggestionAsync(connection, transaction, recording, recordingId, analysis, summary, settings, promptFingerprint, cancellationToken);
+        }
+
+        var tagSuggestions = ValidateTagSuggestions(availableTags, analysis.SuggestedTags ?? [], transcript);
+        if (tagSuggestions.Count > 0)
+        {
+            await InsertTagSuggestionAsync(connection, transaction, recording, recordingId, analysis, tagSuggestions, settings, promptFingerprint, cancellationToken);
+        }
+
+        var contactFieldSuggestions = ValidateContactFieldSuggestions(
+            availableContactFields,
+            analysis.SuggestedContactFields ?? [],
+            transcript);
+        if (contactFieldSuggestions.Count > 0)
+        {
+            await InsertContactFieldSuggestionAsync(
+                connection, transaction, recording, recordingId, analysis,
+                availableContactFields, contactFieldSuggestions, settings, promptFingerprint, cancellationToken);
         }
 
         await transaction.CommitAsync(cancellationToken);
@@ -935,6 +1031,17 @@ public sealed class PostgresMeetingAudioAnalysisService(
         && !string.IsNullOrWhiteSpace(analysis.ActivityTitle)
         && !string.IsNullOrWhiteSpace(analysis.ActivityNotes);
 
+    public static bool ShouldCreateNoteSuggestion(
+        MeetingAudioRecordingPayload recording,
+        OpenAiMeetingAudioAnalysisResponse analysis,
+        string summary) =>
+        (string.Equals(recording.SourceKind, "google_meet", StringComparison.OrdinalIgnoreCase)
+         || string.Equals(recording.SourceKind, "whatsapp_call", StringComparison.OrdinalIgnoreCase))
+        && Guid.TryParse(recording.CompanyId, out _)
+        && Guid.TryParse(recording.ContactId, out _)
+        && !string.IsNullOrWhiteSpace(summary)
+        && analysis.ConfidenceScore >= 60;
+
     private static async Task InsertActivitySuggestionAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
@@ -942,17 +1049,18 @@ public sealed class PostgresMeetingAudioAnalysisService(
         Guid recordingId,
         OpenAiMeetingAudioAnalysisResponse analysis,
         AiAgentRuntimeSettings settings,
+        string promptFingerprint,
         CancellationToken cancellationToken)
     {
         const string sql = """
             insert into ai_agent_suggestions
                 (id, company_id, agent_key, suggestion_type, status, contact_id, conversation_id, run_id,
                  title, description, suggested_due_at, payload, generation_model, confidence_score,
-                 generation_reasons, created_at, updated_at)
+                 prompt_fingerprint, generation_reasons, created_at, updated_at)
             values
                 (gen_random_uuid(), @companyId, @agentKey, 'activity', 'pending', @contactId, null, @runId,
                  @title, @description, @dueAt, @payload, @generationModel, @confidenceScore,
-                 @generationReasons, now(), now())
+                 @promptFingerprint, @generationReasons, now(), now())
             on conflict (run_id, suggestion_type) where run_id is not null do nothing;
             """;
 
@@ -985,7 +1093,347 @@ public sealed class PostgresMeetingAudioAnalysisService(
         command.Parameters.Add("payload", NpgsqlDbType.Jsonb).Value = payload;
         command.Parameters.AddWithValue("generationModel", settings.Model);
         command.Parameters.AddWithValue("confidenceScore", Math.Clamp(analysis.ConfidenceScore, 0, 100));
+        command.Parameters.AddWithValue("promptFingerprint", promptFingerprint);
         command.Parameters.Add("generationReasons", NpgsqlDbType.Jsonb).Value = JsonSerializer.Serialize(analysis.Reasons ?? []);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task InsertNoteSuggestionAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        MeetingAudioRecordingPayload recording,
+        Guid recordingId,
+        OpenAiMeetingAudioAnalysisResponse analysis,
+        string summary,
+        AiAgentRuntimeSettings settings,
+        string promptFingerprint,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            insert into ai_agent_suggestions
+                (id, company_id, agent_key, suggestion_type, status, contact_id, conversation_id, run_id,
+                 title, description, suggested_due_at, payload, generation_model, prompt_fingerprint,
+                 confidence_score, generation_reasons, created_at, updated_at)
+            values
+                (gen_random_uuid(), @companyId, @agentKey, 'note', 'pending', @contactId, null, @runId,
+                 @title, @description, null, @payload, @generationModel, @promptFingerprint,
+                 @confidenceScore, @generationReasons, now(), now())
+            on conflict (run_id, suggestion_type) where run_id is not null do nothing;
+            """;
+
+        const string targetType = "contact";
+        var targetId = recording.ContactId!;
+        var noteText = Truncate(summary.Trim(), 10_000);
+        var sourceLabel = string.Equals(recording.SourceKind, "whatsapp_call", StringComparison.OrdinalIgnoreCase)
+            ? "ligacao"
+            : "reuniao";
+        var payload = JsonSerializer.Serialize(new
+        {
+            targetType,
+            targetId,
+            text = noteText,
+            recordingId = recording.Id,
+            activityId = recording.ActivityId,
+            opportunityId = recording.OpportunityId,
+            contactId = recording.ContactId,
+            sourceKind = recording.SourceKind
+        });
+
+        await using var command = new NpgsqlCommand(sql, connection, transaction);
+        command.Parameters.AddWithValue("companyId", Guid.Parse(recording.CompanyId!));
+        command.Parameters.AddWithValue("agentKey", ResolveAgentKey(recording.SourceKind));
+        command.Parameters.AddWithValue("contactId", Guid.Parse(recording.ContactId!));
+        command.Parameters.AddWithValue("runId", recordingId);
+        command.Parameters.AddWithValue("title", $"Registrar resumo da {sourceLabel}");
+        command.Parameters.AddWithValue("description", Truncate(noteText, 3000));
+        command.Parameters.Add("payload", NpgsqlDbType.Jsonb).Value = payload;
+        command.Parameters.AddWithValue("generationModel", settings.Model);
+        command.Parameters.AddWithValue("promptFingerprint", promptFingerprint);
+        command.Parameters.AddWithValue("confidenceScore", Math.Clamp(analysis.ConfidenceScore, 0, 100));
+        command.Parameters.Add("generationReasons", NpgsqlDbType.Jsonb).Value = JsonSerializer.Serialize(analysis.Reasons ?? []);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    public static IReadOnlyCollection<OpenAiConversationTagSuggestion> ValidateTagSuggestions(
+        IReadOnlyCollection<MeetingTagOptionInput> availableTags,
+        IReadOnlyCollection<OpenAiConversationTagSuggestion> suggestions,
+        string transcript)
+    {
+        var availableIds = availableTags
+            .Select(tag => Guid.TryParse(tag.Id, out var id) ? id : Guid.Empty)
+            .Where(id => id != Guid.Empty)
+            .ToHashSet();
+        var normalizedTranscript = NormalizeWhitespace(transcript);
+        var selected = new List<OpenAiConversationTagSuggestion>();
+        var selectedIds = new HashSet<Guid>();
+        foreach (var suggestion in suggestions)
+        {
+            if (!Guid.TryParse(suggestion.TagId, out var tagId)
+                || !availableIds.Contains(tagId)
+                || !selectedIds.Add(tagId)
+                || string.IsNullOrWhiteSpace(suggestion.Reason)
+                || string.IsNullOrWhiteSpace(suggestion.EvidenceExcerpt)
+                || !normalizedTranscript.Contains(
+                    NormalizeWhitespace(suggestion.EvidenceExcerpt),
+                    StringComparison.OrdinalIgnoreCase))
+                continue;
+            selected.Add(suggestion with { TagId = tagId.ToString() });
+            if (selected.Count == 5) break;
+        }
+        return selected;
+    }
+
+    private static async Task InsertTagSuggestionAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        MeetingAudioRecordingPayload recording,
+        Guid recordingId,
+        OpenAiMeetingAudioAnalysisResponse analysis,
+        IReadOnlyCollection<OpenAiConversationTagSuggestion> suggestions,
+        AiAgentRuntimeSettings settings,
+        string promptFingerprint,
+        CancellationToken cancellationToken)
+    {
+        var requestedIds = suggestions.Select(suggestion => Guid.Parse(suggestion.TagId)).ToArray();
+        var activeTags = new List<(Guid Id, string Name)>();
+        await using (var lookup = new NpgsqlCommand("""
+            select tag.id, tag.name
+            from tags tag
+            where tag.company_id = @companyId
+              and tag.status = 'active'
+              and tag.id = any(@tagIds)
+              and not exists (
+                  select 1 from entity_tags current
+                  where current.entity_type = 'contact'
+                    and current.entity_id = @contactId
+                    and current.tag_id = tag.id
+              )
+            order by tag.name, tag.id;
+            """, connection, transaction))
+        {
+            lookup.Parameters.AddWithValue("companyId", Guid.Parse(recording.CompanyId!));
+            lookup.Parameters.AddWithValue("contactId", Guid.Parse(recording.ContactId!));
+            lookup.Parameters.AddWithValue("tagIds", requestedIds);
+            await using var reader = await lookup.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+                activeTags.Add((reader.GetGuid(0), reader.GetString(1)));
+        }
+        if (activeTags.Count == 0) return;
+
+        var evidenceById = suggestions.ToDictionary(suggestion => Guid.Parse(suggestion.TagId));
+        var selected = activeTags.Select(tag => new
+        {
+            id = tag.Id,
+            name = tag.Name,
+            reason = evidenceById[tag.Id].Reason.Trim(),
+            evidenceExcerpt = evidenceById[tag.Id].EvidenceExcerpt.Trim()
+        }).ToArray();
+        var payload = JsonSerializer.Serialize(new
+        {
+            targetType = "contact",
+            targetId = recording.ContactId,
+            tagIds = selected.Select(tag => tag.id).ToArray(),
+            tags = selected,
+            recordingId = recording.Id,
+            sourceKind = recording.SourceKind
+        });
+
+        await using var command = new NpgsqlCommand("""
+            insert into ai_agent_suggestions
+                (id, company_id, agent_key, suggestion_type, status, contact_id, conversation_id, run_id,
+                 title, description, suggested_due_at, payload, generation_model, prompt_fingerprint,
+                 confidence_score, generation_reasons, created_at, updated_at)
+            values
+                (gen_random_uuid(), @companyId, @agentKey, 'tags', 'pending', @contactId, null, @runId,
+                 'Adicionar tags identificadas', @description, null, @payload, @generationModel, @promptFingerprint,
+                 @confidenceScore, @generationReasons, now(), now())
+            on conflict (run_id, suggestion_type) where run_id is not null do nothing;
+            """, connection, transaction);
+        command.Parameters.AddWithValue("companyId", Guid.Parse(recording.CompanyId!));
+        command.Parameters.AddWithValue("agentKey", ResolveAgentKey(recording.SourceKind));
+        command.Parameters.AddWithValue("contactId", Guid.Parse(recording.ContactId!));
+        command.Parameters.AddWithValue("runId", recordingId);
+        command.Parameters.AddWithValue("description", "Adicionar ao contato: " + string.Join(", ", selected.Select(tag => tag.name)));
+        command.Parameters.Add("payload", NpgsqlDbType.Jsonb).Value = payload;
+        command.Parameters.AddWithValue("generationModel", settings.Model);
+        command.Parameters.AddWithValue("promptFingerprint", promptFingerprint);
+        command.Parameters.AddWithValue("confidenceScore", Math.Clamp(analysis.ConfidenceScore, 0, 100));
+        command.Parameters.Add("generationReasons", NpgsqlDbType.Jsonb).Value = JsonSerializer.Serialize(selected.Select(tag => tag.reason));
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    public static IReadOnlyCollection<OpenAiConversationContactFieldSuggestion> ValidateContactFieldSuggestions(
+        IReadOnlyCollection<MeetingContactFieldOptionInput> availableFields,
+        IReadOnlyCollection<OpenAiConversationContactFieldSuggestion> suggestions,
+        string transcript)
+    {
+        var fieldsById = new Dictionary<Guid, MeetingContactFieldOptionInput>();
+        foreach (var field in availableFields)
+        {
+            if (Guid.TryParse(field.Id, out var fieldId) && !fieldsById.ContainsKey(fieldId))
+                fieldsById[fieldId] = field;
+        }
+
+        var normalizedTranscript = NormalizeWhitespace(transcript);
+        var selected = new List<OpenAiConversationContactFieldSuggestion>();
+        var selectedIds = new HashSet<Guid>();
+        foreach (var suggestion in suggestions)
+        {
+            if (!Guid.TryParse(suggestion.FieldId, out var fieldId)
+                || !fieldsById.TryGetValue(fieldId, out var field)
+                || !selectedIds.Add(fieldId)
+                || string.IsNullOrWhiteSpace(suggestion.Reason)
+                || string.IsNullOrWhiteSpace(suggestion.EvidenceExcerpt)
+                || !normalizedTranscript.Contains(
+                    NormalizeWhitespace(suggestion.EvidenceExcerpt),
+                    StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            var value = NormalizeSuggestedContactFieldValue(suggestion.Value, field.FieldType, field.Options);
+            if (value is null || string.Equals(value, field.CurrentValue?.Trim(), StringComparison.Ordinal))
+                continue;
+
+            selected.Add(suggestion with
+            {
+                FieldId = fieldId.ToString(),
+                Value = value,
+                Reason = suggestion.Reason.Trim(),
+                EvidenceExcerpt = suggestion.EvidenceExcerpt.Trim()
+            });
+            if (selected.Count == 5) break;
+        }
+        return selected;
+    }
+
+    private static string? NormalizeSuggestedContactFieldValue(
+        string? value,
+        string fieldType,
+        IReadOnlyCollection<string> options)
+    {
+        var normalized = value?.Trim();
+        if (string.IsNullOrWhiteSpace(normalized) || normalized.Length > 2000) return null;
+
+        if (options.Count > 0)
+        {
+            var option = options.FirstOrDefault(item => string.Equals(item, normalized, StringComparison.OrdinalIgnoreCase));
+            if (option is null) return null;
+            normalized = option;
+        }
+
+        return fieldType.Trim().ToLowerInvariant() switch
+        {
+            "text" => normalized,
+            "number" when decimal.TryParse(normalized, NumberStyles.Number, CultureInfo.InvariantCulture, out var number)
+                => number.ToString(CultureInfo.InvariantCulture),
+            "date" when DateOnly.TryParseExact(normalized, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var date)
+                => date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+            "boolean" when bool.TryParse(normalized, out var boolean)
+                => boolean.ToString().ToLowerInvariant(),
+            _ => null
+        };
+    }
+
+    private static async Task InsertContactFieldSuggestionAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        MeetingAudioRecordingPayload recording,
+        Guid recordingId,
+        OpenAiMeetingAudioAnalysisResponse analysis,
+        IReadOnlyCollection<MeetingContactFieldOptionInput> availableFields,
+        IReadOnlyCollection<OpenAiConversationContactFieldSuggestion> suggestions,
+        AiAgentRuntimeSettings settings,
+        string promptFingerprint,
+        CancellationToken cancellationToken)
+    {
+        if (!Guid.TryParse(recording.ContactId, out var contactId)) return;
+
+        var originalById = availableFields
+            .Where(field => Guid.TryParse(field.Id, out _))
+            .GroupBy(field => Guid.Parse(field.Id))
+            .ToDictionary(group => group.Key, group => group.First());
+        var suggestionById = suggestions.ToDictionary(suggestion => Guid.Parse(suggestion.FieldId));
+        var requestedIds = suggestionById.Keys.ToArray();
+        var selected = new List<PersistedContactFieldSuggestion>();
+        await using (var lookup = new NpgsqlCommand("""
+            select definition.id, definition.label, definition.field_type,
+                   definition.options_json::text, value.value_text
+            from contact_custom_field_definitions definition
+            left join contact_custom_field_values value
+              on value.field_id = definition.id
+             and value.contact_id = @contactId
+             and value.company_id = definition.company_id
+            where definition.company_id = @companyId
+              and definition.entity_type = 'contact'
+              and definition.is_active = true
+              and definition.id = any(@fieldIds)
+            order by definition.sort_order, definition.label, definition.id;
+            """, connection, transaction))
+        {
+            lookup.Parameters.AddWithValue("companyId", Guid.Parse(recording.CompanyId!));
+            lookup.Parameters.AddWithValue("contactId", contactId);
+            lookup.Parameters.AddWithValue("fieldIds", requestedIds);
+            await using var reader = await lookup.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                var fieldId = reader.GetGuid(0);
+                var currentValue = reader.IsDBNull(4) ? null : reader.GetString(4);
+                if (!originalById.TryGetValue(fieldId, out var original)
+                    || !string.Equals(original.CurrentValue, currentValue, StringComparison.Ordinal)
+                    || !suggestionById.TryGetValue(fieldId, out var suggestion))
+                    continue;
+
+                var fieldType = reader.GetString(2);
+                var value = NormalizeSuggestedContactFieldValue(
+                    suggestion.Value, fieldType, ParseStringArray(reader.GetString(3)));
+                if (value is null || string.Equals(value, currentValue?.Trim(), StringComparison.Ordinal))
+                    continue;
+
+                selected.Add(new PersistedContactFieldSuggestion(
+                    fieldId, reader.GetString(1), fieldType, currentValue, value,
+                    suggestion.Reason.Trim(), suggestion.EvidenceExcerpt.Trim()));
+            }
+        }
+        if (selected.Count == 0) return;
+
+        var payload = JsonSerializer.Serialize(new
+        {
+            targetType = "contact",
+            targetId = recording.ContactId,
+            fields = selected.Select(field => new
+            {
+                fieldId = field.Id,
+                field.Label,
+                field.FieldType,
+                previousValue = field.PreviousValue,
+                field.Value,
+                field.Reason,
+                field.EvidenceExcerpt
+            }).ToArray(),
+            recordingId = recording.Id,
+            sourceKind = recording.SourceKind
+        });
+
+        await using var command = new NpgsqlCommand("""
+            insert into ai_agent_suggestions
+                (id, company_id, agent_key, suggestion_type, status, contact_id, conversation_id, run_id,
+                 title, description, suggested_due_at, payload, generation_model, prompt_fingerprint,
+                 confidence_score, generation_reasons, created_at, updated_at)
+            values
+                (gen_random_uuid(), @companyId, @agentKey, 'contact_fields', 'pending', @contactId, null, @runId,
+                 'Atualizar campos personalizados identificados', @description, null, @payload, @generationModel,
+                 @promptFingerprint, @confidenceScore, @generationReasons, now(), now())
+            on conflict (run_id, suggestion_type) where run_id is not null do nothing;
+            """, connection, transaction);
+        command.Parameters.AddWithValue("companyId", Guid.Parse(recording.CompanyId!));
+        command.Parameters.AddWithValue("agentKey", ResolveAgentKey(recording.SourceKind));
+        command.Parameters.AddWithValue("contactId", contactId);
+        command.Parameters.AddWithValue("runId", recordingId);
+        command.Parameters.AddWithValue("description", string.Join("; ", selected.Select(field => $"{field.Label}: {field.Value}")));
+        command.Parameters.Add("payload", NpgsqlDbType.Jsonb).Value = payload;
+        command.Parameters.AddWithValue("generationModel", settings.Model);
+        command.Parameters.AddWithValue("promptFingerprint", promptFingerprint);
+        command.Parameters.AddWithValue("confidenceScore", Math.Clamp(analysis.ConfidenceScore, 0, 100));
+        command.Parameters.Add("generationReasons", NpgsqlDbType.Jsonb).Value = JsonSerializer.Serialize(selected.Select(field => field.Reason));
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
@@ -1070,4 +1518,12 @@ public sealed class PostgresMeetingAudioAnalysisService(
     internal sealed record ScorecardCriterion(Guid Id, string Key, string Title, string? Description, decimal Weight, string EvaluationInstruction, IReadOnlyCollection<string> PositiveExamples, IReadOnlyCollection<string> NegativeExamples, int ScoreMin, int ScoreMax, bool IsRequired);
     internal sealed record NormalizedEvidence(string Excerpt, string? Participant, int? StartMs, int? EndMs, string Source, int ConfidenceScore);
     internal sealed record NormalizedScorecardItem(ScorecardCriterion Criterion, int Score, int Confidence, string Justification, string? Recommendation, IReadOnlyCollection<NormalizedEvidence> Evidence, bool IsCovered);
+    private sealed record PersistedContactFieldSuggestion(
+        Guid Id,
+        string Label,
+        string FieldType,
+        string? PreviousValue,
+        string Value,
+        string Reason,
+        string EvidenceExcerpt);
 }

@@ -18,7 +18,9 @@ public static class CallAudioAnalysisJsonSchema
             "activityDueAt",
             "confidenceScore",
             "reasons",
-            "scorecardItems"
+            "scorecardItems",
+            "suggestedTags",
+            "suggestedContactFields"
         },
         properties = new
         {
@@ -40,7 +42,9 @@ public static class CallAudioAnalysisJsonSchema
             },
             confidenceScore = new { type = "integer", minimum = 0, maximum = 100 },
             reasons = new { type = "array", minItems = 1, items = new { type = "string" } },
-            scorecardItems = ConversationScorecardJsonSchema.Value
+            scorecardItems = ConversationScorecardJsonSchema.Value,
+            suggestedTags = ConversationTagSuggestionJsonSchema.Value,
+            suggestedContactFields = ConversationContactFieldSuggestionJsonSchema.Value
         }
     };
 }

@@ -24,9 +24,9 @@ public sealed class OpenAiMeetingAudioClientTests
     }
 
     [Fact]
-    public async Task AnalyzeAsync_PreservesMeetSchemaWithoutCallSuggestions()
+    public async Task AnalyzeAsync_RequestsSuggestedActivityForMeetingAgent()
     {
-        var response = """{"output":[{"content":[{"type":"output_text","text":"{\"summary\":\"Resumo\",\"objections\":[],\"objectionBreakOpportunities\":[],\"nextStep\":\"Agendar retorno\"}"}]}]}""";
+        var response = """{"output":[{"content":[{"type":"output_text","text":"{\"summary\":\"Resumo\",\"objections\":[],\"objectionBreakOpportunities\":[],\"nextStep\":\"Agendar retorno\",\"shouldCreateActivity\":true,\"activityTitle\":\"Agendar retorno\",\"activityNotes\":\"Retomar a conversa conforme combinado.\",\"activityDueAt\":null,\"confidenceScore\":88,\"reasons\":[\"Retorno combinado durante a reunião\"]}"}]}]}""";
         var handler = new CapturingHandler((HttpStatusCode.OK, response));
         var client = CreateClient(handler);
 
@@ -36,15 +36,22 @@ public sealed class OpenAiMeetingAudioClientTests
             AiAgentInvocationContext.Unknown,
             CancellationToken.None);
 
-        Assert.False(result.ShouldCreateActivity);
+        Assert.True(result.ShouldCreateActivity);
+        Assert.Equal("Agendar retorno", result.ActivityTitle);
         var requestBody = Assert.Single(handler.RequestBodies);
         Assert.Contains("meeting_audio_analysis_result", requestBody);
         Assert.DoesNotContain("call_audio_analysis_result", requestBody);
-        Assert.DoesNotContain("shouldCreateActivity", requestBody);
+        Assert.Contains("shouldCreateActivity", requestBody);
+        Assert.Contains("suggestedTags", requestBody);
+        Assert.Contains("suggestedContactFields", requestBody);
+        Assert.Contains("exclusivamente dessa lista", requestBody);
+        Assert.Contains("valor que ja estiver em currentValue", requestBody);
+        Assert.Contains("Para reunioes e ligacoes", requestBody);
+        Assert.Contains("Nao crie atividade para conversa social", requestBody);
     }
 
     [Fact]
-    public async Task AnalyzeAsync_RequestsSuggestedActivityOnlyForWhatsappCallAgent()
+    public async Task AnalyzeAsync_KeepsSuggestedActivityForWhatsappCallAgent()
     {
         var response = """{"output":[{"content":[{"type":"output_text","text":"{\"summary\":\"Resumo\",\"objections\":[],\"objectionBreakOpportunities\":[],\"nextStep\":\"Enviar material\",\"shouldCreateActivity\":true,\"activityTitle\":\"Enviar material\",\"activityNotes\":\"Enviar os arquivos combinados.\",\"activityDueAt\":null,\"confidenceScore\":90,\"reasons\":[\"Ação combinada\"]}"}]}]}""";
         var handler = new CapturingHandler((HttpStatusCode.OK, response));
