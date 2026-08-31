@@ -483,6 +483,17 @@ public sealed class PostgresInstagramConversationAnalysisService(
                     generation_model = @generationModel,
                     confidence_score = @confidenceScore,
                     generation_reasons = @generationReasons,
+                    verification_status = 'pending',
+                    verification_attempt_count = 0,
+                    next_verification_at = null,
+                    last_verified_at = null,
+                    priority_at = null,
+                    priority_notified_at = null,
+                    evidence_fingerprint = null,
+                    verification_confidence = null,
+                    verification_reason = null,
+                    verification_model = null,
+                    verification_evidence = '[]'::jsonb,
                     updated_at = now()
                 where suggestion.id = (select id from existing)
                 returning suggestion.id

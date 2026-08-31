@@ -10,6 +10,7 @@ public sealed class RabbitMqOptions
     private string _dailyCheckoutQueue = "crm.projections.daily-checkout";
     private string _gamificationQueue = "crm.projections.gamification";
     private string _deadLetterExchange = "crm.projections.dlx";
+    private string _notificationExchange = "crm.notifications";
     private IReadOnlyCollection<string> _opportunityAnalysisExchangeNames =
     [
         "crm.events.opportunity.created",
@@ -60,6 +61,7 @@ public sealed class RabbitMqOptions
     public ushort PrefetchCount { get; init; } = 1;
     public bool RequeueOnFailure { get; init; }
     public string DeadLetterExchange { get => RabbitMqEnvironmentName.ExchangeName(_deadLetterExchange); init => _deadLetterExchange = value; }
+    public string NotificationExchange { get => RabbitMqEnvironmentName.ExchangeName(_notificationExchange); init => _notificationExchange = value; }
     public string DeadLetterQueueSuffix { get; init; } = ".dlq";
     public int DailyCheckinSnapshotIntervalMinutes { get; init; } = 15;
     public int DailyCheckoutSnapshotIntervalMinutes { get; init; } = 15;

@@ -140,6 +140,36 @@ public sealed class WhatsappConversationPersistenceRegressionTests
         Assert.Equal(4_294_967_396L, evidence.EndMs);
     }
 
+    [Fact]
+    public void SuggestionCompletionWorker_Should_Use_Contextual_Evidence_And_Persist_Alerts()
+    {
+        var source = ReadSource("src/CrmAi.Infrastructure/Persistence/SuggestionCompletionVerificationHostedService.cs");
+
+        source.ShouldContainAll(
+            "suggested_due_at <= now() - interval '5 minutes'",
+            "from activities activity",
+            "from whatsapp_messages message",
+            "from instagram_messages message",
+            "from notes note",
+            "from opportunity_history history",
+            "from meeting_audio_recordings recording",
+            "verification_status = @result",
+            "priority_at = case",
+            "insert into notifications",
+            "activity_suggestion_unfulfilled",
+            "notification.created");
+    }
+
+    [Fact]
+    public void UpdatedSuggestions_Should_Reset_Previous_Verification_State()
+    {
+        var whatsapp = ReadSource("src/CrmAi.Infrastructure/Persistence/PostgresWhatsappConversationActionStore.cs");
+        var instagram = ReadSource("src/CrmAi.Infrastructure/Persistence/PostgresInstagramConversationAnalysisService.cs");
+
+        whatsapp.ShouldContainAll("verification_status = 'pending'", "evidence_fingerprint = null", "priority_at = null");
+        instagram.ShouldContainAll("verification_status = 'pending'", "evidence_fingerprint = null", "priority_at = null");
+    }
+
     private static string ReadSource(string relativePath)
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);

@@ -36,6 +36,7 @@ public static class DependencyInjection
         services.AddScoped<IDailyCheckoutSnapshotService, PostgresDailyCheckoutSnapshotService>();
         services.AddScoped<IGamificationProjectionService, PostgresGamificationProjectionService>();
         services.AddScoped<SuggestionQualityAuditProcessor>();
+        services.AddScoped<SuggestionCompletionVerificationProcessor>();
         services.AddScoped<SkoposCoachProjectionService>();
         services.AddScoped<SkoposIndividualCoachProcessor>();
         services.AddHttpClient<SkoposCoachSynthesisClient>();
@@ -49,6 +50,7 @@ public static class DependencyInjection
         services.AddHostedService<DailyCheckinSnapshotHostedService>();
         services.AddHostedService<DailyCheckoutSnapshotHostedService>();
         services.AddHostedService<SuggestionQualityAuditHostedService>();
+        services.AddHostedService<SuggestionCompletionVerificationHostedService>();
         services.AddHostedService<SkoposCoachHostedService>();
 
         return services;
