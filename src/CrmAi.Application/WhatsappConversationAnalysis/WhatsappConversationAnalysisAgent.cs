@@ -1,4 +1,5 @@
 using CrmAi.Domain;
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -115,6 +116,25 @@ public sealed class WhatsappConversationAnalysisAgent(
     {
         var response = await openAiClient.AnalyzeAsync(settings, input, invocationContext, cancellationToken);
         var dueAt = ParseDateTime(response.ActivityDueAt);
+        var nextSteps = CleanOptional(response.NextSteps);
+        var activityTitle = CleanNullableText(response.ActivityTitle);
+        var activityNotes = CleanNullableText(response.ActivityNotes);
+        var shouldCreateActivity = response.ShouldCreateActivity && !string.IsNullOrWhiteSpace(activityTitle);
+
+        // The model exposes nextSteps and the activity suggestion as separate fields. Keep the CRM
+        // actionable even when it returns a concrete next step but leaves the activity flags unset.
+        if (nextSteps.Count > 0)
+        {
+            shouldCreateActivity = true;
+            activityTitle ??= BuildFallbackActivityTitle(nextSteps.First());
+            activityNotes ??= string.Join("\n", nextSteps.Select(step => $"- {step}"));
+        }
+
+        var activityIntentKey = CleanIntentKey(response.ActivityIntentKey);
+        if (shouldCreateActivity && string.IsNullOrWhiteSpace(activityIntentKey))
+        {
+            activityIntentKey = BuildFallbackActivityIntentKey(activityTitle!);
+        }
         var scorecard = NormalizeScorecard(scorecardContext, response.ScorecardItems ?? [], input.NewTranscript);
         var fingerprintInput = string.Concat(
             settings.Instructions,
@@ -124,20 +144,20 @@ public sealed class WhatsappConversationAnalysisAgent(
         return new WhatsappConversationAnalysisResult(
             ConversationSummary: CleanText(response.ConversationSummary, input.PreviousSummary ?? input.NewTranscript),
             CommercialObservations: CleanNullableText(response.CommercialObservations),
-            NextSteps: CleanOptional(response.NextSteps),
+            NextSteps: nextSteps,
             Insights: CleanOptional(response.Insights),
             ShouldCreateNote: response.ShouldCreateNote,
             NoteText: CleanNullableText(response.NoteText),
-            ShouldCreateActivity: response.ShouldCreateActivity,
-            ActivityTitle: CleanNullableText(response.ActivityTitle),
-            ActivityNotes: CleanNullableText(response.ActivityNotes),
+            ShouldCreateActivity: shouldCreateActivity,
+            ActivityTitle: activityTitle,
+            ActivityNotes: activityNotes,
             ActivityDueAt: dueAt,
             ShouldCreateOpportunity: response.ShouldCreateOpportunity,
             OpportunityTitle: CleanNullableText(response.OpportunityTitle),
             OpportunityDescription: CleanNullableText(response.OpportunityDescription),
             ActivityMatchingSuggestionId: ValidateSuggestionMatch(
                 response.ActivityMatchingSuggestionId, "activity", input.ExistingSuggestions),
-            ActivityIntentKey: CleanIntentKey(response.ActivityIntentKey),
+            ActivityIntentKey: activityIntentKey,
             OpportunityMatchingSuggestionId: ValidateSuggestionMatch(
                 response.OpportunityMatchingSuggestionId, "opportunity", input.ExistingSuggestions),
             OpportunityIntentKey: CleanIntentKey(response.OpportunityIntentKey),
@@ -279,6 +299,33 @@ public sealed class WhatsappConversationAnalysisAgent(
         var normalized = string.Join('_', value.Trim().ToLowerInvariant()
             .Split([' ', '-', '/', '.'], StringSplitOptions.RemoveEmptyEntries));
         return normalized.Length <= 160 ? normalized : normalized[..160];
+    }
+
+    private static string BuildFallbackActivityTitle(string nextStep)
+    {
+        var sentences = nextStep
+            .Split(['.', ';', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(sentence => sentence.TrimStart('-', '•', ' '))
+            .Where(sentence => !string.IsNullOrWhiteSpace(sentence))
+            .ToArray();
+        var title = sentences.FirstOrDefault(sentence =>
+                !sentence.StartsWith("Responsável sugerido:", StringComparison.OrdinalIgnoreCase)
+                && !sentence.StartsWith("Responsavel sugerido:", StringComparison.OrdinalIgnoreCase))
+            ?? sentences.FirstOrDefault()
+            ?? "Executar próximo passo da conversa";
+
+        return Truncate(title, 160);
+    }
+
+    private static string BuildFallbackActivityIntentKey(string title)
+    {
+        var normalized = new string(title
+            .Normalize(NormalizationForm.FormD)
+            .Where(character => CharUnicodeInfo.GetUnicodeCategory(character) != UnicodeCategory.NonSpacingMark)
+            .Select(character => char.IsLetterOrDigit(character) ? char.ToLowerInvariant(character) : '_')
+            .ToArray());
+        var compact = string.Join('_', normalized.Split('_', StringSplitOptions.RemoveEmptyEntries));
+        return Truncate($"next_step_{compact}", 160);
     }
 
     private static IReadOnlyCollection<string> Clean(IReadOnlyCollection<string> values)

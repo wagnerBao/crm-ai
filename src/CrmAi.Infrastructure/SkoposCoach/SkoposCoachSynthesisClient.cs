@@ -72,7 +72,7 @@ public sealed class SkoposCoachSynthesisClient(
     {
         type = "object",
         additionalProperties = false,
-        required = new[] { "executiveSummary", "items" },
+        required = new[] { "executiveSummary", "items", "trends" },
         properties = new
         {
             executiveSummary = new { type = "string", maxLength = 600 },
@@ -84,13 +84,43 @@ public sealed class SkoposCoachSynthesisClient(
                 {
                     type = "object",
                     additionalProperties = false,
-                    required = new[] { "category", "title", "summary", "recommendedAction", "confidence" },
+                    required = new[] { "gapKey", "category", "groupId", "title", "justification", "objective", "targetAudience", "priority", "format", "durationMinutes", "outline", "evidenceIds", "recommendedAction", "confidence" },
                     properties = new
                     {
+                        gapKey = new { type = "string", @enum = new[] { "follow_up", "qualification", "proposal", "risk", "product", "productivity" } },
                         category = new { type = "string", @enum = new[] { "follow_up", "qualification", "proposal", "risk", "product", "productivity" } },
+                        groupId = new { type = "string" },
                         title = new { type = "string", maxLength = 120 },
-                        summary = new { type = "string", maxLength = 500 },
-                        recommendedAction = new { type = "string", maxLength = 500 },
+                        justification = new { type = "string", maxLength = 800 },
+                        objective = new { type = "string", maxLength = 600 },
+                        targetAudience = new { type = "string", maxLength = 160 },
+                        priority = new { type = "string", @enum = new[] { "low", "medium", "high", "critical" } },
+                        format = new { type = "string", maxLength = 120 },
+                        durationMinutes = new { type = "integer", minimum = 5, maximum = 480 },
+                        outline = new { type = "array", minItems = 1, maxItems = 8, items = new { type = "string", maxLength = 300 } },
+                        evidenceIds = new { type = "array", minItems = 5, maxItems = 20, items = new { type = "string" } },
+                        recommendedAction = new { type = "string", maxLength = 600 },
+                        confidence = new { type = "integer", minimum = 0, maximum = 100 }
+                    }
+                }
+            },
+            trends = new
+            {
+                type = "array",
+                maxItems = 12,
+                items = new
+                {
+                    type = "object",
+                    additionalProperties = false,
+                    required = new[] { "gapKey", "category", "groupId", "title", "reason", "evidenceIds", "confidence" },
+                    properties = new
+                    {
+                        gapKey = new { type = "string", @enum = new[] { "follow_up", "qualification", "proposal", "risk", "product", "productivity" } },
+                        category = new { type = "string", @enum = new[] { "follow_up", "qualification", "proposal", "risk", "product", "productivity" } },
+                        groupId = new { type = "string" },
+                        title = new { type = "string", maxLength = 120 },
+                        reason = new { type = "string", maxLength = 300 },
+                        evidenceIds = new { type = "array", maxItems = 20, items = new { type = "string" } },
                         confidence = new { type = "integer", minimum = 0, maximum = 100 }
                     }
                 }
@@ -99,5 +129,20 @@ public sealed class SkoposCoachSynthesisClient(
     };
 }
 
-public sealed record CoachSynthesisResult(string ExecutiveSummary, IReadOnlyCollection<CoachSynthesisItem> Items);
-public sealed record CoachSynthesisItem(string Category, string Title, string Summary, string RecommendedAction, int Confidence);
+public sealed record CoachSynthesisResult(string ExecutiveSummary, IReadOnlyCollection<CoachSynthesisItem> Items, IReadOnlyCollection<CoachSynthesisTrend> Trends);
+public sealed record CoachSynthesisItem(
+    string GapKey,
+    string Category,
+    string GroupId,
+    string Title,
+    string Justification,
+    string Objective,
+    string TargetAudience,
+    string Priority,
+    string Format,
+    int DurationMinutes,
+    IReadOnlyCollection<string> Outline,
+    IReadOnlyCollection<string> EvidenceIds,
+    string RecommendedAction,
+    int Confidence);
+public sealed record CoachSynthesisTrend(string GapKey, string Category, string GroupId, string Title, string Reason, IReadOnlyCollection<string> EvidenceIds, int Confidence);

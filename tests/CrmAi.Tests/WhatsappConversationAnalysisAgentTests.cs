@@ -83,6 +83,55 @@ public sealed class WhatsappConversationAnalysisAgentTests
     }
 
     [Fact]
+    public async Task AnalyzeAsync_ConvertsConcreteNextStepIntoActivitySuggestion_WhenModelLeavesActivityUnset()
+    {
+        var nextStep = "Responsável sugerido: vendedor do Skopos. Enviar a Raphael um e-mail de acompanhamento com as atualizações do produto.";
+        var openAiClient = new FakeOpenAiWhatsappConversationAnalysisClient(new OpenAiWhatsappConversationAnalysisResponse(
+            "Raphael solicitou acompanhamento por e-mail.",
+            false,
+            null,
+            false,
+            null,
+            null,
+            null,
+            88,
+            ["Existe um próximo passo comercial claro."],
+            NextSteps: [nextStep]));
+
+        var result = await CreateAgent(openAiClient)
+            .AnalyzeAsync(CreateContext("Pode me atualizar por e-mail?", null), CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.True(result.ShouldCreateActivity);
+        Assert.Equal("Enviar a Raphael um e-mail de acompanhamento com as atualizações do produto", result.ActivityTitle);
+        Assert.Equal($"- {nextStep}", result.ActivityNotes);
+        Assert.Equal("next_step_enviar_a_raphael_um_e_mail_de_acompanhamento_com_as_atualizacoes_do_produto", result.ActivityIntentKey);
+    }
+
+    [Fact]
+    public async Task AnalyzeAsync_DoesNotCreateActivity_WhenThereIsNoConcreteNextStepOrCompleteSuggestion()
+    {
+        var openAiClient = new FakeOpenAiWhatsappConversationAnalysisClient(new OpenAiWhatsappConversationAnalysisResponse(
+            "Conversa sem pendências.",
+            false,
+            null,
+            true,
+            null,
+            null,
+            null,
+            80,
+            ["Nenhuma ação identificada."],
+            NextSteps: []));
+
+        var result = await CreateAgent(openAiClient)
+            .AnalyzeAsync(CreateContext("Obrigado, está tudo certo.", null), CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.False(result.ShouldCreateActivity);
+        Assert.Null(result.ActivityTitle);
+    }
+
+    [Fact]
     public async Task AnalyzeAsync_Uses_OpenAi_To_Match_Existing_Suggestion_By_Semantic_Intent()
     {
         var suggestionId = Guid.NewGuid().ToString();

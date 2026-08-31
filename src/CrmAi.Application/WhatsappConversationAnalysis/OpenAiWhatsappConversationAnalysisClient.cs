@@ -21,6 +21,12 @@ public sealed class OpenAiResponsesWhatsappConversationAnalysisClient(
         - Nunca invente ids. Use null quando nenhum candidato representar o mesmo intuito.
         - Para cada nova atividade ou oportunidade, gere também uma semantic intent key curta, estavel e baseada no significado, nao na frase usada. Intuitos equivalentes devem receber a mesma chave; intuitos diferentes devem receber chaves diferentes.
 
+        Consistencia entre proximos passos e sugestao de atividade:
+        - nextSteps deve conter somente acoes concretas e executaveis pela equipe, sustentadas pela conversa.
+        - Se nextSteps tiver ao menos um item, shouldCreateActivity deve ser true e activityTitle/activityNotes devem representar esses proximos passos.
+        - Se nao existir acao suficientemente clara para sugerir uma atividade, devolva nextSteps vazio, shouldCreateActivity false e os campos da atividade como null.
+        - Nunca deixe uma acao executavel apenas em conversationSummary, commercialObservations ou nextSteps.
+
         Scorecard incremental na mesma chamada:
         - Quando input.scorecardTemplate estiver preenchido, devolva exatamente um scorecardItems para cada criterio recebido.
         - Avalie a conversa comercial do dia usando newTranscript e previousDailyItems como estado acumulado compacto; nao solicite nem reconstrua o historico bruto anterior.

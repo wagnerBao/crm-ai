@@ -21,4 +21,40 @@ public sealed class SkoposCoachProjectionTests
         Assert.Contains("[email]", result);
         Assert.Contains("[telefone]", result);
     }
+
+    [Fact]
+    public void Source_projections_are_isolated_and_publish_explicit_health_states()
+    {
+        var service = ReadSource("src/CrmAi.Infrastructure/SkoposCoach/SkoposCoachProjectionService.cs");
+        var sql = ReadSource("src/CrmAi.Infrastructure/SkoposCoach/SkoposCoachProjectionSql.cs");
+
+        Assert.Contains("Task.WhenAll", service);
+        Assert.Contains("ProjectSourceAsync", service);
+        Assert.Contains("healthy_no_events", sql);
+        Assert.Contains("unconfigured", sql);
+        Assert.Contains("disabled", sql);
+        Assert.Contains("'error'", sql);
+    }
+
+    [Fact]
+    public void Collective_schema_requires_team_gap_training_fields_and_exact_evidence_ids()
+    {
+        var source = ReadSource("src/CrmAi.Infrastructure/SkoposCoach/SkoposCoachSynthesisClient.cs");
+
+        Assert.Contains("gapKey", source);
+        Assert.Contains("groupId", source);
+        Assert.Contains("targetAudience", source);
+        Assert.Contains("durationMinutes", source);
+        Assert.Contains("outline", source);
+        Assert.Contains("evidenceIds", source);
+        Assert.Contains("trends", source);
+    }
+
+    private static string ReadSource(string relativePath)
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "CrmAi.sln"))) directory = directory.Parent;
+        Assert.NotNull(directory);
+        return File.ReadAllText(Path.Combine(directory.FullName, relativePath));
+    }
 }
