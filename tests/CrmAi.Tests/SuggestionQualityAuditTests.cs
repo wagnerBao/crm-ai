@@ -38,6 +38,18 @@ public sealed class SuggestionQualityAuditTests
     }
 
     [Fact]
+    public void Already_Completed_Must_Be_A_Weaker_Positive_Signal_Than_Accepted()
+    {
+        var worker = ReadSource("src/CrmAi.Infrastructure/Persistence/SuggestionQualityAuditHostedService.cs");
+        var models = ReadSource("src/CrmAi.Application/SuggestionQualityAuditModels.cs");
+
+        Assert.Contains("\"accepted\" => 1.0", worker);
+        Assert.Contains("\"already_completed\" => 0.6", worker);
+        Assert.Contains("FeedbackScoringGuidance", worker);
+        Assert.Contains("double SignalStrength", models);
+    }
+
+    [Fact]
     public void New_Suggestions_Must_Persist_Generation_Metadata()
     {
         var agent = ReadSource("src/CrmAi.Application/WhatsappConversationAnalysis/WhatsappConversationAnalysisAgent.cs");

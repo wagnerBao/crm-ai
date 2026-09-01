@@ -43,6 +43,7 @@ public sealed class SuggestionQualityAuditProcessor(
     IAiAgentRuntimeSettingsRepository settingsRepository,
     IOpenAiSuggestionQualityAuditClient client)
 {
+    private const string FeedbackScoringGuidance = "Treat accepted feedback backed by a created activity or opportunity as the strongest positive signal (1.0). Treat already_completed as positive supporting evidence with lower strength (0.6), because the suggested action was relevant but was not created from the suggestion. Neutral and negative feedback are not positive signals.";
     private sealed record ClaimedReport(Guid Id, Guid? CompanyId, string? AgentKey, int AttemptCount, bool LowSample, string FiltersJson, string MetricsJson);
     private sealed record FeedbackRow(Guid Id, string Sentiment, string Action, string Timeliness, string? Reason, string SnapshotJson, DateTime CreatedAt);
 
@@ -67,6 +68,7 @@ public sealed class SuggestionQualityAuditProcessor(
                 metricsDocument.RootElement.Clone(),
                 filtersDocument.RootElement.Clone(),
                 report.LowSample,
+                FeedbackScoringGuidance,
                 evaluatedAgentKey,
                 evaluatedSettings.Model,
                 evaluatedSettings.SystemPrompt,
@@ -171,9 +173,24 @@ public sealed class SuggestionQualityAuditProcessor(
         return selected.Take(150).Select(item =>
         {
             using var snapshot = JsonDocument.Parse(item.SnapshotJson);
-            return new SuggestionQualityFeedbackEvidence(item.Id.ToString(), item.Sentiment, item.Action, item.Timeliness, item.Reason, snapshot.RootElement.Clone());
+            return new SuggestionQualityFeedbackEvidence(
+                item.Id.ToString(),
+                item.Sentiment,
+                item.Action,
+                SignalStrength(item.Action),
+                item.Timeliness,
+                item.Reason,
+                snapshot.RootElement.Clone());
         }).ToArray();
     }
+
+    private static double SignalStrength(string action) => action switch
+    {
+        "accepted" => 1.0,
+        "already_completed" => 0.6,
+        "disliked" => -1.0,
+        _ => 0.0
+    };
 
     private async Task CompleteAsync(Guid id, string model, string fingerprint, SuggestionQualityAuditResult result, CancellationToken cancellationToken)
     {

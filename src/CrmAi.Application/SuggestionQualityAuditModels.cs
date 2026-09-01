@@ -10,6 +10,7 @@ public sealed record SuggestionQualityFeedbackEvidence(
     string Id,
     string Sentiment,
     string Action,
+    double SignalStrength,
     string Timeliness,
     string? Reason,
     JsonElement Suggestion);
@@ -18,6 +19,7 @@ public sealed record SuggestionQualityAuditInput(
     JsonElement Metrics,
     JsonElement Filters,
     bool LowSample,
+    string FeedbackScoringGuidance,
     string EvaluatedAgentKey,
     string EvaluatedAgentModel,
     string EvaluatedAgentPrompt,
