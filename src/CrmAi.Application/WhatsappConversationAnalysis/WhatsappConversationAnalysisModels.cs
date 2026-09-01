@@ -23,7 +23,8 @@ public sealed record OpenAiWhatsappConversationAnalysisResponse(
     string? OpportunityMatchingSuggestionId = null,
     string? OpportunityIntentKey = null,
     string? MatchingOpenOpportunityId = null,
-    IReadOnlyCollection<OpenAiConversationScorecardItem>? ScorecardItems = null);
+    IReadOnlyCollection<OpenAiConversationScorecardItem>? ScorecardItems = null,
+    bool RequiresSellerResponse = false);
 
 public sealed record WhatsappScorecardTemplateInput(
     string Id,
@@ -134,6 +135,7 @@ public sealed record WhatsappConversationAnalysisInput(
     public IReadOnlyCollection<WhatsappSuggestionCandidate> ExistingSuggestions { get; init; } = [];
     public IReadOnlyCollection<WhatsappOpenOpportunityCandidate> ExistingOpenOpportunities { get; init; } = [];
     public WhatsappScorecardTemplateInput? ScorecardTemplate { get; init; }
+    public string TimeZoneId { get; init; } = "America/Sao_Paulo";
 
     public static WhatsappConversationAnalysisInput FromContext(
         OpportunityAnalysisContext context,

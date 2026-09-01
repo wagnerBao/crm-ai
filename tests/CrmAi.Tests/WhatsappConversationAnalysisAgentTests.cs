@@ -56,6 +56,56 @@ public sealed class WhatsappConversationAnalysisAgentTests
     }
 
     [Fact]
+    public async Task AnalyzeAsync_CreatesFallbackActivity_WhenLatestCustomerMessageRequiresResponse()
+    {
+        var openAiClient = new FakeOpenAiWhatsappConversationAnalysisClient(new OpenAiWhatsappConversationAnalysisResponse(
+            "Cliente pediu confirmação do horário da reunião.",
+            false,
+            null,
+            false,
+            null,
+            null,
+            null,
+            92,
+            ["Há uma pergunta direta ainda sem resposta."],
+            RequiresSellerResponse: true));
+
+        var result = await CreateAgent(openAiClient)
+            .AnalyzeAsync(CreateContext("Pode confirmar amanhã às 14h?", null), CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.True(result.RequiresSellerResponse);
+        Assert.True(result.ShouldCreateActivity);
+        Assert.Equal("Responder ao cliente", result.ActivityTitle);
+        Assert.NotNull(result.ActivityIntentKey);
+        Assert.Null(result.ActivityDueAt);
+    }
+
+    [Theory]
+    [InlineData("2026-09-03T14:00:00-03:00")]
+    [InlineData("2026-09-03T14:00:00")]
+    public async Task AnalyzeAsync_PreservesCompanyLocalDueAt(string activityDueAt)
+    {
+        var openAiClient = new FakeOpenAiWhatsappConversationAnalysisClient(new OpenAiWhatsappConversationAnalysisResponse(
+            "Reunião confirmada para as 14h.",
+            false,
+            null,
+            true,
+            "Confirmar reunião às 14h",
+            "Confirmar a reunião no horário combinado.",
+            activityDueAt,
+            95,
+            ["Horário confirmado pelo contato."]));
+
+        var result = await CreateAgent(openAiClient)
+            .AnalyzeAsync(CreateContext(text: "Pode confirmar quinta-feira às 14h?", previousSummary: null), CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.Equal("America/Sao_Paulo", openAiClient.LastInput?.TimeZoneId);
+        Assert.Equal(new DateTime(2026, 09, 03, 17, 0, 0, DateTimeKind.Utc), result.ActivityDueAt);
+    }
+
+    [Fact]
     public async Task AnalyzeAsync_UsesPreviousSummaryFallback_WhenOpenAiSummaryIsEmpty()
     {
         var openAiClient = new FakeOpenAiWhatsappConversationAnalysisClient(new OpenAiWhatsappConversationAnalysisResponse(

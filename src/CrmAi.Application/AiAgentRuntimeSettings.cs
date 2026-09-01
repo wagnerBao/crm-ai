@@ -9,7 +9,8 @@ public sealed record AiAgentRuntimeSettings(
     string SystemPrompt,
     int DebounceMinutes,
     string? ContextInstructions,
-    IReadOnlyCollection<string> ContextEntityKeys)
+    IReadOnlyCollection<string> ContextEntityKeys,
+    string TimeZoneId = "America/Sao_Paulo")
 {
     public string Instructions =>
         string.Join("\n\n", new[] { SystemPrompt, ContextInstructions }

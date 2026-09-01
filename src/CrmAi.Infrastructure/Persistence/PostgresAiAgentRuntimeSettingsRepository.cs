@@ -70,7 +70,16 @@ public sealed class PostgresAiAgentRuntimeSettingsRepository(NpgsqlDataSource da
                    settings.system_prompt,
                    settings.debounce_minutes,
                    settings.context_instructions,
-                   settings.context_entity_keys::text
+                   settings.context_entity_keys::text,
+                   coalesce(
+                       (
+                           select nullif(btrim(company_settings.time_zone_id), '')
+                           from daily_checkout_settings company_settings
+                           where company_settings.company_id = @companyId::uuid
+                           limit 1
+                       ),
+                       'America/Sao_Paulo'
+                   ) as time_zone_id
             from ai_agent_settings settings
             where settings.agent_key = @agentKey
               and (@companyId::uuid is null or settings.company_id = @companyId::uuid or settings.company_id is null)
@@ -98,7 +107,8 @@ public sealed class PostgresAiAgentRuntimeSettingsRepository(NpgsqlDataSource da
             reader.GetString(reader.GetOrdinal("system_prompt")),
             reader.GetInt32(reader.GetOrdinal("debounce_minutes")),
             ReadNullableString(reader, "context_instructions"),
-            ParseKeys(reader.GetString(reader.GetOrdinal("context_entity_keys"))));
+            ParseKeys(reader.GetString(reader.GetOrdinal("context_entity_keys"))),
+            reader.GetString(reader.GetOrdinal("time_zone_id")));
     }
 
     private static IReadOnlyCollection<string> ParseKeys(string? value)

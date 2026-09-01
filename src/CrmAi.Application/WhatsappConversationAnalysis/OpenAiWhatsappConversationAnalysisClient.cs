@@ -27,6 +27,12 @@ public sealed class OpenAiResponsesWhatsappConversationAnalysisClient(
         - Se nao existir acao suficientemente clara para sugerir uma atividade, devolva nextSteps vazio, shouldCreateActivity false e os campos da atividade como null.
         - Nunca deixe uma acao executavel apenas em conversationSummary, commercialObservations ou nextSteps.
 
+        Resposta pendente do atendente:
+        - requiresSellerResponse deve ser true quando a ultima mensagem do novo trecho for do cliente e contiver pergunta, solicitacao ou confirmacao que exija resposta da equipe.
+        - Inclua confirmacoes de agenda, pedidos de informacao e perguntas comerciais, mesmo quando nao houver prazo declarado.
+        - Nesses casos, devolva tambem uma atividade concreta para responder ao cliente; nao use o horario futuro do compromisso como prazo para enviar a resposta.
+        - requiresSellerResponse deve ser false quando a equipe ja respondeu depois da pergunta, ou quando a ultima mensagem for apenas agradecimento, emoji, saudacao, despedida ou confirmacao final sem nova acao.
+
         Scorecard incremental na mesma chamada:
         - Quando input.scorecardTemplate estiver preenchido, devolva exatamente um scorecardItems para cada criterio recebido.
         - Avalie a conversa comercial do dia usando newTranscript e previousDailyItems como estado acumulado compacto; nao solicite nem reconstrua o historico bruto anterior.
@@ -56,11 +62,19 @@ public sealed class OpenAiResponsesWhatsappConversationAnalysisClient(
             ? "instagram"
             : "whatsapp";
         var operation = $"responses.{channel}-conversation-analysis";
+        var timeZoneInstructions = $"""
+            Consistencia obrigatoria de data e fuso horario:
+            - O fuso horario da empresa e {settings.TimeZoneId}.
+            - Interprete horarios mencionados sem offset, como "as 14h", nesse fuso horario.
+            - activityDueAt deve preservar o dia e horario local combinados e incluir o offset UTC explicito do fuso da empresa.
+            - Nao use Z para um horario local, exceto quando o fuso da empresa for UTC.
+            - Exemplo: 03/09/2026 as 14h em America/Sao_Paulo deve ser 2026-09-03T14:00:00-03:00.
+            """;
         var payload = new
         {
             model,
             reasoning = OpenAiGpt56RequestOptions.Reasoning(model, "none"),
-            instructions = $"{settings.Instructions}\n\n{SemanticDeduplicationInstructions}",
+            instructions = $"{settings.Instructions}\n\n{SemanticDeduplicationInstructions}\n\n{timeZoneInstructions}",
             input = JsonSerializer.Serialize(input, SerializerOptions),
             text = new
             {

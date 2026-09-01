@@ -27,6 +27,7 @@ public sealed class SuggestionCompletionVerificationHostedService(
                 var processor = scope.ServiceProvider.GetRequiredService<SuggestionCompletionVerificationProcessor>();
                 var processed = await processor.ProcessNextAsync(stoppingToken);
                 await processor.PublishPendingNotificationsAsync(stoppingToken);
+                await processor.PublishPendingResponseNotificationsAsync(stoppingToken);
                 if (!processed) await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -51,6 +52,7 @@ public sealed class SuggestionCompletionVerificationProcessor(
 {
     internal const string AgentKey = "suggestion-completion-verification";
     internal const string NotificationEventKey = "activity_suggestion_unfulfilled";
+    internal const string ResponseNotificationEventKey = "activity_suggestion_response_pending";
     internal const int ConfidenceThreshold = 80;
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
@@ -86,7 +88,17 @@ public sealed class SuggestionCompletionVerificationProcessor(
         string DedupeKey,
         string Href,
         string EntityType,
-        Guid EntityId);
+        Guid EntityId,
+        string EventKey,
+        string Severity);
+    private sealed record ResponseNotificationCandidate(
+        Guid SuggestionId,
+        Guid CompanyId,
+        Guid UserId,
+        string ContactName,
+        string SuggestionTitle,
+        DateTime ResponseRequiredAt,
+        string Href);
 
     public async Task<bool> ProcessNextAsync(CancellationToken cancellationToken)
     {
@@ -542,7 +554,9 @@ public sealed class SuggestionCompletionVerificationProcessor(
                     dedupeKey,
                     href,
                     group.Key.TargetType,
-                    group.Key.TargetId));
+                    group.Key.TargetId,
+                    NotificationEventKey,
+                    "danger"));
             }
 
             await using var mark = new NpgsqlCommand("update ai_agent_suggestions set priority_notified_at=now(),updated_at=now() where id=any(@ids) and priority_notified_at is null;", connection, transaction);
@@ -555,6 +569,135 @@ public sealed class SuggestionCompletionVerificationProcessor(
         {
             try { PublishNotification(notification); }
             catch (Exception exception) { logger.LogError(exception, "Failed to publish suggestion notification. NotificationId={NotificationId}", notification.Id); }
+        }
+    }
+
+    public async Task PublishPendingResponseNotificationsAsync(CancellationToken cancellationToken)
+    {
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await using (var lockCommand = new NpgsqlCommand("select pg_try_advisory_xact_lock(hashtext('suggestion-response-notifications'));", connection, transaction))
+        {
+            if (!Convert.ToBoolean(await lockCommand.ExecuteScalarAsync(cancellationToken)))
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return;
+            }
+        }
+
+        const string candidatesSql = """
+            select suggestion.id, suggestion.company_id,
+                   coalesce(responsible.user_id, opportunity.owner_user_id, contact.owner_user_id) as user_id,
+                   contact.name,
+                   suggestion.title,
+                   suggestion.response_required_at,
+                   case when opportunity.id is null
+                       then '/crm/contacts/' || contact.id::text
+                       else '/crm/opportunities/' || opportunity.id::text
+                   end as href
+            from ai_agent_suggestions suggestion
+            inner join contacts contact on contact.id = suggestion.contact_id and contact.company_id = suggestion.company_id
+            left join lateral (
+                select assigned.user_id
+                from contact_responsibles assigned
+                inner join users assigned_user on assigned_user.id = assigned.user_id and assigned_user.is_active = true
+                where assigned.contact_id = contact.id
+                order by assigned.is_primary desc, assigned.created_at
+                limit 1
+            ) responsible on true
+            left join lateral (
+                select candidate.id, candidate.owner_user_id
+                from opportunity_contacts relation
+                inner join opportunities candidate on candidate.id = relation.opportunity_id
+                where relation.contact_id = contact.id
+                  and candidate.company_id = suggestion.company_id
+                  and candidate.status = 'active'
+                order by candidate.updated_at desc
+                limit 1
+            ) opportunity on true
+            where suggestion.status = 'pending'
+              and suggestion.suggestion_type = 'activity'
+              and suggestion.response_required_at is not null
+              and suggestion.response_reminder_notified_at is null
+              and coalesce(responsible.user_id, opportunity.owner_user_id, contact.owner_user_id) is not null
+            order by suggestion.response_required_at
+            for update of suggestion skip locked
+            limit 500;
+            """;
+        var candidates = new List<ResponseNotificationCandidate>();
+        await using (var command = new NpgsqlCommand(candidatesSql, connection, transaction))
+        await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
+        {
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                candidates.Add(new(
+                    reader.GetGuid(0),
+                    reader.GetGuid(1),
+                    reader.GetGuid(2),
+                    reader.GetString(3),
+                    reader.GetString(4),
+                    reader.GetDateTime(5).ToUniversalTime(),
+                    reader.GetString(6)));
+            }
+        }
+
+        var notifications = new List<NotificationBatch>();
+        foreach (var candidate in candidates)
+        {
+            var notificationId = Guid.NewGuid();
+            var createdAt = DateTime.UtcNow;
+            var dedupeKey = $"suggestion-response:{candidate.SuggestionId}:{candidate.ResponseRequiredAt.Ticks}";
+            var title = "Cliente aguardando resposta";
+            var message = Truncate($"{candidate.ContactName}: {candidate.SuggestionTitle}", 500);
+            const string insertSql = """
+                insert into notifications(id,company_id,user_id,event_key,title,message,severity,href,entity_type,entity_id,channels_json,dedupe_key,created_at,updated_at)
+                values(@id,@companyId,@userId,@eventKey,@title,@message,'warning',@href,'suggestion',@suggestionId,
+                       '[{"channel":"system","enabled":true,"status":"sent"},{"channel":"toast","enabled":true,"status":"sent"},{"channel":"browser","enabled":true,"status":"sent"},{"channel":"email","enabled":false,"status":"disabled"},{"channel":"whatsapp","enabled":false,"status":"disabled"}]'::jsonb,
+                       @dedupeKey,@createdAt,@createdAt)
+                on conflict do nothing
+                returning id;
+                """;
+            await using var insert = new NpgsqlCommand(insertSql, connection, transaction);
+            insert.Parameters.AddWithValue("id", notificationId);
+            insert.Parameters.AddWithValue("companyId", candidate.CompanyId);
+            insert.Parameters.AddWithValue("userId", candidate.UserId);
+            insert.Parameters.AddWithValue("eventKey", ResponseNotificationEventKey);
+            insert.Parameters.AddWithValue("title", title);
+            insert.Parameters.AddWithValue("message", message);
+            insert.Parameters.AddWithValue("href", candidate.Href);
+            insert.Parameters.AddWithValue("suggestionId", candidate.SuggestionId);
+            insert.Parameters.AddWithValue("dedupeKey", dedupeKey);
+            insert.Parameters.AddWithValue("createdAt", createdAt);
+            if (await insert.ExecuteScalarAsync(cancellationToken) is not null)
+            {
+                notifications.Add(new(
+                    notificationId,
+                    candidate.CompanyId,
+                    candidate.UserId,
+                    title,
+                    message,
+                    createdAt,
+                    dedupeKey,
+                    candidate.Href,
+                    "suggestion",
+                    candidate.SuggestionId,
+                    ResponseNotificationEventKey,
+                    "warning"));
+            }
+
+            await using var mark = new NpgsqlCommand(
+                "update ai_agent_suggestions set response_reminder_notified_at=now(),updated_at=now() where id=@id and response_reminder_notified_at is null;",
+                connection,
+                transaction);
+            mark.Parameters.AddWithValue("id", candidate.SuggestionId);
+            await mark.ExecuteNonQueryAsync(cancellationToken);
+        }
+        await transaction.CommitAsync(cancellationToken);
+
+        foreach (var notification in notifications)
+        {
+            try { PublishNotification(notification); }
+            catch (Exception exception) { logger.LogError(exception, "Failed to publish suggestion response notification. NotificationId={NotificationId}", notification.Id); }
         }
     }
 
@@ -583,17 +726,17 @@ public sealed class SuggestionCompletionVerificationProcessor(
             companyId = notification.CompanyId,
             userId = notification.UserId,
             notificationId = notification.Id,
-            eventKey = NotificationEventKey,
+            eventKey = notification.EventKey,
             readAt = (DateTime?)null,
             data = new
             {
                 notification = new
                 {
                     id = notification.Id,
-                    eventKey = NotificationEventKey,
+                    eventKey = notification.EventKey,
                     title = notification.Title,
                     message = notification.Message,
-                    severity = "danger",
+                    severity = notification.Severity,
                     createdAt = notification.CreatedAt,
                     readAt = (DateTime?)null,
                     href = notification.Href,

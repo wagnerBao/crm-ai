@@ -35,7 +35,8 @@ public sealed class WhatsappConversationAnalysisAgent(
         input = input with
         {
             ExistingSuggestions = semanticContext.ExistingSuggestions,
-            ExistingOpenOpportunities = semanticContext.ExistingOpenOpportunities
+            ExistingOpenOpportunities = semanticContext.ExistingOpenOpportunities,
+            TimeZoneId = settings.TimeZoneId
         };
         var scorecardContext = scorecardContextRepository is null
             ? null
@@ -80,7 +81,8 @@ public sealed class WhatsappConversationAnalysisAgent(
         input = input with
         {
             ExistingSuggestions = semanticContext.ExistingSuggestions,
-            ExistingOpenOpportunities = semanticContext.ExistingOpenOpportunities
+            ExistingOpenOpportunities = semanticContext.ExistingOpenOpportunities,
+            TimeZoneId = settings.TimeZoneId
         };
         var scorecardContext = scorecardContextRepository is null
             ? null
@@ -115,11 +117,12 @@ public sealed class WhatsappConversationAnalysisAgent(
         CancellationToken cancellationToken)
     {
         var response = await openAiClient.AnalyzeAsync(settings, input, invocationContext, cancellationToken);
-        var dueAt = ParseDateTime(response.ActivityDueAt);
+        var dueAt = ParseDateTime(response.ActivityDueAt, settings.TimeZoneId);
         var nextSteps = CleanOptional(response.NextSteps);
         var activityTitle = CleanNullableText(response.ActivityTitle);
         var activityNotes = CleanNullableText(response.ActivityNotes);
-        var shouldCreateActivity = response.ShouldCreateActivity && !string.IsNullOrWhiteSpace(activityTitle);
+        var requiresSellerResponse = response.RequiresSellerResponse;
+        var shouldCreateActivity = (response.ShouldCreateActivity || requiresSellerResponse) && !string.IsNullOrWhiteSpace(activityTitle);
 
         // The model exposes nextSteps and the activity suggestion as separate fields. Keep the CRM
         // actionable even when it returns a concrete next step but leaves the activity flags unset.
@@ -128,6 +131,13 @@ public sealed class WhatsappConversationAnalysisAgent(
             shouldCreateActivity = true;
             activityTitle ??= BuildFallbackActivityTitle(nextSteps.First());
             activityNotes ??= string.Join("\n", nextSteps.Select(step => $"- {step}"));
+        }
+
+        if (requiresSellerResponse)
+        {
+            shouldCreateActivity = true;
+            activityTitle ??= "Responder ao cliente";
+            activityNotes ??= "Responder a pergunta, solicitacao ou confirmacao pendente do cliente.";
         }
 
         var activityIntentKey = CleanIntentKey(response.ActivityIntentKey);
@@ -167,7 +177,8 @@ public sealed class WhatsappConversationAnalysisAgent(
             Reasons: Clean(response.Reasons),
             GenerationModel: settings.Model,
             PromptFingerprint: Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(fingerprintInput))).ToLowerInvariant(),
-            Scorecard: scorecard);
+            Scorecard: scorecard,
+            RequiresSellerResponse: requiresSellerResponse);
     }
 
     private static WhatsappConversationScorecardResult? NormalizeScorecard(
@@ -231,14 +242,68 @@ public sealed class WhatsappConversationAnalysisAgent(
     private static string? GetString(OpportunityEvent opportunityEvent, string key) =>
         opportunityEvent.Data.TryGetValue(key, out var value) ? value?.ToString() : null;
 
-    private static DateTime? ParseDateTime(string? value)
+    private static DateTime? ParseDateTime(string? value, string timeZoneId)
     {
         if (string.IsNullOrWhiteSpace(value))
         {
             return null;
         }
 
-        return DateTime.TryParse(value, out var parsed) ? parsed.ToUniversalTime() : null;
+        var normalized = value.Trim();
+        if (HasExplicitOffset(normalized))
+        {
+            return DateTimeOffset.TryParse(
+                normalized,
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.AllowWhiteSpaces,
+                out var timestamp)
+                ? timestamp.UtcDateTime
+                : null;
+        }
+
+        if (!DateTime.TryParse(
+                normalized,
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.AllowWhiteSpaces,
+                out var localDateTime))
+        {
+            return null;
+        }
+
+        var timeZone = ResolveTimeZone(timeZoneId);
+        localDateTime = DateTime.SpecifyKind(localDateTime, DateTimeKind.Unspecified);
+        return timeZone.IsInvalidTime(localDateTime)
+            ? null
+            : TimeZoneInfo.ConvertTimeToUtc(localDateTime, timeZone);
+    }
+
+    private static bool HasExplicitOffset(string value)
+    {
+        if (value.EndsWith('Z') || value.EndsWith('z'))
+        {
+            return true;
+        }
+
+        var timeStart = Math.Max(value.LastIndexOf('T'), value.LastIndexOf(' '));
+        return timeStart >= 0
+            && Math.Max(value.LastIndexOf('+'), value.LastIndexOf('-')) > timeStart;
+    }
+
+    private static TimeZoneInfo ResolveTimeZone(string? timeZoneId)
+    {
+        try
+        {
+            return TimeZoneInfo.FindSystemTimeZoneById(
+                string.IsNullOrWhiteSpace(timeZoneId) ? "America/Sao_Paulo" : timeZoneId);
+        }
+        catch (TimeZoneNotFoundException)
+        {
+            return TimeZoneInfo.Utc;
+        }
+        catch (InvalidTimeZoneException)
+        {
+            return TimeZoneInfo.Utc;
+        }
     }
 
     private static string CleanText(string? value, string fallback)

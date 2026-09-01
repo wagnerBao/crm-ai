@@ -133,7 +133,8 @@ public sealed record WhatsappConversationAnalysisResult(
     string? MatchingOpenOpportunityId = null,
     string? GenerationModel = null,
     string? PromptFingerprint = null,
-    WhatsappConversationScorecardResult? Scorecard = null);
+    WhatsappConversationScorecardResult? Scorecard = null,
+    bool RequiresSellerResponse = false);
 
 public sealed record WhatsappConversationScorecardResult(
     string TemplateId,

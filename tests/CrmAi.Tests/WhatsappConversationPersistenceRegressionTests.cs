@@ -165,6 +165,27 @@ public sealed class WhatsappConversationPersistenceRegressionTests
     }
 
     [Fact]
+    public void UnansweredCustomerRequests_Should_Persist_And_Publish_Immediate_Warning()
+    {
+        var actionStore = ReadSource("src/CrmAi.Infrastructure/Persistence/PostgresWhatsappConversationActionStore.cs");
+        var worker = ReadSource("src/CrmAi.Infrastructure/Persistence/SuggestionCompletionVerificationHostedService.cs");
+        var schema = ReadSource("src/CrmAi.Application/WhatsappConversationAnalysis/WhatsappConversationAnalysisJsonSchema.cs");
+
+        schema.ShouldContainAll("requiresSellerResponse", "latest customer message");
+        actionStore.ShouldContainAll(
+            "ReadLatestIncomingMessageAtAsync",
+            "string.Equals(reader.GetString(0), \"incoming\"",
+            "response_required_at = @responseRequiredAt",
+            "ClearConversationResponseRemindersAsync");
+        worker.ShouldContainAll(
+            "PublishPendingResponseNotificationsAsync",
+            "activity_suggestion_response_pending",
+            "Cliente aguardando resposta",
+            "'warning'",
+            "'suggestion'");
+    }
+
+    [Fact]
     public void UpdatedSuggestions_Should_Reset_Previous_Verification_State()
     {
         var whatsapp = ReadSource("src/CrmAi.Infrastructure/Persistence/PostgresWhatsappConversationActionStore.cs");

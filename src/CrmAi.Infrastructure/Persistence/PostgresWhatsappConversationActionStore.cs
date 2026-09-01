@@ -10,6 +10,7 @@ public sealed class PostgresWhatsappConversationActionStore(NpgsqlDataSource dat
 {
     private const string SkoposActivityType = "agent-skopos";
     private const string WhatsappChannel = "whatsapp";
+    private const string ResponsePendingNotificationEventKey = "activity_suggestion_response_pending";
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
 
     public async Task ApplyAsync(OpportunityAnalysisContext context, WhatsappConversationAnalysisResult result, CancellationToken cancellationToken)
@@ -561,6 +562,15 @@ public sealed class PostgresWhatsappConversationActionStore(NpgsqlDataSource dat
             return;
         }
 
+        var responseRequiredAt = result.RequiresSellerResponse && conversationId is not null
+            ? await ReadLatestIncomingMessageAtAsync(connection, conversationId.Value, cancellationToken)
+            : null;
+        if (responseRequiredAt is null && conversationId is not null)
+        {
+            await ClearConversationResponseRemindersAsync(
+                connection, companyId.Value, conversationId.Value, cancellationToken);
+        }
+
         if (result.ShouldCreateActivity && !string.IsNullOrWhiteSpace(result.ActivityTitle))
         {
             var description = string.IsNullOrWhiteSpace(result.ActivityNotes) ? result.ActivityTitle : result.ActivityNotes;
@@ -570,11 +580,12 @@ public sealed class PostgresWhatsappConversationActionStore(NpgsqlDataSource dat
                 channel = "whatsapp",
                 dueAt = result.ActivityDueAt,
                 notes = result.ActivityNotes,
-                semanticIntentKey = result.ActivityIntentKey
+                semanticIntentKey = result.ActivityIntentKey,
+                requiresSellerResponse = responseRequiredAt is not null
             }, SerializerOptions);
             await InsertAgentSuggestionAsync(connection, companyId.Value, contactId.Value, conversationId, runId.Value,
                 "activity", result.ActivityTitle!, description!, result.ActivityDueAt, payload,
-                result.ActivityMatchingSuggestionId, result.ActivityIntentKey, result, cancellationToken);
+                result.ActivityMatchingSuggestionId, result.ActivityIntentKey, responseRequiredAt, result, cancellationToken);
         }
 
         if (result.ShouldCreateOpportunity && !string.IsNullOrWhiteSpace(result.OpportunityTitle)
@@ -592,8 +603,68 @@ public sealed class PostgresWhatsappConversationActionStore(NpgsqlDataSource dat
             }, SerializerOptions);
             await InsertAgentSuggestionAsync(connection, companyId.Value, contactId.Value, conversationId, runId.Value,
                 "opportunity", result.OpportunityTitle!, description!, null, payload,
-                result.OpportunityMatchingSuggestionId, result.OpportunityIntentKey, result, cancellationToken);
+                result.OpportunityMatchingSuggestionId, result.OpportunityIntentKey, null, result, cancellationToken);
         }
+    }
+
+    private static async Task<DateTime?> ReadLatestIncomingMessageAtAsync(
+        NpgsqlConnection connection,
+        Guid conversationId,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            select direction, message_at
+            from whatsapp_messages
+            where conversation_id = @conversationId
+              and status <> 'deleted'
+            order by message_at desc, created_at desc
+            limit 1;
+            """;
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("conversationId", conversationId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken)
+            || !string.Equals(reader.GetString(0), "incoming", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        return reader.GetDateTime(1).ToUniversalTime();
+    }
+
+    private static async Task ClearConversationResponseRemindersAsync(
+        NpgsqlConnection connection,
+        Guid companyId,
+        Guid conversationId,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            with cleared as (
+                update ai_agent_suggestions
+                set response_required_at = null,
+                    response_reminder_notified_at = null,
+                    updated_at = now()
+                where company_id = @companyId
+                  and conversation_id = @conversationId
+                  and status = 'pending'
+                  and response_required_at is not null
+                returning id
+            )
+            update notifications notification
+            set read_at = coalesce(notification.read_at, now()),
+                updated_at = now()
+            from cleared
+            where notification.company_id = @companyId
+              and notification.event_key = @eventKey
+              and notification.entity_type = 'suggestion'
+              and notification.entity_id = cleared.id
+              and notification.read_at is null;
+            """;
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("companyId", companyId);
+        command.Parameters.AddWithValue("conversationId", conversationId);
+        command.Parameters.AddWithValue("eventKey", ResponsePendingNotificationEventKey);
+        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static async Task InsertAgentSuggestionAsync(
@@ -609,6 +680,7 @@ public sealed class PostgresWhatsappConversationActionStore(NpgsqlDataSource dat
         string payload,
         string? matchingSuggestionId,
         string? semanticIntentKey,
+        DateTime? responseRequiredAt,
         WhatsappConversationAnalysisResult analysisResult,
         CancellationToken cancellationToken)
     {
@@ -653,6 +725,12 @@ public sealed class PostgresWhatsappConversationActionStore(NpgsqlDataSource dat
                     last_verified_at = null,
                     priority_at = null,
                     priority_notified_at = null,
+                    response_reminder_notified_at = case
+                        when @responseRequiredAt is null then null
+                        when suggestion.response_required_at is distinct from @responseRequiredAt then null
+                        else suggestion.response_reminder_notified_at
+                    end,
+                    response_required_at = @responseRequiredAt,
                     evidence_fingerprint = null,
                     verification_confidence = null,
                     verification_reason = null,
@@ -665,11 +743,11 @@ public sealed class PostgresWhatsappConversationActionStore(NpgsqlDataSource dat
             insert into ai_agent_suggestions
                 (id, company_id, agent_key, suggestion_type, status, contact_id, conversation_id, run_id,
                  title, description, suggested_due_at, payload, generation_model, prompt_fingerprint,
-                 confidence_score, generation_reasons, created_at, updated_at)
+                 confidence_score, generation_reasons, response_required_at, created_at, updated_at)
             select
                 @id, @companyId, 'whatsapp-conversation-analysis', @type, 'pending', @contactId, @conversationId, @runId,
                 @title, @description, @dueAt, @payload, @generationModel, @promptFingerprint,
-                @confidenceScore, @generationReasons, now(), now()
+                @confidenceScore, @generationReasons, @responseRequiredAt, now(), now()
             where not exists (select 1 from updated)
             on conflict (run_id, suggestion_type) where run_id is not null do nothing;
             """;
@@ -687,6 +765,8 @@ public sealed class PostgresWhatsappConversationActionStore(NpgsqlDataSource dat
         command.Parameters.AddWithValue("title", Truncate(title, 300));
         command.Parameters.AddWithValue("description", Truncate(description, 3000));
         command.Parameters.Add("dueAt", NpgsqlDbType.TimestampTz).Value = dueAt is null ? DBNull.Value : dueAt.Value;
+        command.Parameters.Add("responseRequiredAt", NpgsqlDbType.TimestampTz).Value =
+            responseRequiredAt is null ? DBNull.Value : responseRequiredAt.Value;
         command.Parameters.Add("payload", NpgsqlDbType.Jsonb).Value = payload;
         command.Parameters.Add("generationModel", NpgsqlDbType.Text).Value =
             string.IsNullOrWhiteSpace(analysisResult.GenerationModel) ? DBNull.Value : analysisResult.GenerationModel;
