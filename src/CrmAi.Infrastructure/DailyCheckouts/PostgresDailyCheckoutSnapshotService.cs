@@ -393,7 +393,7 @@ public sealed class PostgresDailyCheckoutSnapshotService(
         var opportunityOrigins = await ReadRowsAsync(connection, """
             select coalesce(oo.name, 'Sem origem') as label, count(*)::int as value
             from opportunities o
-            left join opportunity_origins oo on oo.id = o.origin_id
+            left join contact_origins oo on oo.id = o.origin_id
             where o.company_id = @companyId
               and o.created_at >= @startsAt
               and o.created_at < @endsAt
@@ -883,7 +883,7 @@ public sealed class PostgresDailyCheckoutSnapshotService(
             from opportunity_rows o
             left join pipeline_stages ps on ps.id = o.stage_id
             left join users u on u.id = o.owner_user_id
-            left join opportunity_origins oo on oo.id = o.origin_id
+            left join contact_origins oo on oo.id = o.origin_id
             left join latest_risk lr on lr.opportunity_id = o.id
             where {{condition}}
             order by {{orderBy}}

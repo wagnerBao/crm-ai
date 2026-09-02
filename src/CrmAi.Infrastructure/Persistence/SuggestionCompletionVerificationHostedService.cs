@@ -75,9 +75,11 @@ public sealed class SuggestionCompletionVerificationProcessor(
         Guid Id,
         Guid CompanyId,
         Guid UserId,
-        Guid ContactId,
         Guid TargetId,
-        string TargetType);
+        string TargetType,
+        string ContactName,
+        string SuggestionTitle,
+        string SuggestionDescription);
     private sealed record NotificationBatch(
         Guid Id,
         Guid CompanyId,
@@ -457,9 +459,11 @@ public sealed class SuggestionCompletionVerificationProcessor(
         const string candidatesSql = """
             select suggestion.id, suggestion.company_id,
                    coalesce(responsible.user_id, opportunity.owner_user_id, contact.owner_user_id) as user_id,
-                   suggestion.contact_id,
                    coalesce(opportunity.id, suggestion.contact_id) as target_id,
-                   case when opportunity.id is null then 'contact' else 'opportunity' end as target_type
+                   case when opportunity.id is null then 'contact' else 'opportunity' end as target_type,
+                   coalesce(contact.name, 'Contato'),
+                   coalesce(suggestion.title, 'Sugestão'),
+                   coalesce(suggestion.description, '')
             from ai_agent_suggestions suggestion
             inner join contacts contact on contact.id = suggestion.contact_id and contact.company_id = suggestion.company_id
             left join lateral (
@@ -497,8 +501,10 @@ public sealed class SuggestionCompletionVerificationProcessor(
                     reader.GetGuid(1),
                     reader.GetGuid(2),
                     reader.GetGuid(3),
-                    reader.GetGuid(4),
-                    reader.GetString(5)));
+                    reader.GetString(4),
+                    reader.GetString(5),
+                    reader.GetString(6),
+                    reader.GetString(7)));
             }
         }
         if (candidates.Count == 0)
@@ -511,12 +517,9 @@ public sealed class SuggestionCompletionVerificationProcessor(
         foreach (var group in candidates.GroupBy(item => new { item.CompanyId, item.UserId, item.TargetId, item.TargetType }))
         {
             var ids = group.Select(item => item.Id).Order().ToArray();
-            var contactCount = group.Select(item => item.ContactId).Distinct().Count();
-            var suggestionCount = ids.Length;
             var dedupeKey = $"suggestion-unfulfilled:{group.Key.UserId}:{Fingerprint(ids.Select(id => id.ToString()))}";
             var title = "Ações sugeridas aguardando registro";
-            var suggestedActions = suggestionCount == 1 ? "ação sugerida" : "ações sugeridas";
-            var message = $"{contactCount} contato{(contactCount == 1 ? " possui" : "s possuem")} {suggestionCount} {suggestedActions} sem registro.";
+            var message = BuildUnfulfilledNotificationMessage(group.ToArray());
             var href = group.Key.TargetType == "opportunity"
                 ? $"/crm/opportunities/{group.Key.TargetId}"
                 : $"/crm/contacts/{group.Key.TargetId}";
@@ -762,6 +765,31 @@ public sealed class SuggestionCompletionVerificationProcessor(
 
     private static string Fingerprint(IEnumerable<string> values) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(string.Join("\n", values)))).ToLowerInvariant();
+
+    private static string BuildUnfulfilledNotificationMessage(IReadOnlyCollection<NotificationCandidate> candidates)
+    {
+        const int maxVisibleSuggestions = 3;
+        const int maxPreviewLength = 160;
+        var previews = candidates
+            .Take(maxVisibleSuggestions)
+            .Select(candidate =>
+            {
+                var suggestion = string.IsNullOrWhiteSpace(candidate.SuggestionDescription)
+                    ? candidate.SuggestionTitle
+                    : $"{candidate.SuggestionTitle} — {candidate.SuggestionDescription}";
+                return $"{candidate.ContactName}: {Excerpt(suggestion.Trim(), maxPreviewLength)}";
+            })
+            .ToArray();
+        var remainingCount = candidates.Count - previews.Length;
+        var remainingSuffix = remainingCount > 0
+            ? $" (+{remainingCount} {(remainingCount == 1 ? "outra sugestão" : "outras sugestões")})"
+            : string.Empty;
+
+        return Truncate($"{string.Join("; ", previews)}{remainingSuffix}", 500);
+    }
+
+    private static string Excerpt(string value, int max) =>
+        value.Length <= max ? value : $"{value[..(max - 1)].TrimEnd()}…";
 
     private static string Truncate(string value, int max) => value.Length <= max ? value : value[..max];
 }

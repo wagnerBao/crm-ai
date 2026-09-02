@@ -20,6 +20,9 @@ public sealed class OpenAiResponsesWhatsappConversationAnalysisClient(
         - Quando houver o mesmo intuito, retorne exatamente o id do candidato em activityMatchingSuggestionId, opportunityMatchingSuggestionId ou matchingOpenOpportunityId.
         - Nunca invente ids. Use null quando nenhum candidato representar o mesmo intuito.
         - Para cada nova atividade ou oportunidade, gere também uma semantic intent key curta, estavel e baseada no significado, nao na frase usada. Intuitos equivalentes devem receber a mesma chave; intuitos diferentes devem receber chaves diferentes.
+        - existingSuggestions com status accepted representam acoes recentemente concluidas. Use-as como historico para nao sugerir novamente o que a equipe acabou de realizar.
+        - Se o novo trecho contiver apenas a mensagem de saida que cumpriu uma sugestao accepted, sem resposta posterior do cliente, nao crie outra atividade para repetir a cobranca ou aguardar a mesma devolutiva: devolva nextSteps vazio, shouldCreateActivity false e os campos da atividade como null.
+        - Uma nova atividade depois de uma sugestao accepted so e valida quando uma mensagem posterior do cliente, um novo compromisso, um novo prazo ou uma mudanca material de contexto estabelecer uma acao realmente distinta.
 
         Consistencia entre proximos passos e sugestao de atividade:
         - nextSteps deve conter somente acoes concretas e executaveis pela equipe, sustentadas pela conversa.

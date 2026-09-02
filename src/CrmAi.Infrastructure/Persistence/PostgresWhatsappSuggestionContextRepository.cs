@@ -43,7 +43,13 @@ public sealed class PostgresWhatsappSuggestionContextRepository(NpgsqlDataSource
             where company_id = @companyId
               and agent_key = @agentKey
               and contact_id = @contactId
-              and status in ('pending', 'rejected')
+              and (
+                status in ('pending', 'rejected')
+                or (
+                  status = 'accepted'
+                  and resolved_at >= now() - interval '30 days'
+                )
+              )
             order by updated_at desc
             limit 30;
             """;

@@ -101,6 +101,28 @@ public sealed class WhatsappConversationPersistenceRegressionTests
     }
 
     [Fact]
+    public void Recently_Completed_Whatsapp_Suggestions_Should_Prevent_Repetitive_Follow_Up_Suggestions()
+    {
+        var client = ReadSource("src/CrmAi.Application/WhatsappConversationAnalysis/OpenAiWhatsappConversationAnalysisClient.cs");
+        var contextRepository = ReadSource("src/CrmAi.Infrastructure/Persistence/PostgresWhatsappSuggestionContextRepository.cs");
+        var actionStore = ReadSource("src/CrmAi.Infrastructure/Persistence/PostgresWhatsappConversationActionStore.cs");
+
+        client.ShouldContainAll(
+            "status accepted representam acoes recentemente concluidas",
+            "apenas a mensagem de saida que cumpriu uma sugestao accepted",
+            "uma acao realmente distinta");
+        contextRepository.ShouldContainAll(
+            "status = 'accepted'",
+            "resolved_at >= now() - interval '30 days'");
+        actionStore.ShouldContainAll(
+            "with matched as",
+            "status = 'accepted'",
+            "message.direction = 'incoming'",
+            "message.message_at > ai_agent_suggestions.resolved_at",
+            "not exists (select 1 from matched where status = 'accepted')");
+    }
+
+    [Fact]
     public void WhatsappScorecard_Should_Deserialize_Large_Model_Offsets_Without_Losing_The_Analysis()
     {
         const string json = """
@@ -157,6 +179,9 @@ public sealed class WhatsappConversationPersistenceRegressionTests
             "priority_at = case",
             "insert into notifications",
             "activity_suggestion_unfulfilled",
+            "contact.name",
+            "suggestion.description",
+            "BuildUnfulfilledNotificationMessage",
             "case when opportunity.id is null then 'contact' else 'opportunity' end as target_type",
             "$\"/crm/opportunities/{group.Key.TargetId}\"",
             "$\"/crm/contacts/{group.Key.TargetId}\"",

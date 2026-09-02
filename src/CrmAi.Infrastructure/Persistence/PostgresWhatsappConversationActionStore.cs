@@ -693,20 +693,32 @@ public sealed class PostgresWhatsappConversationActionStore(NpgsqlDataSource dat
         }
 
         const string sql = """
-            with existing as (
-                select id
+            with matched as (
+                select id, status, updated_at
                 from ai_agent_suggestions
                 where company_id = @companyId
                   and agent_key = 'whatsapp-conversation-analysis'
                   and suggestion_type = @type
                   and contact_id = @contactId
-                  and status in ('pending', 'rejected')
+                  and (
+                    status in ('pending', 'rejected')
+                    or (
+                      status = 'accepted'
+                      and resolved_at >= now() - interval '30 days'
+                      and not exists (
+                        select 1
+                        from whatsapp_messages message
+                        where message.conversation_id = coalesce(@conversationId, ai_agent_suggestions.conversation_id)
+                          and message.direction = 'incoming'
+                          and coalesce(message.status, '') <> 'deleted'
+                          and message.message_at > ai_agent_suggestions.resolved_at
+                      )
+                    )
+                  )
                   and (
                     id = @matchingSuggestionId
                     or (@semanticIntentKey is not null and payload ->> 'semanticIntentKey' = @semanticIntentKey)
                   )
-                order by case when status = 'pending' then 0 else 1 end, updated_at desc
-                limit 1
             ), updated as (
                 update ai_agent_suggestions suggestion
                 set conversation_id = @conversationId,
@@ -737,7 +749,14 @@ public sealed class PostgresWhatsappConversationActionStore(NpgsqlDataSource dat
                     verification_model = null,
                     verification_evidence = '[]'::jsonb,
                     updated_at = now()
-                where suggestion.id = (select id from existing)
+                where suggestion.id = (
+                    select id
+                    from matched
+                    where status in ('pending', 'rejected')
+                      and not exists (select 1 from matched where status = 'accepted')
+                    order by case when status = 'pending' then 0 else 1 end, updated_at desc
+                    limit 1
+                )
                 returning suggestion.id
             )
             insert into ai_agent_suggestions
@@ -749,6 +768,7 @@ public sealed class PostgresWhatsappConversationActionStore(NpgsqlDataSource dat
                 @title, @description, @dueAt, @payload, @generationModel, @promptFingerprint,
                 @confidenceScore, @generationReasons, @responseRequiredAt, now(), now()
             where not exists (select 1 from updated)
+              and not exists (select 1 from matched where status = 'accepted')
             on conflict (run_id, suggestion_type) where run_id is not null do nothing;
             """;
         await using var command = new NpgsqlCommand(sql, connection, transaction);

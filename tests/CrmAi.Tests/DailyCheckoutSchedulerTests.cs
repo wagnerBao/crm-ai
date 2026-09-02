@@ -129,7 +129,7 @@ public sealed class DailyCheckoutSchedulerTests
         var source = ReadSource("src/CrmAi.Infrastructure/DailyCheckouts/PostgresDailyCheckoutSnapshotService.cs");
 
         Assert.Contains("as newContacts", source);
-        Assert.Contains("left join opportunity_origins", source);
+        Assert.DoesNotContain("left join opportunity_origins", source);
         Assert.Contains("left join contact_origins", source);
         Assert.Contains("coalesce(co.name, nullif(btrim(c.origin), ''), 'Sem origem')", source);
         Assert.Contains("new { key = \"newContacts\"", source);
