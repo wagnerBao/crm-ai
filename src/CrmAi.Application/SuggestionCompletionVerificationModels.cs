@@ -81,6 +81,7 @@ public sealed class OpenAiSuggestionCompletionVerificationClient(
             reasoning = OpenAiGpt56RequestOptions.Reasoning(model, "low"),
             instructions = settings.Instructions,
             input = JsonSerializer.Serialize(input, JsonOptions),
+            store = false,
             text = new
             {
                 format = new

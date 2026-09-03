@@ -42,6 +42,7 @@ public sealed class OpenAiResponsesRiskAnalysisClient(
             reasoning = OpenAiGpt56RequestOptions.Reasoning(model, "low"),
             instructions = settings.Instructions,
             input = JsonSerializer.Serialize(input, SerializerOptions),
+            store = false,
             text = new
             {
                 format = new

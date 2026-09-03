@@ -335,6 +335,7 @@ public sealed class OpenAiMeetingAudioClient(
             reasoning = OpenAiGpt56RequestOptions.Reasoning(model, "low"),
             instructions = string.Join("\n\n", settings.Instructions, ActivitySuggestionInstructions, TagSuggestionInstructions, ContactFieldSuggestionInstructions, ScorecardInstructions),
             input = JsonSerializer.Serialize(input, SerializerOptions),
+            store = false,
             text = new
             {
                 format = new

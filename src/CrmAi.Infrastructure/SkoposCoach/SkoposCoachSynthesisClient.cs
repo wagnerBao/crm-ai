@@ -24,6 +24,7 @@ public sealed class SkoposCoachSynthesisClient(
             reasoning = new { effort = "low" },
             instructions = settings.Instructions,
             input = JsonSerializer.Serialize(input, JsonOptions),
+            store = false,
             text = new { format = new { type = "json_schema", name = "skopos_coach_result", strict = true, schema = Schema } }
         };
         var requestJson = JsonSerializer.Serialize(payload, JsonOptions);

@@ -79,6 +79,7 @@ public sealed class OpenAiResponsesWhatsappConversationAnalysisClient(
             reasoning = OpenAiGpt56RequestOptions.Reasoning(model, "none"),
             instructions = $"{settings.Instructions}\n\n{SemanticDeduplicationInstructions}\n\n{timeZoneInstructions}",
             input = JsonSerializer.Serialize(input, SerializerOptions),
+            store = false,
             text = new
             {
                 format = new
