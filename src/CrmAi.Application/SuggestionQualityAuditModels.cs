@@ -135,6 +135,7 @@ public sealed class OpenAiSuggestionQualityAuditClient(
         string responseBody;
         try
         {
+            await invocationLogStore.EnsureCreditsAvailableAsync(invocationContext, cancellationToken);
             response = await httpClient.SendAsync(request, cancellationToken);
             responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
         }

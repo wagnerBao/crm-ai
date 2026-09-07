@@ -3,7 +3,10 @@ namespace CrmAi.Application;
 public interface IAiAgentInvocationLogStore
 {
     Task SaveAsync(AiAgentInvocationLogEntry entry, CancellationToken cancellationToken);
+    Task EnsureCreditsAvailableAsync(AiAgentInvocationContext context, CancellationToken cancellationToken) => Task.CompletedTask;
 }
+
+public sealed class AiCreditsExhaustedException() : InvalidOperationException("AI_CREDITS_EXHAUSTED");
 
 public sealed record AiAgentInvocationContext(
     string PlatformArea,

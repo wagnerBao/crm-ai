@@ -2,7 +2,7 @@ using System.Text.Json;
 
 namespace CrmAi.Application;
 
-internal static class OpenAiInvocationLogBuilder
+public static class OpenAiInvocationLogBuilder
 {
     public static string NormalizeJsonBody(string? body)
     {

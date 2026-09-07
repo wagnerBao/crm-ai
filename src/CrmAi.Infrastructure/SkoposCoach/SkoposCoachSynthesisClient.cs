@@ -33,6 +33,7 @@ public sealed class SkoposCoachSynthesisClient(
         HttpResponseMessage? response = null;
         try
         {
+            await invocationLogStore.EnsureCreditsAvailableAsync(new AiAgentInvocationContext("skopos-coach", CompanyId: companyId), cancellationToken);
             using var request = new HttpRequestMessage(HttpMethod.Post, endpoint);
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", settings.ApiKey.Trim());
             request.Content = new StringContent(requestJson, Encoding.UTF8, "application/json");
@@ -53,11 +54,10 @@ public sealed class SkoposCoachSynthesisClient(
 
     private async Task SaveLogAsync(AiAgentRuntimeSettings settings, string model, string endpoint, string companyId, DateTime startedAt, int? status, bool success, string request, string? response, string? result, Exception? exception, CancellationToken cancellationToken)
     {
-        await invocationLogStore.SaveBestEffortAsync(new AiAgentInvocationLogEntry(
-            Guid.NewGuid(), settings.AgentKey, settings.Provider, model, "responses.skopos-coach", "skopos-coach", endpoint,
-            status, success, success ? "success" : "error", request, response, result, exception?.GetType().Name,
-            exception?.Message, new(null, null, null, null, null), new("skopos-coach", CompanyId: companyId, ContextEntityKeys: settings.ContextEntityKeys),
-            startedAt, DateTime.UtcNow), cancellationToken);
+        await invocationLogStore.SaveBestEffortAsync(OpenAiInvocationLogBuilder.Create(
+            settings, model, "responses.skopos-coach", endpoint,
+            new("skopos-coach", CompanyId: companyId, ContextEntityKeys: settings.ContextEntityKeys),
+            startedAt, status, success, request, response, result, exception, model), cancellationToken);
     }
 
     private static string ExtractOutputText(string responseBody)

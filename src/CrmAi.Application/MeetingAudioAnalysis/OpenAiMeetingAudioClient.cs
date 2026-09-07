@@ -86,6 +86,8 @@ public sealed class OpenAiMeetingAudioClient(
             throw exception;
         }
 
+        await invocationLogStore.EnsureCreditsAvailableAsync(invocationContext, cancellationToken);
+
         if (content.Length > MaxOpenAiAudioUploadBytes)
         {
             return await TranscribeSegmentedAudioWithLoggingAsync(
@@ -376,6 +378,7 @@ public sealed class OpenAiMeetingAudioClient(
         string? responseBody = null;
         try
         {
+            await invocationLogStore.EnsureCreditsAvailableAsync(invocationContext, cancellationToken);
             response = await httpClient.SendAsync(request, cancellationToken);
             responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
         }

@@ -120,6 +120,7 @@ public sealed class OpenAiResponsesWhatsappConversationAnalysisClient(
         string? responseBody = null;
         try
         {
+            await invocationLogStore.EnsureCreditsAvailableAsync(invocationContext, cancellationToken);
             response = await httpClient.SendAsync(request, cancellationToken);
             responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
         }
