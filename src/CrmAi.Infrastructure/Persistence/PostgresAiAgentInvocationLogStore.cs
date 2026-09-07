@@ -12,6 +12,8 @@ public sealed class PostgresAiAgentInvocationLogStore(NpgsqlDataSource dataSourc
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
     private readonly ConditionalWeakTable<AiAgentInvocationContext, ReservationHandle> reservations = new();
     private readonly long defaultReservationCredits = Math.Clamp(configuration.GetValue<long?>("AiCredits:DefaultReservationCredits") ?? 100, 1, 100_000);
+    private readonly bool meteringEnabled = configuration.GetValue("Saas:AiCreditMeteringEnabled", true);
+    private readonly bool enforcementEnabled = configuration.GetValue("Saas:AiCreditMeteringEnabled", true) && configuration.GetValue("Saas:AiCreditEnforcementEnabled", true);
 
     public async Task SaveAsync(AiAgentInvocationLogEntry entry, CancellationToken cancellationToken)
     {
@@ -130,7 +132,7 @@ public sealed class PostgresAiAgentInvocationLogStore(NpgsqlDataSource dataSourc
         {
             reservations.TryGetValue(entry.Context, out var reservation);
             if (entry.Success)
-                await ChargeAsync(connection, transaction, companyId, entry, reservation?.InvocationId, cancellationToken);
+                await ChargeAsync(connection, transaction, companyId, entry, reservation?.InvocationId, meteringEnabled, enforcementEnabled, cancellationToken);
             else if (reservation is not null)
                 await SetReservationStatusAsync(connection, transaction, companyId, reservation.InvocationId, "released", cancellationToken);
             reservations.Remove(entry.Context);
@@ -141,6 +143,7 @@ public sealed class PostgresAiAgentInvocationLogStore(NpgsqlDataSource dataSourc
     public async Task EnsureCreditsAvailableAsync(AiAgentInvocationContext context, CancellationToken cancellationToken)
     {
         if (!Guid.TryParse(context.CompanyId, out var companyId)) return;
+        if (!enforcementEnabled) return;
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         await LockCompanyAsync(connection, transaction, companyId, cancellationToken);
@@ -175,13 +178,18 @@ public sealed class PostgresAiAgentInvocationLogStore(NpgsqlDataSource dataSourc
         await transaction.CommitAsync(cancellationToken);
     }
 
-    private static async Task ChargeAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, Guid companyId, AiAgentInvocationLogEntry entry, string? reservationInvocationId, CancellationToken cancellationToken)
+    private static async Task ChargeAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, Guid companyId, AiAgentInvocationLogEntry entry, string? reservationInvocationId, bool meteringEnabled, bool enforcementEnabled, CancellationToken cancellationToken)
     {
         var input = Math.Max(0, (entry.Usage.PromptTokens ?? 0) - (entry.Usage.CachedPromptTokens ?? 0));
         var output = Math.Max(0, entry.Usage.CompletionTokens ?? 0);
         var cached = Math.Max(0, entry.Usage.CachedPromptTokens ?? 0);
         await LockCompanyAsync(connection, transaction, companyId, cancellationToken);
-        if (await IsUnlimitedAsync(connection, transaction, companyId, cancellationToken)) return;
+        if (await IsUnlimitedAsync(connection, transaction, companyId, cancellationToken))
+        {
+            if (meteringEnabled) await InsertUsageEventAsync(connection, transaction, companyId, entry, 0, "unlimited", cancellationToken);
+            return;
+        }
+        if (!meteringEnabled) return;
 
         decimal inputRate;
         decimal outputRate;
@@ -201,6 +209,8 @@ public sealed class PostgresAiAgentInvocationLogStore(NpgsqlDataSource dataSourc
             inputRate = reader.GetDecimal(0); outputRate = reader.GetDecimal(1); cachedRate = reader.GetDecimal(2);
         }
         var requestedCharge = Math.Max(1L, (long)Math.Ceiling((input * inputRate + output * outputRate + cached * cachedRate) / 1000m));
+        await InsertUsageEventAsync(connection, transaction, companyId, entry, requestedCharge, enforcementEnabled ? "enforced" : "shadow", cancellationToken);
+        if (!enforcementEnabled) return;
         var remaining = requestedCharge;
         var lots = new List<(Guid Id, long Balance)>();
         await using (var lotsCommand = new NpgsqlCommand("""
@@ -267,6 +277,26 @@ public sealed class PostgresAiAgentInvocationLogStore(NpgsqlDataSource dataSourc
         command.Parameters.AddWithValue("status", status);
         command.Parameters.AddWithValue("companyId", companyId);
         command.Parameters.AddWithValue("invocationId", invocationId);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task InsertUsageEventAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, Guid companyId, AiAgentInvocationLogEntry entry, long credits, string mode, CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand("""
+            insert into ai_usage_events(company_id, invocation_id, provider, model, operation, input_tokens, output_tokens, cached_input_tokens, calculated_credits, metering_mode)
+            values(@companyId, @invocationId, @provider, @model, @operation, @input, @output, @cached, @credits, @mode)
+            on conflict(company_id, invocation_id) do nothing;
+            """, connection, transaction);
+        command.Parameters.AddWithValue("companyId", companyId);
+        command.Parameters.AddWithValue("invocationId", entry.Id.ToString("N"));
+        command.Parameters.AddWithValue("provider", entry.Provider);
+        command.Parameters.AddWithValue("model", entry.Model);
+        command.Parameters.AddWithValue("operation", entry.Operation);
+        command.Parameters.AddWithValue("input", Math.Max(0, entry.Usage.PromptTokens ?? 0));
+        command.Parameters.AddWithValue("output", Math.Max(0, entry.Usage.CompletionTokens ?? 0));
+        command.Parameters.AddWithValue("cached", Math.Max(0, entry.Usage.CachedPromptTokens ?? 0));
+        command.Parameters.AddWithValue("credits", credits);
+        command.Parameters.AddWithValue("mode", mode);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
