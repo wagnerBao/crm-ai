@@ -1,13 +1,17 @@
 using System.Text.Json;
+using System.Runtime.CompilerServices;
 using CrmAi.Application;
 using Npgsql;
 using NpgsqlTypes;
+using Microsoft.Extensions.Configuration;
 
 namespace CrmAi.Infrastructure.Persistence;
 
-public sealed class PostgresAiAgentInvocationLogStore(NpgsqlDataSource dataSource) : IAiAgentInvocationLogStore
+public sealed class PostgresAiAgentInvocationLogStore(NpgsqlDataSource dataSource, IConfiguration configuration) : IAiAgentInvocationLogStore
 {
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
+    private readonly ConditionalWeakTable<AiAgentInvocationContext, ReservationHandle> reservations = new();
+    private readonly long defaultReservationCredits = Math.Clamp(configuration.GetValue<long?>("AiCredits:DefaultReservationCredits") ?? 100, 1, 100_000);
 
     public async Task SaveAsync(AiAgentInvocationLogEntry entry, CancellationToken cancellationToken)
     {
@@ -122,9 +126,14 @@ public sealed class PostgresAiAgentInvocationLogStore(NpgsqlDataSource dataSourc
         command.Parameters.AddWithValue("durationMs", entry.DurationMs);
 
         await command.ExecuteNonQueryAsync(cancellationToken);
-        if (entry.Success && Guid.TryParse(entry.Context.CompanyId, out var companyId))
+        if (Guid.TryParse(entry.Context.CompanyId, out var companyId))
         {
-            await ChargeAsync(connection, transaction, companyId, entry, cancellationToken);
+            reservations.TryGetValue(entry.Context, out var reservation);
+            if (entry.Success)
+                await ChargeAsync(connection, transaction, companyId, entry, reservation?.InvocationId, cancellationToken);
+            else if (reservation is not null)
+                await SetReservationStatusAsync(connection, transaction, companyId, reservation.InvocationId, "released", cancellationToken);
+            reservations.Remove(entry.Context);
         }
         await transaction.CommitAsync(cancellationToken);
     }
@@ -132,33 +141,47 @@ public sealed class PostgresAiAgentInvocationLogStore(NpgsqlDataSource dataSourc
     public async Task EnsureCreditsAvailableAsync(AiAgentInvocationContext context, CancellationToken cancellationToken)
     {
         if (!Guid.TryParse(context.CompanyId, out var companyId)) return;
-        const string sql = """
-            select exists(select 1 from saas_contracts where company_id = @companyId and status = 'legacy_unlimited')
-                or exists(select 1 from ai_credit_lots where company_id = @companyId and remaining_credits > 0 and (expires_at is null or expires_at > now()));
-            """;
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await using var command = new NpgsqlCommand(sql, connection);
-        command.Parameters.AddWithValue("companyId", companyId);
-        if (!Convert.ToBoolean(await command.ExecuteScalarAsync(cancellationToken))) throw new AiCreditsExhaustedException();
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await LockCompanyAsync(connection, transaction, companyId, cancellationToken);
+        if (await IsUnlimitedAsync(connection, transaction, companyId, cancellationToken))
+        {
+            await transaction.CommitAsync(cancellationToken);
+            return;
+        }
+        await using (var expire = new NpgsqlCommand("update ai_credit_reservations set status = 'expired', updated_at = now() where company_id = @companyId and status = 'reserved' and expires_at <= now();", connection, transaction))
+        {
+            expire.Parameters.AddWithValue("companyId", companyId);
+            await expire.ExecuteNonQueryAsync(cancellationToken);
+        }
+        long available;
+        await using (var balance = new NpgsqlCommand("select coalesce(sum(remaining_credits), 0) - coalesce((select sum(reserved_credits) from ai_credit_reservations where company_id = @companyId and status = 'reserved' and expires_at > now()), 0) from ai_credit_lots where company_id = @companyId and remaining_credits > 0 and (expires_at is null or expires_at > now());", connection, transaction))
+        {
+            balance.Parameters.AddWithValue("companyId", companyId);
+            available = Convert.ToInt64(await balance.ExecuteScalarAsync(cancellationToken));
+        }
+        if (available <= 0) throw new AiCreditsExhaustedException();
+        var invocationId = Guid.NewGuid().ToString("N");
+        var reservedCredits = Math.Min(defaultReservationCredits, available);
+        await using (var reserve = new NpgsqlCommand("insert into ai_credit_reservations(company_id, invocation_id, reserved_credits, status, expires_at) values(@companyId, @invocationId, @reservedCredits, 'reserved', now() + interval '30 minutes');", connection, transaction))
+        {
+            reserve.Parameters.AddWithValue("companyId", companyId);
+            reserve.Parameters.AddWithValue("invocationId", invocationId);
+            reserve.Parameters.AddWithValue("reservedCredits", reservedCredits);
+            await reserve.ExecuteNonQueryAsync(cancellationToken);
+        }
+        reservations.Remove(context);
+        reservations.Add(context, new ReservationHandle(invocationId));
+        await transaction.CommitAsync(cancellationToken);
     }
 
-    private static async Task ChargeAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, Guid companyId, AiAgentInvocationLogEntry entry, CancellationToken cancellationToken)
+    private static async Task ChargeAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, Guid companyId, AiAgentInvocationLogEntry entry, string? reservationInvocationId, CancellationToken cancellationToken)
     {
         var input = Math.Max(0, (entry.Usage.PromptTokens ?? 0) - (entry.Usage.CachedPromptTokens ?? 0));
         var output = Math.Max(0, entry.Usage.CompletionTokens ?? 0);
         var cached = Math.Max(0, entry.Usage.CachedPromptTokens ?? 0);
-        if (input + output + cached == 0) return;
-
-        await using (var lockCommand = new NpgsqlCommand("select pg_advisory_xact_lock(hashtextextended(@companyId::text, 0));", connection, transaction))
-        {
-            lockCommand.Parameters.AddWithValue("companyId", companyId);
-            await lockCommand.ExecuteNonQueryAsync(cancellationToken);
-        }
-        await using (var unlimitedCommand = new NpgsqlCommand("select exists(select 1 from saas_contracts where company_id = @companyId and status = 'legacy_unlimited');", connection, transaction))
-        {
-            unlimitedCommand.Parameters.AddWithValue("companyId", companyId);
-            if (Convert.ToBoolean(await unlimitedCommand.ExecuteScalarAsync(cancellationToken))) return;
-        }
+        await LockCompanyAsync(connection, transaction, companyId, cancellationToken);
+        if (await IsUnlimitedAsync(connection, transaction, companyId, cancellationToken)) return;
 
         decimal inputRate;
         decimal outputRate;
@@ -190,7 +213,14 @@ public sealed class PostgresAiAgentInvocationLogStore(NpgsqlDataSource dataSourc
             await using var reader = await lotsCommand.ExecuteReaderAsync(cancellationToken);
             while (await reader.ReadAsync(cancellationToken)) lots.Add((reader.GetGuid(0), reader.GetInt64(1)));
         }
-        var available = lots.Sum(lot => lot.Balance);
+        var otherReservations = 0L;
+        await using (var reservedCommand = new NpgsqlCommand("select coalesce(sum(reserved_credits), 0) from ai_credit_reservations where company_id = @companyId and status = 'reserved' and expires_at > now() and (@invocationId is null or invocation_id <> @invocationId);", connection, transaction))
+        {
+            reservedCommand.Parameters.AddWithValue("companyId", companyId);
+            reservedCommand.Parameters.AddWithValue("invocationId", (object?)reservationInvocationId ?? DBNull.Value);
+            otherReservations = Convert.ToInt64(await reservedCommand.ExecuteScalarAsync(cancellationToken));
+        }
+        var available = Math.Max(0, lots.Sum(lot => lot.Balance) - otherReservations);
         var charge = Math.Min(requestedCharge, available);
         remaining = charge;
         foreach (var lot in lots)
@@ -213,6 +243,31 @@ public sealed class PostgresAiAgentInvocationLogStore(NpgsqlDataSource dataSourc
         ledger.Parameters.AddWithValue("description", $"{entry.Operation} · {entry.Provider}/{entry.Model}");
         ledger.Parameters.AddWithValue("invocationId", entry.Id.ToString("N"));
         await ledger.ExecuteNonQueryAsync(cancellationToken);
+        if (reservationInvocationId is not null)
+            await SetReservationStatusAsync(connection, transaction, companyId, reservationInvocationId, "settled", cancellationToken);
+    }
+
+    private static async Task LockCompanyAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, Guid companyId, CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand("select pg_advisory_xact_lock(hashtextextended(@companyId::text, 0));", connection, transaction);
+        command.Parameters.AddWithValue("companyId", companyId);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task<bool> IsUnlimitedAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, Guid companyId, CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand("select exists(select 1 from saas_contracts where company_id = @companyId and status = 'legacy_unlimited');", connection, transaction);
+        command.Parameters.AddWithValue("companyId", companyId);
+        return Convert.ToBoolean(await command.ExecuteScalarAsync(cancellationToken));
+    }
+
+    private static async Task SetReservationStatusAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, Guid companyId, string invocationId, string status, CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand("update ai_credit_reservations set status = @status, updated_at = now() where company_id = @companyId and invocation_id = @invocationId and status = 'reserved';", connection, transaction);
+        command.Parameters.AddWithValue("status", status);
+        command.Parameters.AddWithValue("companyId", companyId);
+        command.Parameters.AddWithValue("invocationId", invocationId);
+        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static string? SerializeMetadata(IReadOnlyDictionary<string, object?>? metadata) =>
@@ -228,4 +283,6 @@ public sealed class PostgresAiAgentInvocationLogStore(NpgsqlDataSource dataSourc
     {
         command.Parameters.Add(name, type).Value = value is null ? DBNull.Value : value;
     }
+
+    private sealed record ReservationHandle(string InvocationId);
 }
