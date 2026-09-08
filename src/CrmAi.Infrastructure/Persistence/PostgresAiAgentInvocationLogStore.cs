@@ -13,7 +13,7 @@ public sealed class PostgresAiAgentInvocationLogStore(NpgsqlDataSource dataSourc
     private readonly ConditionalWeakTable<AiAgentInvocationContext, ReservationHandle> reservations = new();
     private readonly long defaultReservationCredits = Math.Clamp(configuration.GetValue<long?>("AiCredits:DefaultReservationCredits") ?? 100, 1, 100_000);
     private readonly bool meteringEnabled = configuration.GetValue("Saas:AiCreditMeteringEnabled", true);
-    private readonly bool enforcementEnabled = configuration.GetValue("Saas:AiCreditMeteringEnabled", true) && configuration.GetValue("Saas:AiCreditEnforcementEnabled", true);
+    private readonly bool enforcementEnabled = configuration.GetValue("Saas:AiCreditMeteringEnabled", true) && configuration.GetValue("Saas:AiCreditEnforcementEnabled", false);
 
     public async Task SaveAsync(AiAgentInvocationLogEntry entry, CancellationToken cancellationToken)
     {
@@ -184,11 +184,7 @@ public sealed class PostgresAiAgentInvocationLogStore(NpgsqlDataSource dataSourc
         var output = Math.Max(0, entry.Usage.CompletionTokens ?? 0);
         var cached = Math.Max(0, entry.Usage.CachedPromptTokens ?? 0);
         await LockCompanyAsync(connection, transaction, companyId, cancellationToken);
-        if (await IsUnlimitedAsync(connection, transaction, companyId, cancellationToken))
-        {
-            if (meteringEnabled) await InsertUsageEventAsync(connection, transaction, companyId, entry, 0, "unlimited", cancellationToken);
-            return;
-        }
+        var unlimited = await IsUnlimitedAsync(connection, transaction, companyId, cancellationToken);
         if (!meteringEnabled) return;
 
         decimal inputRate;
@@ -209,8 +205,8 @@ public sealed class PostgresAiAgentInvocationLogStore(NpgsqlDataSource dataSourc
             inputRate = reader.GetDecimal(0); outputRate = reader.GetDecimal(1); cachedRate = reader.GetDecimal(2);
         }
         var requestedCharge = Math.Max(1L, (long)Math.Ceiling((input * inputRate + output * outputRate + cached * cachedRate) / 1000m));
-        await InsertUsageEventAsync(connection, transaction, companyId, entry, requestedCharge, enforcementEnabled ? "enforced" : "shadow", cancellationToken);
-        if (!enforcementEnabled) return;
+        await InsertUsageEventAsync(connection, transaction, companyId, entry, requestedCharge, unlimited ? "unlimited" : enforcementEnabled ? "enforced" : "shadow", cancellationToken);
+        if (unlimited || !enforcementEnabled) return;
         var remaining = requestedCharge;
         var lots = new List<(Guid Id, long Balance)>();
         await using (var lotsCommand = new NpgsqlCommand("""

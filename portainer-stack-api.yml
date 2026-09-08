@@ -9,6 +9,8 @@ services:
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
       - ASPNETCORE_URLS=http://+:8093
+      - Saas__AiCreditMeteringEnabled=true
+      - Saas__AiCreditEnforcementEnabled=false
       - ConnectionStrings__CrmDatabase=Host=postgres;Port=5432;Database=crmdb;Username=crm_user;Password=crmPostgresPasS
       - RabbitMQ__Uri=amqp://admin:rabbitBrokerPasS@5.161.71.93:5672/
       - RabbitMQ__OpportunityAnalysisQueue=crm.projections.opportunity-analysis

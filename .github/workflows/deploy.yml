@@ -94,6 +94,8 @@ jobs:
               --detach=false \
               --with-registry-auth \
               --update-failure-action rollback \
+              --env-add Saas__AiCreditMeteringEnabled=true \
+              --env-add Saas__AiCreditEnforcementEnabled=false \
               --image "$IMAGE_NAME" \
               "$SERVICE_NAME"; then
               echo "::group::Status detalhado do servico"
