@@ -13,7 +13,7 @@ public sealed class PostgresAiAgentInvocationLogStore(NpgsqlDataSource dataSourc
     private readonly ConditionalWeakTable<AiAgentInvocationContext, ReservationHandle> reservations = new();
     private readonly long defaultReservationCredits = Math.Clamp(configuration.GetValue<long?>("AiCredits:DefaultReservationCredits") ?? 100, 1, 100_000);
     private readonly bool meteringEnabled = configuration.GetValue("Saas:AiCreditMeteringEnabled", true);
-    private readonly bool enforcementEnabled = configuration.GetValue("Saas:AiCreditMeteringEnabled", true) && configuration.GetValue("Saas:AiCreditEnforcementEnabled", false);
+    private readonly bool enforcementEnabled = configuration.GetValue("Saas:AiCreditMeteringEnabled", true) && configuration.GetValue("Saas:AiCreditEnforcementEnabled", true);
 
     public async Task SaveAsync(AiAgentInvocationLogEntry entry, CancellationToken cancellationToken)
     {
