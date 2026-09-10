@@ -58,6 +58,10 @@ public sealed class RabbitMqOptions
     public string DailyCheckinQueue { get => RabbitMqEnvironmentName.QueueName(_dailyCheckinQueue); init => _dailyCheckinQueue = value; }
     public string DailyCheckoutQueue { get => RabbitMqEnvironmentName.QueueName(_dailyCheckoutQueue); init => _dailyCheckoutQueue = value; }
     public string GamificationQueue { get => RabbitMqEnvironmentName.QueueName(_gamificationQueue); init => _gamificationQueue = value; }
+    private string _riskAnalysisQueue = "crm.projections.risk-analysis";
+    public string RiskAnalysisQueue { get => RabbitMqEnvironmentName.QueueName(_riskAnalysisQueue); init => _riskAnalysisQueue = value; }
+    public int RiskAnalysisConsumerCount { get; init; } = 2;
+    public int RiskAnalysisSchedulerCount { get; init; } = 1;
     public ushort PrefetchCount { get; init; } = 1;
     public bool RequeueOnFailure { get; init; }
     public string DeadLetterExchange { get => RabbitMqEnvironmentName.ExchangeName(_deadLetterExchange); init => _deadLetterExchange = value; }

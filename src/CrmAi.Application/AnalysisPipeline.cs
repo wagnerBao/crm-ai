@@ -143,8 +143,7 @@ public interface IGamificationProjectionService
 
 public sealed class OpportunityAnalysisEventProcessor(
     IOpportunityContextRepository contextRepository,
-    IRiskAnalysisAgent riskAnalysisAgent,
-    IAnalysisResultStore resultStore,
+    IRiskAnalysisScheduler riskAnalysisScheduler,
     IWhatsappConversationAnalysisAgent whatsappConversationAnalysisAgent,
     IWhatsappConversationActionStore whatsappConversationActionStore,
     IWhatsappConversationAnalysisScheduler whatsappConversationAnalysisScheduler,
@@ -230,15 +229,13 @@ public sealed class OpportunityAnalysisEventProcessor(
             return;
         }
 
-        var result = await riskAnalysisAgent.AnalyzeAsync(context, cancellationToken);
-        await resultStore.SaveRiskAnalysisAsync(context, result, cancellationToken);
+        await riskAnalysisScheduler.ScheduleAsync(context, cancellationToken);
     }
 }
 
 public sealed class ActivityAnalysisEventProcessor(
     IOpportunityContextRepository contextRepository,
-    IRiskAnalysisAgent riskAnalysisAgent,
-    IAnalysisResultStore resultStore) : IActivityAnalysisEventProcessor
+    IRiskAnalysisScheduler riskAnalysisScheduler) : IActivityAnalysisEventProcessor
 {
     public async Task ProcessAsync(OpportunityEvent activityEvent, CancellationToken cancellationToken)
     {
@@ -252,8 +249,7 @@ public sealed class ActivityAnalysisEventProcessor(
             return;
         }
 
-        var result = await riskAnalysisAgent.AnalyzeAsync(context, cancellationToken);
-        await resultStore.SaveRiskAnalysisAsync(context, result, cancellationToken);
+        await riskAnalysisScheduler.ScheduleAsync(context, cancellationToken);
     }
 }
 

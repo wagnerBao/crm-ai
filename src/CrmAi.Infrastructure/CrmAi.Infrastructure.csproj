@@ -24,4 +24,7 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <ItemGroup>
+    <EmbeddedResource Include="../../database/20260909_create_risk_analysis_state.sql" LogicalName="RiskAnalysisState.sql" />
+  </ItemGroup>
 </Project>

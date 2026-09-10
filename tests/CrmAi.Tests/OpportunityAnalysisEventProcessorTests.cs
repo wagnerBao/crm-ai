@@ -9,13 +9,12 @@ public sealed class OpportunityAnalysisEventProcessorTests
     public async Task ProcessAsync_SchedulesWhatsappConversationAnalysis_ForWhatsappMessageEvents()
     {
         var contextRepository = new CountingOpportunityContextRepository();
-        var riskAgent = new CountingRiskAnalysisAgent();
+        var riskAgent = new CountingRiskAnalysisScheduler();
         var resultStore = new CountingAnalysisResultStore();
         var scheduler = new CountingWhatsappConversationAnalysisScheduler();
         var processor = new OpportunityAnalysisEventProcessor(
             contextRepository,
             riskAgent,
-            resultStore,
             new NullWhatsappConversationAnalysisAgent(),
             new CountingWhatsappConversationActionStore(),
             scheduler,
@@ -39,8 +38,7 @@ public sealed class OpportunityAnalysisEventProcessorTests
         var batchEvent = CreateEvent("opportunity.instagram.conversation.batch");
         var processor = new OpportunityAnalysisEventProcessor(
             new CountingOpportunityContextRepository(),
-            new CountingRiskAnalysisAgent(),
-            new CountingAnalysisResultStore(),
+            new CountingRiskAnalysisScheduler(),
             new NullWhatsappConversationAnalysisAgent(),
             new CountingWhatsappConversationActionStore(),
             new CountingWhatsappConversationAnalysisScheduler(),
@@ -57,7 +55,7 @@ public sealed class OpportunityAnalysisEventProcessorTests
     }
 
     [Fact]
-    public async Task ProcessAsync_AppliesWhatsappResultAndRunsRiskAnalysis_ForWhatsappConversationBatchEvents()
+    public async Task ProcessAsync_AppliesWhatsappResultAndSchedulesRiskAnalysis_ForWhatsappConversationBatchEvents()
     {
         var initialContext = CreateContext(CreateEvent("opportunity.whatsapp.conversation.batch"));
         var refreshedContext = initialContext with
@@ -68,7 +66,7 @@ public sealed class OpportunityAnalysisEventProcessorTests
             ]
         };
         var contextRepository = new CountingOpportunityContextRepository(initialContext, refreshedContext);
-        var riskAgent = new CountingRiskAnalysisAgent();
+        var riskAgent = new CountingRiskAnalysisScheduler();
         var resultStore = new CountingAnalysisResultStore();
         var whatsappAgent = new StubWhatsappConversationAnalysisAgent(new WhatsappConversationAnalysisResult(
             "Cliente pediu retorno com proposta.",
@@ -84,7 +82,6 @@ public sealed class OpportunityAnalysisEventProcessorTests
         var processor = new OpportunityAnalysisEventProcessor(
             contextRepository,
             riskAgent,
-            resultStore,
             whatsappAgent,
             actionStore,
             new CountingWhatsappConversationAnalysisScheduler(),
@@ -98,22 +95,21 @@ public sealed class OpportunityAnalysisEventProcessorTests
         Assert.Same(initialContext, actionStore.LastContext);
         Assert.Equal(1, riskAgent.Calls);
         Assert.Same(refreshedContext, riskAgent.LastContext);
-        Assert.Equal(1, resultStore.Calls);
+        Assert.Equal(0, resultStore.Calls);
     }
 
     [Fact]
-    public async Task ProcessAsync_RunsRiskAnalysisWithoutApplyingWhatsappStore_WhenWhatsappAgentReturnsNull()
+    public async Task ProcessAsync_SchedulesRiskAnalysisWithoutApplyingWhatsappStore_WhenWhatsappAgentReturnsNull()
     {
         var context = CreateContext(CreateEvent("opportunity.whatsapp.conversation.batch"));
         var contextRepository = new CountingOpportunityContextRepository(context);
-        var riskAgent = new CountingRiskAnalysisAgent();
+        var riskAgent = new CountingRiskAnalysisScheduler();
         var resultStore = new CountingAnalysisResultStore();
         var whatsappAgent = new StubWhatsappConversationAnalysisAgent(null);
         var actionStore = new CountingWhatsappConversationActionStore();
         var processor = new OpportunityAnalysisEventProcessor(
             contextRepository,
             riskAgent,
-            resultStore,
             whatsappAgent,
             actionStore,
             new CountingWhatsappConversationAnalysisScheduler(),
@@ -126,7 +122,7 @@ public sealed class OpportunityAnalysisEventProcessorTests
         Assert.Equal(0, actionStore.Calls);
         Assert.Equal(1, riskAgent.Calls);
         Assert.Same(context, riskAgent.LastContext);
-        Assert.Equal(1, resultStore.Calls);
+        Assert.Equal(0, resultStore.Calls);
     }
 
     [Theory]
@@ -137,12 +133,11 @@ public sealed class OpportunityAnalysisEventProcessorTests
     public async Task ProcessAsync_DoesNotRunOpportunityRiskAnalysis_ForActivityEvents(string eventType)
     {
         var contextRepository = new CountingOpportunityContextRepository();
-        var riskAgent = new CountingRiskAnalysisAgent();
+        var riskAgent = new CountingRiskAnalysisScheduler();
         var resultStore = new CountingAnalysisResultStore();
         var processor = new OpportunityAnalysisEventProcessor(
             contextRepository,
             riskAgent,
-            resultStore,
             new NullWhatsappConversationAnalysisAgent(),
             new CountingWhatsappConversationActionStore(),
             new CountingWhatsappConversationAnalysisScheduler(),
@@ -168,20 +163,20 @@ public sealed class OpportunityAnalysisEventProcessorTests
     [InlineData("opportunity.activity.updated")]
     [InlineData("activity.created")]
     [InlineData("activity.updated")]
-    public async Task ActivityProcessor_RunsOpportunityRiskAnalysis_ForActivityEvents(string eventType)
+    public async Task ActivityProcessor_SchedulesOpportunityRiskAnalysis_ForActivityEvents(string eventType)
     {
         var activityEvent = CreateEvent(eventType);
         var context = CreateContext(activityEvent);
         var contextRepository = new CountingOpportunityContextRepository(context);
-        var riskAgent = new CountingRiskAnalysisAgent();
+        var riskAgent = new CountingRiskAnalysisScheduler();
         var resultStore = new CountingAnalysisResultStore();
-        var processor = new ActivityAnalysisEventProcessor(contextRepository, riskAgent, resultStore);
+        var processor = new ActivityAnalysisEventProcessor(contextRepository, riskAgent);
 
         await processor.ProcessAsync(activityEvent, CancellationToken.None);
 
         Assert.Equal(1, contextRepository.Calls);
         Assert.Equal(1, riskAgent.Calls);
-        Assert.Equal(1, resultStore.Calls);
+        Assert.Equal(0, resultStore.Calls);
         Assert.Same(context, riskAgent.LastContext);
     }
 
@@ -192,12 +187,11 @@ public sealed class OpportunityAnalysisEventProcessorTests
     {
         var opportunityEvent = CreateEvent("opportunity.updated");
         var opportunityContext = CreateContext(opportunityEvent, status);
-        var opportunityRiskAgent = new CountingRiskAnalysisAgent();
+        var opportunityRiskAgent = new CountingRiskAnalysisScheduler();
         var opportunityStore = new CountingAnalysisResultStore();
         var opportunityProcessor = new OpportunityAnalysisEventProcessor(
             new CountingOpportunityContextRepository(opportunityContext),
             opportunityRiskAgent,
-            opportunityStore,
             new NullWhatsappConversationAnalysisAgent(),
             new CountingWhatsappConversationActionStore(),
             new CountingWhatsappConversationAnalysisScheduler(),
@@ -206,12 +200,11 @@ public sealed class OpportunityAnalysisEventProcessorTests
         await opportunityProcessor.ProcessAsync(opportunityEvent, CancellationToken.None);
 
         var activityEvent = CreateEvent("activity.updated");
-        var activityRiskAgent = new CountingRiskAnalysisAgent();
+        var activityRiskAgent = new CountingRiskAnalysisScheduler();
         var activityStore = new CountingAnalysisResultStore();
         var activityProcessor = new ActivityAnalysisEventProcessor(
             new CountingOpportunityContextRepository(CreateContext(activityEvent, status)),
-            activityRiskAgent,
-            activityStore);
+            activityRiskAgent);
 
         await activityProcessor.ProcessAsync(activityEvent, CancellationToken.None);
 
@@ -222,18 +215,17 @@ public sealed class OpportunityAnalysisEventProcessorTests
     }
 
     [Fact]
-    public async Task ProcessAsync_RunsOpportunityRiskAnalysis_AfterMeetingAudioTranscription()
+    public async Task ProcessAsync_SchedulesOpportunityRiskAnalysis_AfterMeetingAudioTranscription()
     {
         var meetingEvent = CreateEvent("opportunity.meeting_audio.recording.created");
         var context = CreateContext(meetingEvent);
         var contextRepository = new CountingOpportunityContextRepository(context);
-        var riskAgent = new CountingRiskAnalysisAgent();
+        var riskAgent = new CountingRiskAnalysisScheduler();
         var resultStore = new CountingAnalysisResultStore();
         var meetingService = new CountingMeetingAudioAnalysisService();
         var processor = new OpportunityAnalysisEventProcessor(
             contextRepository,
             riskAgent,
-            resultStore,
             new NullWhatsappConversationAnalysisAgent(),
             new CountingWhatsappConversationActionStore(),
             new CountingWhatsappConversationAnalysisScheduler(),
@@ -244,7 +236,7 @@ public sealed class OpportunityAnalysisEventProcessorTests
         Assert.Equal(1, meetingService.Calls);
         Assert.Equal(1, contextRepository.Calls);
         Assert.Equal(1, riskAgent.Calls);
-        Assert.Equal(1, resultStore.Calls);
+        Assert.Equal(0, resultStore.Calls);
     }
 
     [Fact]
@@ -259,12 +251,11 @@ public sealed class OpportunityAnalysisEventProcessorTests
             new Dictionary<string, object?> { ["recordingId"] = Guid.NewGuid().ToString(), ["sourceKind"] = "whatsapp_call" });
         var contextRepository = new CountingOpportunityContextRepository();
         var meetingService = new CountingMeetingAudioAnalysisService();
-        var riskAgent = new CountingRiskAnalysisAgent();
+        var riskAgent = new CountingRiskAnalysisScheduler();
         var resultStore = new CountingAnalysisResultStore();
         var processor = new OpportunityAnalysisEventProcessor(
             contextRepository,
             riskAgent,
-            resultStore,
             new NullWhatsappConversationAnalysisAgent(),
             new CountingWhatsappConversationActionStore(),
             new CountingWhatsappConversationAnalysisScheduler(),
@@ -296,21 +287,16 @@ public sealed class OpportunityAnalysisEventProcessorTests
         }
     }
 
-    private sealed class CountingRiskAnalysisAgent : IRiskAnalysisAgent
+    private sealed class CountingRiskAnalysisScheduler : IRiskAnalysisScheduler
     {
         public int Calls { get; private set; }
         public OpportunityAnalysisContext? LastContext { get; private set; }
 
-        public Task<RiskAnalysisResult> AnalyzeAsync(OpportunityAnalysisContext context, CancellationToken cancellationToken)
+        public Task ScheduleAsync(OpportunityAnalysisContext context, CancellationToken cancellationToken)
         {
             Calls++;
             LastContext = context;
-            return Task.FromResult(new RiskAnalysisResult(
-                RiskLevel.Low,
-                0,
-                [],
-                [],
-                new OpportunityAnalysisSnapshotUpdate(DateTime.UtcNow, 0, 0, 0, 0, null, 100, 100)));
+            return Task.CompletedTask;
         }
     }
 

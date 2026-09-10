@@ -41,6 +41,14 @@ public static class DependencyInjection
         services.AddScoped<SkoposIndividualCoachProcessor>();
         services.AddHttpClient<SkoposCoachSynthesisClient>();
         services.AddHttpClient<SkoposIndividualCoachClient>();
+        services.AddScoped<IRiskAnalysisState, PostgresRiskAnalysisState>();
+        services.AddScoped<IRiskAnalysisScheduler, RabbitRiskAnalysisScheduler>();
+        services.AddSingleton<RabbitMqRiskAnalysisMessages>();
+        services.AddSingleton<IRiskAnalysisMessages>(sp => sp.GetRequiredService<RabbitMqRiskAnalysisMessages>());
+        services.AddScoped<RiskAnalysisMessageHandler>();
+        services.AddScoped<ScheduledRiskAnalysisProcessor>();
+        // Initialize coordination metadata before event consumers start accepting messages.
+        services.AddHostedService<RabbitMqRiskAnalysisHostedService>();
         services.AddHostedService<RabbitMqOpportunityAnalysisConsumer>();
         services.AddHostedService<RabbitMqActivityAnalysisConsumer>();
         services.AddHostedService<WhatsappConversationAnalysisHostedService>();
