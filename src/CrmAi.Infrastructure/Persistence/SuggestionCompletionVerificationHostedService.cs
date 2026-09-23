@@ -111,7 +111,8 @@ public sealed class SuggestionCompletionVerificationProcessor(
         string? fingerprint = null;
         try
         {
-            evidence = await LoadEvidenceAsync(suggestion, cancellationToken);
+            var settings = await settingsRepository.GetAsync(AgentKey, suggestion.CompanyId.ToString(), cancellationToken);
+            evidence = await LoadEvidenceAsync(suggestion, settings.ContextEntityKeys, cancellationToken);
             fingerprint = Fingerprint(evidence);
             if (suggestion.PreviousVerificationStatus == "unfulfilled"
                 && string.Equals(suggestion.PreviousEvidenceFingerprint, fingerprint, StringComparison.Ordinal))
@@ -127,7 +128,6 @@ public sealed class SuggestionCompletionVerificationProcessor(
             }
             else
             {
-                var settings = await settingsRepository.GetAsync(AgentKey, suggestion.CompanyId.ToString(), cancellationToken);
                 if (!settings.IsActive) throw new InvalidOperationException("O agente suggestion-completion-verification está inativo.");
                 using var payloadDocument = JsonDocument.Parse(suggestion.Payload);
                 result = await client.AnalyzeAsync(
@@ -215,8 +215,10 @@ public sealed class SuggestionCompletionVerificationProcessor(
 
     private async Task<IReadOnlyCollection<SuggestionCompletionEvidence>> LoadEvidenceAsync(
         ClaimedSuggestion suggestion,
+        IReadOnlyCollection<string> enabledContextEntityKeys,
         CancellationToken cancellationToken)
     {
+        var enabled = enabledContextEntityKeys.ToHashSet(StringComparer.OrdinalIgnoreCase);
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         const string sql = """
             with contact_scope as (
@@ -235,7 +237,8 @@ public sealed class SuggestionCompletionVerificationProcessor(
                        concat_ws(' | ', activity.title, activity.activity_type, activity.channel, activity.status,
                            nullif(activity.completed_notes, ''), nullif(activity.notes, '')) as summary
                 from activities activity
-                where activity.company_id = @companyId
+                where @includeActivities
+                  and activity.company_id = @companyId
                   and (activity.contact_id = @contactId or activity.opportunity_id in (select id from related_opportunities))
                   and greatest(activity.updated_at, activity.created_at) >= @windowStart
 
@@ -244,7 +247,8 @@ public sealed class SuggestionCompletionVerificationProcessor(
                        concat_ws(' | ', message.direction, message.message_type, nullif(message.text, ''))
                 from whatsapp_messages message
                 inner join whatsapp_conversations conversation on conversation.id = message.conversation_id
-                where conversation.company_id = @companyId and conversation.contact_id = @contactId
+                where @includeWhatsappMessages
+                  and conversation.company_id = @companyId and conversation.contact_id = @contactId
                   and message.message_at >= @windowStart
 
                 union all
@@ -252,14 +256,16 @@ public sealed class SuggestionCompletionVerificationProcessor(
                        concat_ws(' | ', message.direction, message.message_type, nullif(message.text, ''))
                 from instagram_messages message
                 inner join instagram_conversations conversation on conversation.id = message.conversation_id
-                where conversation.company_id = @companyId and conversation.contact_id = @contactId
+                where @includeInstagramMessages
+                  and conversation.company_id = @companyId and conversation.contact_id = @contactId
                   and message.message_at >= @windowStart
 
                 union all
                 select 'note:' || note.id::text, 'note', note.created_at, note.text
                 from notes note
                 cross join contact_scope contact
-                where note.company_id = @companyId
+                where @includeNotes
+                  and note.company_id = @companyId
                   and (note.contact_id = @contactId or note.account_id = contact.account_id
                        or note.opportunity_id in (select id from related_opportunities))
                   and note.created_at >= @windowStart
@@ -269,13 +275,15 @@ public sealed class SuggestionCompletionVerificationProcessor(
                        greatest(opportunity.updated_at, opportunity.created_at),
                        concat_ws(' | ', opportunity.name, opportunity.status)
                 from opportunities opportunity
-                where opportunity.id in (select id from related_opportunities)
+                where @includeOpportunities
+                  and opportunity.id in (select id from related_opportunities)
                   and greatest(opportunity.updated_at, opportunity.created_at) >= @windowStart
 
                 union all
                 select 'history:' || history.id::text, 'opportunity_history', history.created_at, history.event
                 from opportunity_history history
-                where history.company_id = @companyId
+                where @includeHistory
+                  and history.company_id = @companyId
                   and history.opportunity_id in (select id from related_opportunities)
                   and history.created_at >= @windowStart
 
@@ -285,7 +293,8 @@ public sealed class SuggestionCompletionVerificationProcessor(
                        concat_ws(' | ', nullif(recording.summary, ''), nullif(recording.transcript, ''))
                 from meeting_audio_recordings recording
                 left join activities activity on activity.id = recording.activity_id
-                where recording.company_id = @companyId
+                where @includeMeetingAnalysis
+                  and recording.company_id = @companyId
                   and (activity.contact_id = @contactId or recording.opportunity_id in (select id from related_opportunities))
                   and coalesce(recording.transcribed_at, recording.updated_at, recording.created_at) >= @windowStart
             )
@@ -299,6 +308,13 @@ public sealed class SuggestionCompletionVerificationProcessor(
         command.Parameters.AddWithValue("companyId", suggestion.CompanyId);
         command.Parameters.AddWithValue("contactId", suggestion.ContactId);
         command.Parameters.AddWithValue("windowStart", suggestion.CreatedAt.AddHours(-24));
+        command.Parameters.AddWithValue("includeActivities", enabled.Contains("activities"));
+        command.Parameters.AddWithValue("includeWhatsappMessages", enabled.Contains("whatsapp_messages"));
+        command.Parameters.AddWithValue("includeInstagramMessages", enabled.Contains("instagram_messages"));
+        command.Parameters.AddWithValue("includeNotes", enabled.Contains("notes"));
+        command.Parameters.AddWithValue("includeOpportunities", enabled.Contains("opportunities"));
+        command.Parameters.AddWithValue("includeHistory", enabled.Contains("history"));
+        command.Parameters.AddWithValue("includeMeetingAnalysis", enabled.Contains("meeting_analysis"));
         var rows = new List<SuggestionCompletionEvidence>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
