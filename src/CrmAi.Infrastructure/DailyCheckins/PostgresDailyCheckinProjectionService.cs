@@ -9,6 +9,7 @@ namespace CrmAi.Infrastructure.DailyCheckins;
 public sealed class PostgresDailyCheckinProjectionService(NpgsqlDataSource dataSource) : IDailyCheckinProjectionService
 {
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
+    private static readonly TimeZoneInfo DailyCheckinTimeZone = ResolveDailyCheckinTimeZone();
 
     public async Task ProjectAsync(OpportunityEvent opportunityEvent, CancellationToken cancellationToken)
     {
@@ -49,10 +50,8 @@ public sealed class PostgresDailyCheckinProjectionService(NpgsqlDataSource dataS
 
     private static async Task<DailyCheckinSnapshotDto> BuildSnapshotAsync(NpgsqlConnection connection, DateOnly date, string? groupId, CancellationToken cancellationToken)
     {
-        var dayStart = date.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
-        var dayEnd = dayStart.AddDays(1);
-        var monthStart = new DateTime(date.Year, date.Month, 1, 0, 0, 0, DateTimeKind.Utc);
-        var monthEnd = monthStart.AddMonths(1);
+        var (dayStart, dayEnd) = UtcBoundsForLocalDate(date);
+        var (monthStart, monthEnd) = UtcBoundsForLocalMonth(date);
 
         var goals = await ReadGoalsAsync(connection, cancellationToken);
         var groups = await ReadGroupsAsync(connection, cancellationToken);
@@ -328,7 +327,7 @@ public sealed class PostgresDailyCheckinProjectionService(NpgsqlDataSource dataS
             case "opportunity.created":
                 if (!string.IsNullOrWhiteSpace(opportunityEvent.UserId))
                 {
-                    yield return new DailyCheckinEventDelta(opportunityEvent.UserId, "opportunity", null, GetString(opportunityEvent, "pipelineId"), GetString(opportunityEvent, "stageId"), DateOnly.FromDateTime(opportunityEvent.OccurredAt.ToUniversalTime()), 1);
+                    yield return new DailyCheckinEventDelta(opportunityEvent.UserId, "opportunity", null, GetString(opportunityEvent, "pipelineId"), GetString(opportunityEvent, "stageId"), LocalDate(opportunityEvent.OccurredAt), 1);
                 }
                 break;
 
@@ -337,7 +336,7 @@ public sealed class PostgresDailyCheckinProjectionService(NpgsqlDataSource dataS
                     var actorUserId = GetString(opportunityEvent, "actorUserId") ?? opportunityEvent.UserId;
                     if (!string.IsNullOrWhiteSpace(actorUserId))
                     {
-                        var date = DateOnly.FromDateTime(opportunityEvent.OccurredAt.ToUniversalTime());
+                        var date = LocalDate(opportunityEvent.OccurredAt);
                         var pipelineId = GetString(opportunityEvent, "newPipelineId") ?? GetString(opportunityEvent, "pipelineId");
                         var stageId = GetString(opportunityEvent, "newStageId") ?? GetString(opportunityEvent, "stageId");
                         var oldStageId = GetString(opportunityEvent, "oldStageId");
@@ -360,7 +359,7 @@ public sealed class PostgresDailyCheckinProjectionService(NpgsqlDataSource dataS
                     var userId = GetString(opportunityEvent, "authorUserId") ?? opportunityEvent.UserId;
                     if (!string.IsNullOrWhiteSpace(userId))
                     {
-                        yield return new DailyCheckinEventDelta(userId, "note", null, null, null, DateOnly.FromDateTime(opportunityEvent.OccurredAt.ToUniversalTime()), 1);
+                        yield return new DailyCheckinEventDelta(userId, "note", null, null, null, LocalDate(opportunityEvent.OccurredAt), 1);
                     }
                     break;
                 }
@@ -369,9 +368,10 @@ public sealed class PostgresDailyCheckinProjectionService(NpgsqlDataSource dataS
                 {
                     var userId = opportunityEvent.UserId;
                     var status = GetString(opportunityEvent, "status");
-                    if (!string.IsNullOrWhiteSpace(userId) && IsDone(status))
+                    var channel = GetString(opportunityEvent, "channel");
+                    if (!string.IsNullOrWhiteSpace(userId) && IsDone(status) && !IsWhatsapp(channel))
                     {
-                        yield return new DailyCheckinEventDelta(userId, "activity", GetString(opportunityEvent, "channel"), null, null, GetEventDate(opportunityEvent, "dateAt"), 1);
+                        yield return new DailyCheckinEventDelta(userId, "activity", channel, null, null, GetEventDate(opportunityEvent, "dateAt"), 1);
                     }
                     break;
                 }
@@ -387,12 +387,12 @@ public sealed class PostgresDailyCheckinProjectionService(NpgsqlDataSource dataS
                     var newDate = GetEventDate(opportunityEvent, "dateAt");
                     var oldDate = GetEventDate(opportunityEvent, "oldDateAt", newDate);
 
-                    if (!string.IsNullOrWhiteSpace(oldUserId) && IsDone(oldStatus))
+                    if (!string.IsNullOrWhiteSpace(oldUserId) && IsDone(oldStatus) && !IsWhatsapp(oldChannel))
                     {
                         yield return new DailyCheckinEventDelta(oldUserId, "activity", oldChannel, null, null, oldDate, -1);
                     }
 
-                    if (!string.IsNullOrWhiteSpace(newUserId) && IsDone(newStatus))
+                    if (!string.IsNullOrWhiteSpace(newUserId) && IsDone(newStatus) && !IsWhatsapp(newChannel))
                     {
                         yield return new DailyCheckinEventDelta(newUserId, "activity", newChannel, null, null, newDate, 1);
                     }
@@ -402,14 +402,16 @@ public sealed class PostgresDailyCheckinProjectionService(NpgsqlDataSource dataS
     }
 
     private static DateOnly GetEventDate(OpportunityEvent opportunityEvent, string key) =>
-        GetEventDate(opportunityEvent, key, DateOnly.FromDateTime(opportunityEvent.OccurredAt.ToUniversalTime()));
+        GetEventDate(opportunityEvent, key, LocalDate(opportunityEvent.OccurredAt));
 
     private static DateOnly GetEventDate(OpportunityEvent opportunityEvent, string key, DateOnly fallback) =>
         GetDateTime(opportunityEvent, key) is { } dateTime
-            ? DateOnly.FromDateTime(dateTime.ToUniversalTime())
+            ? LocalDate(dateTime)
             : fallback;
 
     private static bool IsDone(string? status) => string.Equals(status, "done", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsWhatsapp(string? channel) => string.Equals(channel?.Trim(), "whatsapp", StringComparison.OrdinalIgnoreCase);
 
     private static bool IsWon(string? status) => string.Equals(status, "won", StringComparison.OrdinalIgnoreCase);
 
@@ -649,13 +651,35 @@ public sealed class PostgresDailyCheckinProjectionService(NpgsqlDataSource dataS
         }
 
         const string sql = """
-            select owner_user_id, lower(channel) as channel, count(*)::int as total
-            from activities
-            where owner_user_id = any(@userIds)
-              and date_at >= @startsAt
-              and date_at < @endsAt
-              and status = 'done'
-            group by owner_user_id, lower(channel)
+            select user_id, channel, sum(total)::int as total
+            from (
+                select owner_user_id as user_id, lower(channel) as channel, count(*)::int as total
+                from activities
+                where owner_user_id = any(@userIds)
+                  and date_at >= @startsAt
+                  and date_at < @endsAt
+                  and status = 'done'
+                  and lower(channel) <> 'whatsapp'
+                group by owner_user_id, lower(channel)
+
+                union all
+
+                select conversation.owner_user_id as user_id,
+                       'whatsapp'::text as channel,
+                       count(distinct coalesce(conversation.contact_id, conversation.id))::int as total
+                from whatsapp_messages message
+                inner join whatsapp_conversations conversation
+                    on conversation.id = message.conversation_id
+                   and conversation.company_id = message.company_id
+                where conversation.owner_user_id = any(@userIds)
+                  and conversation.is_group = false
+                  and message.direction = 'outgoing'
+                  and coalesce(message.status, '') <> 'failed'
+                  and message.message_at >= @startsAt
+                  and message.message_at < @endsAt
+                group by conversation.owner_user_id
+            ) metric
+            group by user_id, channel
             """;
 
         await using var command = CreateRangeCommand(connection, sql, startsAt, endsAt, userIds);
@@ -663,7 +687,7 @@ public sealed class PostgresDailyCheckinProjectionService(NpgsqlDataSource dataS
         var counts = new Dictionary<(string UserId, string Channel), int>();
         while (await reader.ReadAsync(cancellationToken))
         {
-            counts[(reader.GetGuid(reader.GetOrdinal("owner_user_id")).ToString(), reader.GetString(reader.GetOrdinal("channel")))] = reader.GetInt32(reader.GetOrdinal("total"));
+            counts[(reader.GetGuid(reader.GetOrdinal("user_id")).ToString(), reader.GetString(reader.GetOrdinal("channel")))] = reader.GetInt32(reader.GetOrdinal("total"));
         }
 
         return counts;
@@ -789,6 +813,37 @@ public sealed class PostgresDailyCheckinProjectionService(NpgsqlDataSource dataS
     {
         var values = results.Select(x => Math.Min(x.Percent, 100)).ToArray();
         return values.Length == 0 ? 0 : (int)Math.Round(values.Average(), MidpointRounding.AwayFromZero);
+    }
+
+    private static DateOnly LocalDate(DateTime value) =>
+        DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeFromUtc(value.ToUniversalTime(), DailyCheckinTimeZone));
+
+    private static (DateTime StartsAtUtc, DateTime EndsAtUtc) UtcBoundsForLocalDate(DateOnly date)
+    {
+        var localStart = date.ToDateTime(TimeOnly.MinValue, DateTimeKind.Unspecified);
+        return (
+            TimeZoneInfo.ConvertTimeToUtc(localStart, DailyCheckinTimeZone),
+            TimeZoneInfo.ConvertTimeToUtc(localStart.AddDays(1), DailyCheckinTimeZone));
+    }
+
+    private static (DateTime StartsAtUtc, DateTime EndsAtUtc) UtcBoundsForLocalMonth(DateOnly date)
+    {
+        var localStart = new DateTime(date.Year, date.Month, 1, 0, 0, 0, DateTimeKind.Unspecified);
+        return (
+            TimeZoneInfo.ConvertTimeToUtc(localStart, DailyCheckinTimeZone),
+            TimeZoneInfo.ConvertTimeToUtc(localStart.AddMonths(1), DailyCheckinTimeZone));
+    }
+
+    private static TimeZoneInfo ResolveDailyCheckinTimeZone()
+    {
+        try
+        {
+            return TimeZoneInfo.FindSystemTimeZoneById("America/Sao_Paulo");
+        }
+        catch (TimeZoneNotFoundException)
+        {
+            return TimeZoneInfo.FindSystemTimeZoneById("E. South America Standard Time");
+        }
     }
 
     private static string ReadGuid(NpgsqlDataReader reader, string name) => reader.GetGuid(reader.GetOrdinal(name)).ToString();

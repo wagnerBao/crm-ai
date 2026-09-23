@@ -12,6 +12,8 @@ public sealed class DailyCheckinSnapshotHostedService(
     IOptions<RabbitMqOptions> options,
     ILogger<DailyCheckinSnapshotHostedService> logger) : BackgroundService
 {
+    private static readonly TimeZoneInfo DailyCheckinTimeZone = ResolveDailyCheckinTimeZone();
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         var intervalMinutes = Math.Clamp(options.Value.DailyCheckinSnapshotIntervalMinutes, 1, 1440);
@@ -30,7 +32,8 @@ public sealed class DailyCheckinSnapshotHostedService(
         {
             await using var scope = scopeFactory.CreateAsyncScope();
             var service = scope.ServiceProvider.GetRequiredService<IDailyCheckinProjectionService>();
-            await service.GenerateDailySnapshotsAsync(DateOnly.FromDateTime(DateTime.UtcNow), cancellationToken);
+            var localNow = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, DailyCheckinTimeZone);
+            await service.GenerateDailySnapshotsAsync(DateOnly.FromDateTime(localNow), cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -38,6 +41,18 @@ public sealed class DailyCheckinSnapshotHostedService(
         catch (Exception exception)
         {
             logger.LogError(exception, "Failed to generate scheduled daily check-in snapshots.");
+        }
+    }
+
+    private static TimeZoneInfo ResolveDailyCheckinTimeZone()
+    {
+        try
+        {
+            return TimeZoneInfo.FindSystemTimeZoneById("America/Sao_Paulo");
+        }
+        catch (TimeZoneNotFoundException)
+        {
+            return TimeZoneInfo.FindSystemTimeZoneById("E. South America Standard Time");
         }
     }
 }
