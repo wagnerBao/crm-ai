@@ -69,6 +69,11 @@ public sealed class SkoposIndividualCoachClient(
         throw new InvalidOperationException("Individual Coach did not return output_text.");
     }
 
+    private static readonly object CompetencyKey = new { type = "string", @enum = new[] { "service", "cadence", "qualification", "objections", "proposal", "product", "execution" } };
+    private static readonly object ShortText = new { type = "string", maxLength = 140 };
+    private static readonly object LongText = new { type = "string", maxLength = 500 };
+    private static readonly object Score = new { type = "integer", minimum = 0, maximum = 100 };
+
     private static readonly object Schema = new
     {
         type = "object",
@@ -111,10 +116,6 @@ public sealed class SkoposIndividualCoachClient(
             }
         }
     };
-    private static readonly object CompetencyKey = new { type = "string", @enum = new[] { "service", "cadence", "qualification", "objections", "proposal", "product", "execution" } };
-    private static readonly object ShortText = new { type = "string", maxLength = 140 };
-    private static readonly object LongText = new { type = "string", maxLength = 500 };
-    private static readonly object Score = new { type = "integer", minimum = 0, maximum = 100 };
 }
 
 public sealed record IndividualCoachResult(string Summary, string Objective, IReadOnlyCollection<IndividualCoachStrength> Strengths, IReadOnlyCollection<IndividualCoachItem> Items);

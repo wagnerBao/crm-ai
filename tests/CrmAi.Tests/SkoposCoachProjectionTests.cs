@@ -50,6 +50,15 @@ public sealed class SkoposCoachProjectionTests
         Assert.Contains("trends", source);
     }
 
+    [Fact]
+    public void Daily_checkout_projection_parenthesizes_json_extraction_before_text_concatenation()
+    {
+        var sql = ReadSource("src/CrmAi.Infrastructure/SkoposCoach/SkoposCoachProjectionSql.cs");
+
+        Assert.Contains("snapshot.id::text || ':' || (performance->>'id')", sql);
+        Assert.DoesNotContain("snapshot.id::text || ':' || performance->>'id'", sql);
+    }
+
     private static string ReadSource(string relativePath)
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);

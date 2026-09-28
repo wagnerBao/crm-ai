@@ -1,4 +1,6 @@
 using CrmAi.Infrastructure.SkoposCoach;
+using System.Reflection;
+using System.Text.Json;
 
 namespace CrmAi.Tests;
 
@@ -87,5 +89,22 @@ public sealed class SkoposIndividualCoachProcessorTests
     public void Unknown_custom_scorecard_criterion_does_not_influence_the_pdi()
     {
         Assert.Null(SkoposIndividualCoachProcessor.MapCriterionToCompetency("custom_criterion", "Critério exclusivo"));
+    }
+
+    [Fact]
+    public void Individual_coach_response_schema_does_not_serialize_reused_definitions_as_null()
+    {
+        var field = typeof(SkoposIndividualCoachClient).GetField("Schema", BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(field);
+
+        using var document = JsonDocument.Parse(JsonSerializer.Serialize(field.GetValue(null)));
+        var properties = document.RootElement.GetProperty("properties");
+        var strengthProperties = properties.GetProperty("strengths").GetProperty("items").GetProperty("properties");
+        var itemProperties = properties.GetProperty("items").GetProperty("items").GetProperty("properties");
+
+        Assert.Equal("string", strengthProperties.GetProperty("key").GetProperty("type").GetString());
+        Assert.Equal("integer", strengthProperties.GetProperty("score").GetProperty("type").GetString());
+        Assert.Equal("string", itemProperties.GetProperty("competencyKey").GetProperty("type").GetString());
+        Assert.Equal("string", itemProperties.GetProperty("action").GetProperty("type").GetString());
     }
 }

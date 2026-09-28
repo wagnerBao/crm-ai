@@ -95,11 +95,11 @@ internal static class SkoposCoachProjectionSql
              owner_user_id, period_started_at, period_ended_at, occurred_at, report_summary,
              insights_json, represented_evidence_count, source_version, updated_at)
         SELECT snapshot.company_id, 'daily_checkout', 'daily-checkout', 'daily_checkout_user_performance',
-               (substr(md5(snapshot.id::text || ':' || performance->>'id'),1,8) || '-' ||
-                substr(md5(snapshot.id::text || ':' || performance->>'id'),9,4) || '-' ||
-                substr(md5(snapshot.id::text || ':' || performance->>'id'),13,4) || '-' ||
-                substr(md5(snapshot.id::text || ':' || performance->>'id'),17,4) || '-' ||
-                substr(md5(snapshot.id::text || ':' || performance->>'id'),21,12))::uuid,
+               (substr(md5(snapshot.id::text || ':' || (performance->>'id')),1,8) || '-' ||
+                substr(md5(snapshot.id::text || ':' || (performance->>'id')),9,4) || '-' ||
+                substr(md5(snapshot.id::text || ':' || (performance->>'id')),13,4) || '-' ||
+                substr(md5(snapshot.id::text || ':' || (performance->>'id')),17,4) || '-' ||
+                substr(md5(snapshot.id::text || ':' || (performance->>'id')),21,12))::uuid,
                owner.group_id, owner.id, snapshot.snapshot_at, snapshot.snapshot_at, snapshot.snapshot_at,
                left(concat_ws(' ', 'Execução diária da equipe.', 'Planejado:', performance->>'planned',
                     'Realizado:', performance->>'executed', 'Percentual:', performance->>'percent'), 4000),
