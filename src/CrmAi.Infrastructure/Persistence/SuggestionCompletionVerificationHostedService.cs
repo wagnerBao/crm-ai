@@ -65,7 +65,7 @@ public sealed class SuggestionCompletionVerificationProcessor(
         string Title,
         string Description,
         DateTime CreatedAt,
-        DateTime SuggestedDueAt,
+        DateTime? SuggestedDueAt,
         string Payload,
         string PreviousVerificationStatus,
         string? PreviousEvidenceFingerprint,
@@ -117,7 +117,7 @@ public sealed class SuggestionCompletionVerificationProcessor(
             if (suggestion.PreviousVerificationStatus == "unfulfilled"
                 && string.Equals(suggestion.PreviousEvidenceFingerprint, fingerprint, StringComparison.Ordinal))
             {
-                await RestoreUnchangedPriorityAsync(suggestion.Id, fingerprint, cancellationToken);
+                await RestoreUnchangedPriorityAsync(suggestion.Id, fingerprint, suggestion.SuggestedDueAt is not null, cancellationToken);
                 return true;
             }
 
@@ -170,13 +170,23 @@ public sealed class SuggestionCompletionVerificationProcessor(
                 select id, verification_status, evidence_fingerprint
                 from ai_agent_suggestions
                 where status = 'pending'
-                  and suggested_due_at is not null
-                  and suggested_due_at <= now() - interval '5 minutes'
+                  and (
+                    next_verification_at <= now()
+                    or suggested_due_at <= now() - interval '5 minutes'
+                    or (
+                      suggestion_type = 'activity'
+                      and suggested_due_at is null
+                      and created_at <= now() - interval '24 hours'
+                    )
+                  )
                   and (
                     verification_status <> 'processing'
                     or updated_at < now() - interval '15 minutes'
                   )
-                  and coalesce(next_verification_at, suggested_due_at + interval '5 minutes') <= now()
+                  and coalesce(
+                    next_verification_at,
+                    coalesce(suggested_due_at, created_at) + interval '5 minutes'
+                  ) <= now()
                 order by case when priority_at is null then 0 else 1 end,
                          suggested_due_at,
                          created_at
@@ -205,7 +215,7 @@ public sealed class SuggestionCompletionVerificationProcessor(
             result = new(
                 reader.GetGuid(0), reader.GetGuid(1), reader.GetGuid(2), reader.IsDBNull(3) ? null : reader.GetGuid(3),
                 reader.GetString(4), reader.GetString(5), reader.GetString(6), reader.GetDateTime(7).ToUniversalTime(),
-                reader.GetDateTime(8).ToUniversalTime(), reader.GetString(9), reader.GetString(10),
+                reader.IsDBNull(8) ? null : reader.GetDateTime(8).ToUniversalTime(), reader.GetString(9), reader.GetString(10),
                 reader.IsDBNull(11) ? null : reader.GetString(11), reader.GetInt32(12));
         }
         await reader.DisposeAsync();
@@ -381,12 +391,13 @@ public sealed class SuggestionCompletionVerificationProcessor(
                 last_verified_at = now(),
                 next_verification_at = case
                     when @result = 'fulfilled' then null
-                    when @result = 'unfulfilled' then now() + interval '15 minutes'
+                    when @result = 'unfulfilled' and @HasDueDate then now() + interval '15 minutes'
+                    when @result = 'unfulfilled' then now() + interval '24 hours'
                     else now() + interval '5 minutes' * least(12, verification_attempt_count)
                 end,
                 priority_at = case
                     when @result = 'fulfilled' then null
-                    when @result = 'unfulfilled' then coalesce(priority_at, now())
+                    when @result = 'unfulfilled' and @HasDueDate then coalesce(priority_at, now())
                     else priority_at
                 end,
                 priority_notified_at = case when @result = 'fulfilled' then null else priority_notified_at end,
@@ -402,6 +413,7 @@ public sealed class SuggestionCompletionVerificationProcessor(
         {
             update.Parameters.AddWithValue("suggestionId", suggestion.Id);
             update.Parameters.AddWithValue("result", result.Result);
+            update.Parameters.AddWithValue("HasDueDate", suggestion.SuggestedDueAt is not null);
             update.Parameters.AddWithValue("fingerprint", fingerprint);
             update.Parameters.AddWithValue("confidence", result.Confidence);
             update.Parameters.AddWithValue("reason", result.Reason);
@@ -413,14 +425,15 @@ public sealed class SuggestionCompletionVerificationProcessor(
         logger.LogInformation("Suggestion verification completed. SuggestionId={SuggestionId} Result={Result} Confidence={Confidence}", suggestion.Id, result.Result, result.Confidence);
     }
 
-    private async Task RestoreUnchangedPriorityAsync(Guid suggestionId, string fingerprint, CancellationToken cancellationToken)
+    private async Task RestoreUnchangedPriorityAsync(Guid suggestionId, string fingerprint, bool hasDueDate, CancellationToken cancellationToken)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var command = new NpgsqlCommand(
-            "update ai_agent_suggestions set verification_status='unfulfilled', evidence_fingerprint=@fingerprint, last_verified_at=now(), next_verification_at=now()+interval '15 minutes', updated_at=now() where id=@id and status='pending';",
+            "update ai_agent_suggestions set verification_status='unfulfilled', evidence_fingerprint=@fingerprint, last_verified_at=now(), next_verification_at=now()+case when @hasDueDate then interval '15 minutes' else interval '24 hours' end, updated_at=now() where id=@id and status='pending';",
             connection);
         command.Parameters.AddWithValue("id", suggestionId);
         command.Parameters.AddWithValue("fingerprint", fingerprint);
+        command.Parameters.AddWithValue("hasDueDate", hasDueDate);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 

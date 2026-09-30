@@ -19,7 +19,7 @@ public sealed record SuggestionCompletionVerificationInput(
     string Title,
     string Description,
     DateTime CreatedAt,
-    DateTime DueAt,
+    DateTime? DueAt,
     JsonElement Payload,
     IReadOnlyCollection<SuggestionCompletionEvidence> Evidence);
 

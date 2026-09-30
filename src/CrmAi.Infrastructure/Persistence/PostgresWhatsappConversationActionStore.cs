@@ -62,6 +62,8 @@ public sealed class PostgresWhatsappConversationActionStore(NpgsqlDataSource dat
 
         await PersistStructuredAnalysisAndScorecardAsync(
             connection, runId, activity.Id, companyId, userId, result, cancellationToken);
+        await SuggestionCompletionVerificationScheduler.RequestForScopeAsync(
+            connection, null, companyId, contactId, opportunityId, cancellationToken);
         await InsertAgentSuggestionsAsync(connection, companyId, contactId, conversationId, runId, opportunityId, result, cancellationToken);
         await InsertInsightAsync(connection, opportunityId, companyId, context, result, cancellationToken);
         await CompleteQueuedRunAsync(connection, runId, conversationId, result.ConversationSummary, cancellationToken);
@@ -100,6 +102,8 @@ public sealed class PostgresWhatsappConversationActionStore(NpgsqlDataSource dat
             cancellationToken);
         await PersistStructuredAnalysisAndScorecardAsync(
             connection, runId, activity.Id, companyId, userId, result, cancellationToken);
+        await SuggestionCompletionVerificationScheduler.RequestForScopeAsync(
+            connection, null, companyId, contactId, null, cancellationToken);
         await InsertAgentSuggestionsAsync(connection, companyId, contactId, conversationId, runId, null, result, cancellationToken);
         await CompleteQueuedRunAsync(connection, runId, conversationId, result.ConversationSummary, cancellationToken);
     }

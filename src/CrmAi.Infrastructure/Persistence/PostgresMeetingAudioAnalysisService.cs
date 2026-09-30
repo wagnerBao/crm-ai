@@ -846,6 +846,14 @@ public sealed class PostgresMeetingAudioAnalysisService(
             throw new InvalidOperationException($"Conversation analysis execution '{analysisResultId}' is no longer processing.");
         }
 
+        await SuggestionCompletionVerificationScheduler.RequestForScopeAsync(
+            connection,
+            transaction,
+            Guid.Parse(recording.CompanyId!),
+            Guid.TryParse(recording.ContactId, out var contactId) ? contactId : null,
+            Guid.TryParse(recording.OpportunityId, out var opportunityId) ? opportunityId : null,
+            cancellationToken);
+
         if (scorecardTemplate is not null)
         {
             await InsertScorecardAsync(connection, transaction, recording, recordingId, analysisResultId,

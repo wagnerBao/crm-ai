@@ -169,6 +169,11 @@ public sealed class WhatsappConversationPersistenceRegressionTests
 
         source.ShouldContainAll(
             "suggested_due_at <= now() - interval '5 minutes'",
+            "suggestion_type = 'activity'",
+            "suggested_due_at is null",
+            "created_at <= now() - interval '24 hours'",
+            "when @result = 'unfulfilled' and @HasDueDate",
+            "suggestion.SuggestedDueAt is not null",
             "from activities activity",
             "from whatsapp_messages message",
             "from instagram_messages message",
@@ -191,6 +196,26 @@ public sealed class WhatsappConversationPersistenceRegressionTests
             "$\"/crm/contacts/{group.Key.TargetId}\"",
             "entityType = notification.EntityType",
             "notification.created");
+    }
+
+    [Fact]
+    public void Completed_contact_or_opportunity_analyses_should_request_suggestion_reverification()
+    {
+        var scheduler = ReadSource("src/CrmAi.Infrastructure/Persistence/SuggestionCompletionVerificationScheduler.cs");
+        var whatsapp = ReadSource("src/CrmAi.Infrastructure/Persistence/PostgresWhatsappConversationActionStore.cs");
+        var instagram = ReadSource("src/CrmAi.Infrastructure/Persistence/PostgresInstagramConversationAnalysisService.cs");
+        var meeting = ReadSource("src/CrmAi.Infrastructure/Persistence/PostgresMeetingAudioAnalysisService.cs");
+        var worker = ReadSource("src/CrmAi.Infrastructure/Persistence/SuggestionCompletionVerificationHostedService.cs");
+
+        scheduler.ShouldContainAll(
+            "set next_verification_at = now()",
+            "suggestion.suggestion_type = 'activity'",
+            "from opportunity_contacts relation",
+            "opportunity.account_id = contact.account_id");
+        Assert.Contains("SuggestionCompletionVerificationScheduler.RequestForScopeAsync", whatsapp);
+        Assert.Contains("SuggestionCompletionVerificationScheduler.RequestForScopeAsync", instagram);
+        Assert.Contains("SuggestionCompletionVerificationScheduler.RequestForScopeAsync", meeting);
+        Assert.Contains("next_verification_at <= now()", worker);
     }
 
     [Fact]

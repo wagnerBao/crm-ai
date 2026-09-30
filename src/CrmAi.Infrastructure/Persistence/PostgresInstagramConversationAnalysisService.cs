@@ -222,6 +222,14 @@ public sealed class PostgresInstagramConversationAnalysisService(
                 cancellationToken);
         }
 
+        await SuggestionCompletionVerificationScheduler.RequestForScopeAsync(
+            connection,
+            transaction,
+            conversation.CompanyId,
+            conversation.ContactId,
+            opportunityId,
+            cancellationToken);
+
         await UpsertAgentSuggestionsAsync(
             connection,
             transaction,
