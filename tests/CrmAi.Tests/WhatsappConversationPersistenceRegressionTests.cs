@@ -249,6 +249,22 @@ public sealed class WhatsappConversationPersistenceRegressionTests
         instagram.ShouldContainAll("verification_status = 'pending'", "evidence_fingerprint = null", "priority_at = null");
     }
 
+    [Fact]
+    public void RiskRecommendations_Should_Materialize_A_Pending_Activity_Suggestion()
+    {
+        var store = ReadSource("src/CrmAi.Infrastructure/Persistence/PostgresAnalysisResultStore.cs");
+
+        store.ShouldContainAll(
+            "UpsertPrimaryRecommendationSuggestionAsync",
+            "agent_key = 'risk-analysis'",
+            "suggestion_type = 'activity'",
+            "status = 'pending'",
+            "payload ->> 'opportunityId'",
+            "resolved_at >= now() - interval '30 days'",
+            "pg_advisory_xact_lock",
+            "recommendationKey");
+    }
+
     private static string ReadSource(string relativePath)
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);

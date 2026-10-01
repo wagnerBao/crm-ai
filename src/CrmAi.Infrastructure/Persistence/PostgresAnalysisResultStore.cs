@@ -1,4 +1,6 @@
 using System.Text.Json;
+using System.Security.Cryptography;
+using System.Text;
 using CrmAi.Application;
 using CrmAi.Domain;
 using Npgsql;
@@ -74,9 +76,138 @@ public sealed class PostgresAnalysisResultStore(NpgsqlDataSource dataSource) : I
         }
 
         await UpsertDailySnapshotAsync(connection, transaction, context, result.SnapshotUpdate, cancellationToken);
+        await UpsertPrimaryRecommendationSuggestionAsync(connection, transaction, context, result, cancellationToken);
 
         await transaction.CommitAsync(cancellationToken);
     }
+
+    private static async Task UpsertPrimaryRecommendationSuggestionAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        OpportunityAnalysisContext context,
+        RiskAnalysisResult result,
+        CancellationToken cancellationToken)
+    {
+        var recommendation = result.Recommendations.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))?.Trim();
+        var contact = context.Contacts.FirstOrDefault(contact => Guid.TryParse(contact.Id, out _));
+        if (string.IsNullOrWhiteSpace(recommendation)
+            || contact is null
+            || !Guid.TryParse(context.Opportunity.Id, out var opportunityId)
+            || !Guid.TryParse(context.Opportunity.CompanyId, out var companyId)
+            || !Guid.TryParse(contact.Id, out var contactId))
+        {
+            return;
+        }
+
+        var recommendationKey = CreateRecommendationKey(recommendation);
+        var payload = JsonSerializer.Serialize(new
+        {
+            activityType = "follow-up",
+            channel = ResolveRecommendationChannel(context.TriggerEvent.Type),
+            notes = recommendation,
+            opportunityId = context.Opportunity.Id,
+            recommendationKey,
+            source = "risk-analysis"
+        }, SerializerOptions);
+
+        // A risk analysis is recalculated after every relevant event. Serialize per opportunity so
+        // repeated runs update the current recommendation instead of creating a noisy backlog.
+        await using (var lockCommand = new NpgsqlCommand(
+            "select pg_advisory_xact_lock(hashtextextended(@key, 0));", connection, transaction))
+        {
+            lockCommand.Parameters.AddWithValue("key", $"risk-analysis-suggestion:{companyId}:{opportunityId}");
+            await lockCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        const string sql = """
+            with recently_accepted as (
+                select id
+                from ai_agent_suggestions
+                where company_id = @companyId
+                  and agent_key = 'risk-analysis'
+                  and suggestion_type = 'activity'
+                  and status = 'accepted'
+                  and resolved_at >= now() - interval '30 days'
+                  and payload ->> 'recommendationKey' = @recommendationKey
+            ), pending as (
+                select id
+                from ai_agent_suggestions
+                where company_id = @companyId
+                  and agent_key = 'risk-analysis'
+                  and suggestion_type = 'activity'
+                  and status = 'pending'
+                  and payload ->> 'opportunityId' = @opportunityIdText
+                order by updated_at desc
+                limit 1
+            ), updated as (
+                update ai_agent_suggestions suggestion
+                set contact_id = @contactId,
+                    title = @title,
+                    description = @description,
+                    payload = @payload,
+                    confidence_score = @confidenceScore,
+                    generation_reasons = @generationReasons,
+                    verification_status = 'pending',
+                    verification_attempt_count = 0,
+                    next_verification_at = null,
+                    last_verified_at = null,
+                    priority_at = null,
+                    priority_notified_at = null,
+                    evidence_fingerprint = null,
+                    verification_confidence = null,
+                    verification_reason = null,
+                    verification_model = null,
+                    verification_evidence = '[]'::jsonb,
+                    updated_at = now()
+                where suggestion.id = (select id from pending)
+                  and not exists (select 1 from recently_accepted)
+                returning suggestion.id
+            )
+            insert into ai_agent_suggestions (
+                id, company_id, agent_key, suggestion_type, status, contact_id,
+                title, description, payload, confidence_score, generation_reasons, created_at, updated_at)
+            select
+                @id, @companyId, 'risk-analysis', 'activity', 'pending', @contactId,
+                @title, @description, @payload, @confidenceScore, @generationReasons, now(), now()
+            where not exists (select 1 from updated)
+              and not exists (select 1 from recently_accepted);
+            """;
+
+        await using var command = new NpgsqlCommand(sql, connection, transaction);
+        command.Parameters.AddWithValue("id", Guid.NewGuid());
+        command.Parameters.AddWithValue("companyId", companyId);
+        command.Parameters.AddWithValue("contactId", contactId);
+        command.Parameters.AddWithValue("opportunityIdText", opportunityId.ToString());
+        command.Parameters.AddWithValue("title", "Executar próximo passo recomendado");
+        command.Parameters.AddWithValue("description", Truncate(recommendation, 3000));
+        command.Parameters.Add("payload", NpgsqlDbType.Jsonb).Value = payload;
+        command.Parameters.AddWithValue("confidenceScore", Math.Clamp(result.RiskScore, 0, 100));
+        command.Parameters.Add("generationReasons", NpgsqlDbType.Jsonb).Value = JsonSerializer.Serialize(result.Reasons, SerializerOptions);
+        command.Parameters.AddWithValue("recommendationKey", recommendationKey);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static string ResolveRecommendationChannel(string eventType)
+    {
+        if (eventType.Contains("whatsapp", StringComparison.OrdinalIgnoreCase)) return "whatsapp";
+        if (eventType.Contains("instagram", StringComparison.OrdinalIgnoreCase)) return "instagram";
+        if (eventType.Contains("linkedin", StringComparison.OrdinalIgnoreCase)) return "linkedin";
+        if (eventType.Contains("email", StringComparison.OrdinalIgnoreCase)) return "email";
+        if (eventType.Contains("meeting", StringComparison.OrdinalIgnoreCase)) return "meeting";
+        return "call";
+    }
+
+    private static string CreateRecommendationKey(string recommendation)
+    {
+        var normalized = string.Join(' ', recommendation
+            .Trim()
+            .ToLowerInvariant()
+            .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(normalized))).ToLowerInvariant();
+    }
+
+    private static string Truncate(string value, int maximumLength) =>
+        value.Length <= maximumLength ? value : value[..maximumLength];
 
     private static async Task UpsertDailySnapshotAsync(
         NpgsqlConnection connection,
