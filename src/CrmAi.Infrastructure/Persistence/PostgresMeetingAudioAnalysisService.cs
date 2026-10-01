@@ -837,7 +837,7 @@ public sealed class PostgresMeetingAudioAnalysisService(
         resultCommand.Parameters.AddWithValue("analysisSummary", analysis.Summary.Trim());
         resultCommand.Parameters.AddWithValue("nextStep", analysis.NextStep.Trim());
         resultCommand.Parameters.AddWithValue("confidenceScore", Math.Clamp(analysis.ConfidenceScore, 0, 100));
-        resultCommand.Parameters.Add("analysisJson", NpgsqlDbType.Jsonb).Value = JsonSerializer.Serialize(analysis, JsonOptions);
+        resultCommand.Parameters.Add("analysisJson", NpgsqlDbType.Jsonb).Value = SerializeJsonb(analysis);
         resultCommand.Parameters.AddWithValue("model", settings.Model);
         resultCommand.Parameters.AddWithValue("promptFingerprint", promptFingerprint);
         resultCommand.Parameters.AddWithValue("schemaVersion", AnalysisSchemaVersion);
@@ -977,7 +977,7 @@ public sealed class PostgresMeetingAudioAnalysisService(
             command.Parameters.AddWithValue("confidence", item.Confidence);
             command.Parameters.AddWithValue("justification", item.Justification);
             command.Parameters.Add("recommendation", NpgsqlDbType.Text).Value = string.IsNullOrWhiteSpace(item.Recommendation) ? DBNull.Value : item.Recommendation;
-            command.Parameters.Add("evidenceJson", NpgsqlDbType.Jsonb).Value = JsonSerializer.Serialize(item.Evidence, JsonOptions);
+            command.Parameters.Add("evidenceJson", NpgsqlDbType.Jsonb).Value = SerializeJsonb(item.Evidence);
             await command.ExecuteNonQueryAsync(cancellationToken);
         }
     }
@@ -1030,6 +1030,40 @@ public sealed class PostgresMeetingAudioAnalysisService(
     private static string NormalizeWhitespace(string value) =>
         string.Join(' ', value.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
 
+    internal static string SerializeJsonb<T>(T value)
+    {
+        var json = JsonSerializer.Serialize(value, JsonOptions);
+        var sanitized = new StringBuilder(json.Length);
+
+        for (var index = 0; index < json.Length; index += 1)
+        {
+            if (json[index] == '\\'
+                && index + 5 < json.Length
+                && (json[index + 1] == 'u' || json[index + 1] == 'U')
+                && json[index + 2] == '0'
+                && json[index + 3] == '0'
+                && json[index + 4] == '0'
+                && json[index + 5] == '0')
+            {
+                var slashCount = 1;
+                for (var previous = index - 1; previous >= 0 && json[previous] == '\\'; previous -= 1)
+                {
+                    slashCount += 1;
+                }
+
+                if (slashCount % 2 == 1)
+                {
+                    index += 5;
+                    continue;
+                }
+            }
+
+            sanitized.Append(json[index]);
+        }
+
+        return sanitized.ToString();
+    }
+
     public static bool ShouldCreateActivitySuggestion(MeetingAudioRecordingPayload recording, OpenAiMeetingAudioAnalysisResponse analysis) =>
         (string.Equals(recording.SourceKind, "google_meet", StringComparison.OrdinalIgnoreCase)
          || string.Equals(recording.SourceKind, "whatsapp_call", StringComparison.OrdinalIgnoreCase))
@@ -1076,7 +1110,7 @@ public sealed class PostgresMeetingAudioAnalysisService(
         var channel = string.Equals(recording.SourceKind, "whatsapp_call", StringComparison.OrdinalIgnoreCase)
             ? "call"
             : "meeting";
-        var payload = JsonSerializer.Serialize(new
+        var payload = SerializeJsonb(new
         {
             activityType = "follow-up",
             channel,
@@ -1102,7 +1136,7 @@ public sealed class PostgresMeetingAudioAnalysisService(
         command.Parameters.AddWithValue("generationModel", settings.Model);
         command.Parameters.AddWithValue("confidenceScore", Math.Clamp(analysis.ConfidenceScore, 0, 100));
         command.Parameters.AddWithValue("promptFingerprint", promptFingerprint);
-        command.Parameters.Add("generationReasons", NpgsqlDbType.Jsonb).Value = JsonSerializer.Serialize(analysis.Reasons ?? []);
+        command.Parameters.Add("generationReasons", NpgsqlDbType.Jsonb).Value = SerializeJsonb(analysis.Reasons ?? []);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
@@ -1135,7 +1169,7 @@ public sealed class PostgresMeetingAudioAnalysisService(
         var sourceLabel = string.Equals(recording.SourceKind, "whatsapp_call", StringComparison.OrdinalIgnoreCase)
             ? "ligacao"
             : "reuniao";
-        var payload = JsonSerializer.Serialize(new
+        var payload = SerializeJsonb(new
         {
             targetType,
             targetId,
@@ -1158,7 +1192,7 @@ public sealed class PostgresMeetingAudioAnalysisService(
         command.Parameters.AddWithValue("generationModel", settings.Model);
         command.Parameters.AddWithValue("promptFingerprint", promptFingerprint);
         command.Parameters.AddWithValue("confidenceScore", Math.Clamp(analysis.ConfidenceScore, 0, 100));
-        command.Parameters.Add("generationReasons", NpgsqlDbType.Jsonb).Value = JsonSerializer.Serialize(analysis.Reasons ?? []);
+        command.Parameters.Add("generationReasons", NpgsqlDbType.Jsonb).Value = SerializeJsonb(analysis.Reasons ?? []);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
@@ -1236,7 +1270,7 @@ public sealed class PostgresMeetingAudioAnalysisService(
             reason = evidenceById[tag.Id].Reason.Trim(),
             evidenceExcerpt = evidenceById[tag.Id].EvidenceExcerpt.Trim()
         }).ToArray();
-        var payload = JsonSerializer.Serialize(new
+        var payload = SerializeJsonb(new
         {
             targetType = "contact",
             targetId = recording.ContactId,
@@ -1266,7 +1300,7 @@ public sealed class PostgresMeetingAudioAnalysisService(
         command.Parameters.AddWithValue("generationModel", settings.Model);
         command.Parameters.AddWithValue("promptFingerprint", promptFingerprint);
         command.Parameters.AddWithValue("confidenceScore", Math.Clamp(analysis.ConfidenceScore, 0, 100));
-        command.Parameters.Add("generationReasons", NpgsqlDbType.Jsonb).Value = JsonSerializer.Serialize(selected.Select(tag => tag.reason));
+        command.Parameters.Add("generationReasons", NpgsqlDbType.Jsonb).Value = SerializeJsonb(selected.Select(tag => tag.reason));
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
@@ -1403,7 +1437,7 @@ public sealed class PostgresMeetingAudioAnalysisService(
         }
         if (selected.Count == 0) return;
 
-        var payload = JsonSerializer.Serialize(new
+        var payload = SerializeJsonb(new
         {
             targetType = "contact",
             targetId = recording.ContactId,
@@ -1441,7 +1475,7 @@ public sealed class PostgresMeetingAudioAnalysisService(
         command.Parameters.AddWithValue("generationModel", settings.Model);
         command.Parameters.AddWithValue("promptFingerprint", promptFingerprint);
         command.Parameters.AddWithValue("confidenceScore", Math.Clamp(analysis.ConfidenceScore, 0, 100));
-        command.Parameters.Add("generationReasons", NpgsqlDbType.Jsonb).Value = JsonSerializer.Serialize(selected.Select(field => field.Reason));
+        command.Parameters.Add("generationReasons", NpgsqlDbType.Jsonb).Value = SerializeJsonb(selected.Select(field => field.Reason));
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 

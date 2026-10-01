@@ -224,6 +224,20 @@ public sealed class PostgresMeetingAudioAnalysisServiceTests
         Assert.Contains("template_version", source, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void JsonbSerialization_RemovesNullCharactersWithoutChangingLiteralEscapes()
+    {
+        var json = PostgresMeetingAudioAnalysisService.SerializeJsonb(new
+        {
+            rawNull = "antes\0depois",
+            literalEscape = @"antes\u0000depois"
+        });
+
+        using var document = System.Text.Json.JsonDocument.Parse(json);
+        Assert.Equal("antesdepois", document.RootElement.GetProperty("rawNull").GetString());
+        Assert.Equal(@"antes\u0000depois", document.RootElement.GetProperty("literalEscape").GetString());
+    }
+
     private static PostgresMeetingAudioAnalysisService.ScorecardCriterion Criterion(string key, string title) =>
         new(Guid.NewGuid(), key, title, null, 10m, "Avalie.", [], [], 0, 100, true);
 
