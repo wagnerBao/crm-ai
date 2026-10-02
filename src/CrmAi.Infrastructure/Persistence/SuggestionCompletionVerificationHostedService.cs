@@ -254,9 +254,19 @@ public sealed class SuggestionCompletionVerificationProcessor(
 
                 union all
                 select 'whatsapp:' || message.id::text, 'whatsapp_message', message.message_at,
-                       concat_ws(' | ', message.direction, message.message_type, nullif(message.text, ''))
+                       concat_ws(' | ', message.direction, message.message_type,
+                           coalesce(nullif(message.text, ''), transcription.transcript))
                 from whatsapp_messages message
                 inner join whatsapp_conversations conversation on conversation.id = message.conversation_id
+                left join lateral (
+                    select audio.transcript
+                    from whatsapp_message_audio_transcriptions audio
+                    where audio.whatsapp_message_id = message.id
+                      and audio.status = 'ready'
+                      and nullif(audio.transcript, '') is not null
+                    order by audio.updated_at desc
+                    limit 1
+                ) transcription on true
                 where @includeWhatsappMessages
                   and conversation.company_id = @companyId and conversation.contact_id = @contactId
                   and message.message_at >= @windowStart
