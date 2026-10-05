@@ -10,7 +10,10 @@ public sealed record OpenAiRiskAnalysisResponse(
     string RiskLevel,
     int RiskScore,
     IReadOnlyCollection<string> Reasons,
-    IReadOnlyCollection<string> Recommendations);
+    IReadOnlyCollection<string> Recommendations,
+    int? ContextConfidenceScore = null,
+    bool? NeedsFullMeetingContext = null,
+    IReadOnlyCollection<string>? MeetingEvidenceIds = null);
 
 public sealed record RiskAnalysisAgentInput(
     AnalysisOpportunitySummary? Opportunity,
@@ -70,13 +73,14 @@ public sealed record AnalysisMeetingAudioSummary(
     string Transcript,
     string Summary,
     DateTime? TranscribedAt,
-    DateTime UpdatedAt);
+    DateTime UpdatedAt,
+    [property: System.Text.Json.Serialization.JsonIgnore] StoredMeetingRiskContext? RiskContext = null);
 
 public sealed record AnalysisNoteSummary(string Text, string? AuthorUserId, DateTime CreatedAt);
 
-public sealed record AnalysisContactSummary(string Name, string Role, string Status, string? OwnerUserId);
+public sealed record AnalysisContactSummary(string Name, string Role, string Status, string? OwnerUserId, string? Id = null);
 
-public sealed record AnalysisUserSummary(string Name, string Role, bool IsActive);
+public sealed record AnalysisUserSummary(string Name, string Role, bool IsActive, string? Id = null);
 
 public sealed record AnalysisHistoryEventSummary(string Event, string? UserId, DateTime CreatedAt);
 

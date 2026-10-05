@@ -171,12 +171,23 @@ public sealed class PostgresOpportunityContextRepository(NpgsqlDataSource dataSo
         CancellationToken cancellationToken)
     {
         const string sql = """
-            select id, activity_id, transcript, summary, transcribed_at, updated_at
-            from meeting_audio_recordings
-            where opportunity_id = @opportunityId
-              and status in ('ready', 'summary_saved')
-              and (nullif(transcript, '') is not null or nullif(summary, '') is not null)
-            order by updated_at desc
+            select recording.id, recording.activity_id, recording.transcript, recording.summary,
+                   recording.transcribed_at, recording.updated_at, analysis.analysis_json::text
+            from meeting_audio_recordings recording
+            left join lateral (
+                select result.analysis_json
+                from conversation_analysis_results result
+                where result.recording_id = recording.id and result.company_id = recording.company_id
+                  and result.opportunity_id = recording.opportunity_id
+                  and result.agent_key in ('meeting-service-analysis', 'call-audio-analysis')
+                  and result.is_current and result.analysis_status = 'completed'
+                order by result.completed_at desc, result.id
+                limit 1
+            ) analysis on true
+            where recording.opportunity_id = @opportunityId
+              and recording.status in ('ready', 'summary_saved')
+              and (nullif(recording.transcript, '') is not null or nullif(recording.summary, '') is not null)
+            order by recording.updated_at desc
             limit 10
             """;
 
@@ -192,7 +203,8 @@ public sealed class PostgresOpportunityContextRepository(NpgsqlDataSource dataSo
                 ReadNullableString(reader, "transcript") ?? string.Empty,
                 ReadNullableString(reader, "summary") ?? string.Empty,
                 ReadNullableDateTime(reader, "transcribed_at"),
-                reader.GetDateTime(reader.GetOrdinal("updated_at"))));
+                reader.GetDateTime(reader.GetOrdinal("updated_at")),
+                MeetingRiskContextPolicy.Read(ReadNullableString(reader, "analysis_json"))));
         }
 
         return analyses;

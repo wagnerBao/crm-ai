@@ -28,12 +28,18 @@ public sealed class OpenAiResponsesDailyCheckoutClient(
         var endpoint = configuredOptions.ResponsesEndpoint;
         var startedAt = DateTime.UtcNow;
         var model = string.IsNullOrWhiteSpace(settings.Model) ? configuredOptions.Model : settings.Model;
+        var compact = PromptContextCompaction.DailyCheckout(input);
+        var useCompact = compact.ReferenceCount > 0 && compact.SavesCharacters(CompactedPromptContext.ReferenceInstructions.Length);
+        invocationContext = compact.WithMetrics(invocationContext, useCompact ? "compact" : "original",
+            useCompact ? CompactedPromptContext.ReferenceInstructions.Length : 0);
         var payload = new
         {
             model,
             reasoning = OpenAiGpt56RequestOptions.Reasoning(model, "low"),
-            instructions = settings.Instructions,
-            input = JsonSerializer.Serialize(input, SerializerOptions),
+            instructions = useCompact
+                ? $"{settings.Instructions}\n\n{CompactedPromptContext.ReferenceInstructions}"
+                : settings.Instructions,
+            input = useCompact ? compact.Json : JsonSerializer.Serialize(input, SerializerOptions),
             store = false,
             text = new
             {

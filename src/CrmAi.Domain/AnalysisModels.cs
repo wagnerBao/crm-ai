@@ -61,7 +61,8 @@ public sealed record MeetingAudioAnalysisSnapshot(
     string Transcript,
     string Summary,
     DateTime? TranscribedAt,
-    DateTime UpdatedAt);
+    DateTime UpdatedAt,
+    StoredMeetingRiskContext? RiskContext = null);
 
 public sealed record ContactSnapshot(
     string Id,

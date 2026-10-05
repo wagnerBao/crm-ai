@@ -11,6 +11,18 @@ public sealed class OpenAiResponsesWhatsappConversationAnalysisClient(
     IOptions<OpenAiRiskAnalysisOptions> options,
     IAiAgentInvocationLogStore invocationLogStore) : IOpenAiWhatsappConversationAnalysisClient
 {
+    private const string ParticipantIdentityInstructions = """
+        Identidade dos participantes e perspectiva obrigatoria:
+        - participants.contactId/contactName identificam o contato externo; participants.ownerUserId/ownerUserName identificam o responsavel interno do CRM. participants.mailboxName identifica a caixa da equipe, nao o contato.
+        - Mensagens incoming/Cliente foram recebidas do contato externo; mensagens outgoing/Equipe foram enviadas pela equipe ao contato. A direcao prevalece sobre nomes de remetente, vocativos, assinaturas e nomes citados no texto.
+        - O responsavel do CRM nao e necessariamente o autor de toda mensagem outgoing. Nao invente a identidade do autor quando ela nao estiver confirmada.
+        - Antes de sugerir uma acao, identifique quem fez o pedido, quem deve executa-lo, quem recebera a resposta e se mensagens posteriores ja resolveram a pendencia.
+        - Toda atividade e nextStep deve ser executavel pela equipe interna, do ponto de vista do responsavel do CRM. Uma resposta da equipe deve ser dirigida ao contato externo, nunca ao proprio responsavel.
+        - Um pedido outgoing da equipe ao contato nao e um pedido recebido do cliente. Nao transforme uma tarefa do contato em obrigacao da equipe de executar ou responder ao proprio pedido; sugira acompanhamento somente se houver pendencia sustentada pela conversa.
+        - Registre compromissos do contato como compromissos do contato, sem atribui-los automaticamente a equipe.
+        - Respostas posteriores, confirmacoes de solucao, agradecimentos e encerramentos devem ser considerados antes de sugerir novamente a mesma acao.
+        - previousSummary e existingSuggestions podem conter atribuicoes antigas incorretas; corrija-as quando conflitarem com participants e a direcao de newTranscript. Nao reproduza uma sugestao que troca os papeis apenas para manter a deduplicacao.
+        """;
     private const string SemanticDeduplicationInstructions = """
         Deduplicacao semantica obrigatoria:
         - Compare cada atividade ou oportunidade sugerida com existingSuggestions e existingOpenOpportunities.
@@ -77,7 +89,7 @@ public sealed class OpenAiResponsesWhatsappConversationAnalysisClient(
         {
             model,
             reasoning = OpenAiGpt56RequestOptions.Reasoning(model, "none"),
-            instructions = $"{settings.Instructions}\n\n{SemanticDeduplicationInstructions}\n\n{timeZoneInstructions}",
+            instructions = $"{settings.Instructions}\n\n{SemanticDeduplicationInstructions}\n\n{timeZoneInstructions}\n\n{ParticipantIdentityInstructions}",
             input = JsonSerializer.Serialize(input, SerializerOptions),
             store = false,
             text = new

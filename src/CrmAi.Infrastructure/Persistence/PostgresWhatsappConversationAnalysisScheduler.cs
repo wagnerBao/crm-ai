@@ -86,11 +86,16 @@ public sealed class PostgresWhatsappConversationAnalysisScheduler(
             var processedUntil = await ReadLastProcessedMessageAtAsync(connection, item.OpportunityId, item.Payload.ConversationId, cancellationToken);
             var transcript = await ReadTranscriptAsync(connection, item.Payload.ConversationId, processedUntil, cancellationToken);
             var conversationSummary = await ReadConversationSummaryAsync(connection, item.Payload.ConversationId, cancellationToken);
+            var participants = await ReadParticipantsAsync(connection, item.Payload.ConversationId, item.OpportunityId, cancellationToken);
             var agentSettings = await ReadWhatsappAgentSettingsAsync(connection, item.OpportunityId, DebounceMinutes, cancellationToken);
             var data = new Dictionary<string, object?>
             {
                 ["conversationId"] = item.Payload.ConversationId,
-                ["contactId"] = item.Payload.ContactId,
+                ["contactId"] = participants?.ContactId ?? item.Payload.ContactId,
+                ["contactName"] = participants?.ContactName,
+                ["ownerUserId"] = participants?.OwnerUserId,
+                ["ownerUserName"] = participants?.OwnerUserName,
+                ["mailboxName"] = participants?.MailboxName,
                 ["firstEventId"] = item.Payload.FirstEventId,
                 ["latestEventId"] = item.Payload.LatestEventId,
                 ["messageCount"] = item.Payload.MessageCount,
@@ -398,6 +403,37 @@ public sealed class PostgresWhatsappConversationAnalysisScheduler(
                property.TryGetDateTime(out value);
     }
 
+    private static async Task<AnalysisConversationParticipants?> ReadParticipantsAsync(
+        NpgsqlConnection connection, string conversationId, Guid opportunityId, CancellationToken cancellationToken)
+    {
+        if (!Guid.TryParse(conversationId, out var id)) return null;
+
+        const string sql = """
+            select conversation.contact_id::text as contact_id,
+                   conversation.contact_name,
+                   coalesce(opportunity.owner_user_id, conversation.owner_user_id)::text as owner_user_id,
+                   owner.name as owner_user_name,
+                   instance.name as mailbox_name
+            from whatsapp_conversations conversation
+            left join whatsapp_instances instance on instance.id = conversation.instance_id
+            left join opportunities opportunity on opportunity.id = @opportunityId
+            left join users owner on owner.id = coalesce(opportunity.owner_user_id, conversation.owner_user_id)
+            where conversation.id = @conversationId;
+            """;
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("conversationId", id);
+        command.Parameters.AddWithValue("opportunityId", opportunityId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken)) return null;
+
+        return new AnalysisConversationParticipants(
+            ReadNullableString(reader, "contact_id"),
+            ReadNullableString(reader, "contact_name"),
+            ReadNullableString(reader, "owner_user_id"),
+            ReadNullableString(reader, "owner_user_name"),
+            ReadNullableString(reader, "mailbox_name"));
+    }
+
     private static async Task<string> ReadTranscriptAsync(NpgsqlConnection connection, string conversationId, DateTime? after, CancellationToken cancellationToken)
     {
         if (!Guid.TryParse(conversationId, out var id))
@@ -407,11 +443,14 @@ public sealed class PostgresWhatsappConversationAnalysisScheduler(
 
         const string sql = """
             select message.direction,
-                   coalesce(message.sender_name, message.sender, message.direction) as sender_name,
+                   coalesce(nullif(conversation.contact_name, ''), nullif(message.sender_name, ''), 'Cliente') as contact_name,
+                   instance.name as mailbox_name,
                    message.message_type,
                    coalesce(nullif(message.text, ''), transcription.transcript) as text,
                    message.message_at
             from whatsapp_messages message
+            inner join whatsapp_conversations conversation on conversation.id = message.conversation_id
+            left join whatsapp_instances instance on instance.id = conversation.instance_id
             left join lateral (
                 select audio.transcript
                 from whatsapp_message_audio_transcriptions audio
@@ -436,11 +475,16 @@ public sealed class PostgresWhatsappConversationAnalysisScheduler(
         while (await reader.ReadAsync(cancellationToken))
         {
             var direction = reader.GetString(reader.GetOrdinal("direction"));
-            var senderName = reader.GetString(reader.GetOrdinal("sender_name"));
+            var participant = string.Equals(direction, "outgoing", StringComparison.OrdinalIgnoreCase)
+                ? "Equipe"
+                : "Cliente";
+            var senderName = participant == "Equipe"
+                ? $"caixa: {ReadNullableString(reader, "mailbox_name") ?? "Equipe"}"
+                : reader.GetString(reader.GetOrdinal("contact_name"));
             var messageType = reader.GetString(reader.GetOrdinal("message_type"));
             var text = ReadNullableString(reader, "text") ?? $"[{messageType}]";
             var messageAt = reader.GetDateTime(reader.GetOrdinal("message_at")).ToUniversalTime();
-            rows.Add($"{messageAt:yyyy-MM-dd HH:mm} {direction} {senderName}: {text}");
+            rows.Add($"[{messageAt:yyyy-MM-dd HH:mm}] {participant} - {senderName}: {text}");
         }
 
         rows.Reverse();

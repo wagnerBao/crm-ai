@@ -1,3 +1,5 @@
+using CrmAi.Domain;
+
 namespace CrmAi.Application;
 
 public sealed record MeetingAudioAnalysisInput(
@@ -44,7 +46,8 @@ public sealed record OpenAiMeetingAudioAnalysisResponse(
     IReadOnlyCollection<string>? Reasons = null,
     IReadOnlyCollection<OpenAiConversationScorecardItem>? ScorecardItems = null,
     IReadOnlyCollection<OpenAiConversationTagSuggestion>? SuggestedTags = null,
-    IReadOnlyCollection<OpenAiConversationContactFieldSuggestion>? SuggestedContactFields = null);
+    IReadOnlyCollection<OpenAiConversationContactFieldSuggestion>? SuggestedContactFields = null,
+    MeetingRiskContext? RiskContext = null);
 
 public sealed record OpenAiConversationTagSuggestion(string TagId, string Reason, string EvidenceExcerpt);
 public sealed record OpenAiConversationContactFieldSuggestion(string FieldId, string Value, string Reason, string EvidenceExcerpt);

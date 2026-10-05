@@ -20,7 +20,8 @@ public static class MeetingAudioAnalysisJsonSchema
             "reasons",
             "scorecardItems",
             "suggestedTags",
-            "suggestedContactFields"
+            "suggestedContactFields",
+            "riskContext"
         },
         properties = new
         {
@@ -52,7 +53,8 @@ public static class MeetingAudioAnalysisJsonSchema
             reasons = new { type = "array", minItems = 1, items = new { type = "string" } },
             scorecardItems = ConversationScorecardJsonSchema.Value,
             suggestedTags = ConversationTagSuggestionJsonSchema.Value,
-            suggestedContactFields = ConversationContactFieldSuggestionJsonSchema.Value
+            suggestedContactFields = ConversationContactFieldSuggestionJsonSchema.Value,
+            riskContext = MeetingRiskContextJsonSchema.Value
         }
     };
 }

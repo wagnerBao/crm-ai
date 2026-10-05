@@ -136,6 +136,7 @@ public sealed record WhatsappConversationAnalysisInput(
     public IReadOnlyCollection<WhatsappOpenOpportunityCandidate> ExistingOpenOpportunities { get; init; } = [];
     public WhatsappScorecardTemplateInput? ScorecardTemplate { get; init; }
     public string TimeZoneId { get; init; } = "America/Sao_Paulo";
+    public AnalysisConversationParticipants? Participants { get; init; }
 
     public static WhatsappConversationAnalysisInput FromContext(
         OpportunityAnalysisContext context,
@@ -207,7 +208,10 @@ public sealed record WhatsappConversationAnalysisInput(
             GetString(data, "previousSummary"),
             GetString(data, "text") ?? string.Empty,
             GetString(data, "additionalContext"),
-            analyzedAt);
+            analyzedAt)
+        {
+            Participants = BuildParticipants(context.TriggerEvent, context)
+        };
     }
 
     public static WhatsappConversationAnalysisInput FromContactEvent(OpportunityEvent opportunityEvent)
@@ -235,7 +239,25 @@ public sealed record WhatsappConversationAnalysisInput(
             GetString(data, "previousSummary"),
             GetString(data, "text") ?? string.Empty,
             GetString(data, "additionalContext"),
-            DateTime.UtcNow);
+            DateTime.UtcNow)
+        {
+            Participants = BuildParticipants(opportunityEvent)
+        };
+    }
+
+    private static AnalysisConversationParticipants BuildParticipants(
+        OpportunityEvent opportunityEvent,
+        OpportunityAnalysisContext? context = null)
+    {
+        var data = opportunityEvent.Data;
+        var contactId = GetString(data, "contactId");
+        var ownerUserId = GetString(data, "ownerUserId") ?? opportunityEvent.UserId ?? context?.Opportunity.OwnerUserId;
+        return new AnalysisConversationParticipants(
+            contactId,
+            GetString(data, "contactName") ?? context?.Contacts.FirstOrDefault(contact => contact.Id == contactId)?.Name,
+            ownerUserId,
+            GetString(data, "ownerUserName") ?? context?.Users.FirstOrDefault(user => user.Id == ownerUserId)?.Name,
+            GetString(data, "mailboxName"));
     }
 
     private static string? GetString(IReadOnlyDictionary<string, object?> data, string key) =>
@@ -264,6 +286,13 @@ public sealed record AnalysisWhatsappOpportunity(
     string Status,
     string StageTitle,
     decimal Value);
+
+public sealed record AnalysisConversationParticipants(
+    string? ContactId,
+    string? ContactName,
+    string? OwnerUserId,
+    string? OwnerUserName,
+    string? MailboxName);
 
 public sealed record AnalysisWhatsappConversation(
     string ConversationId,

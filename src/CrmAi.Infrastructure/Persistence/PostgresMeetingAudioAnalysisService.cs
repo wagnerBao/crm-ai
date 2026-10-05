@@ -837,7 +837,7 @@ public sealed class PostgresMeetingAudioAnalysisService(
         resultCommand.Parameters.AddWithValue("analysisSummary", analysis.Summary.Trim());
         resultCommand.Parameters.AddWithValue("nextStep", analysis.NextStep.Trim());
         resultCommand.Parameters.AddWithValue("confidenceScore", Math.Clamp(analysis.ConfidenceScore, 0, 100));
-        resultCommand.Parameters.Add("analysisJson", NpgsqlDbType.Jsonb).Value = SerializeJsonb(analysis);
+        resultCommand.Parameters.Add("analysisJson", NpgsqlDbType.Jsonb).Value = SerializeAnalysisWithRiskContext(analysis, transcript);
         resultCommand.Parameters.AddWithValue("model", settings.Model);
         resultCommand.Parameters.AddWithValue("promptFingerprint", promptFingerprint);
         resultCommand.Parameters.AddWithValue("schemaVersion", AnalysisSchemaVersion);
@@ -1485,6 +1485,13 @@ public sealed class PostgresMeetingAudioAnalysisService(
     private static string Truncate(string value, int maximumLength) =>
         value.Length <= maximumLength ? value : value[..maximumLength];
 
+    internal static string SerializeAnalysisWithRiskContext(OpenAiMeetingAudioAnalysisResponse analysis, string transcript)
+    {
+        var node = JsonSerializer.SerializeToNode(analysis, JsonOptions)!.AsObject();
+        node["storedRiskContext"] = JsonSerializer.SerializeToNode(MeetingRiskContextPolicy.Bind(analysis.RiskContext, transcript), JsonOptions);
+        return SerializeJsonb(node);
+    }
+
     private static string FormatSummary(OpenAiMeetingAudioAnalysisResponse analysis)
     {
         var builder = new StringBuilder();
@@ -1545,7 +1552,7 @@ public sealed class PostgresMeetingAudioAnalysisService(
         bool.TryParse(GetString(data, key), out var value) && value;
 
     internal static string PromptFingerprint(AiAgentRuntimeSettings settings) =>
-        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(settings.Instructions)));
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(settings.Instructions + "\n" + MeetingRiskContextPolicy.Version + "\n" + MeetingRiskContextPolicy.Instructions)));
 
     private static void AddNullableGuid(NpgsqlCommand command, string name, string? value) =>
         command.Parameters.Add(name, NpgsqlDbType.Uuid).Value = Guid.TryParse(value, out var parsed) ? parsed : DBNull.Value;

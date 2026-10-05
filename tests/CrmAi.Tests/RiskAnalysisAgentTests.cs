@@ -61,6 +61,32 @@ public sealed class RiskAnalysisAgentTests
     }
 
     [Fact]
+    public void Build_PreservesFinalResolutionAndSourceBoundSummaryBeyondTheOldTranscriptLimit()
+    {
+        var now = new DateTime(2026, 10, 5, 15, 0, 0, DateTimeKind.Utc);
+        const string resolution = "Diego: validei o botão e agora funcionou corretamente.";
+        var transcript = new string('x', 7000) + "\n" + resolution;
+        var riskContext = MeetingRiskContextPolicy.Bind(new MeetingRiskContext(
+            [new("resolution", "Diego confirmou a resolução.", "Diego", null, resolution)], 95, false), transcript);
+        var audio = new MeetingAudioAnalysisSnapshot("recording", "activity", transcript, "Resumo", now, now, riskContext);
+        var context = CreateContext(now, [], [], [], meetingAudioAnalyses: [audio]) with
+        {
+            Users = [new UserSnapshot("user-diego", "Diego", "Comercial", true)],
+            Contacts = [new ContactSnapshot("contact-pierre", null, "Pierre", "Cliente", "", null, "user-diego", "active")]
+        };
+
+        var input = new RiskAnalysisAgentInputBuilder(new CommercialRuleAssessmentService())
+            .Build(context, ["activities", "users", "contacts"]).Input;
+
+        var meeting = Assert.Single(input.MeetingAudioAnalyses!);
+        Assert.EndsWith(resolution, meeting.Transcript);
+        Assert.True(MeetingRiskContextPolicy.CanReuse(meeting.RiskContext, meeting.Transcript));
+        Assert.Equal("user-diego", Assert.Single(input.Users).Id);
+        Assert.Equal("contact-pierre", Assert.Single(input.Contacts).Id);
+        Assert.Equal("user-diego", Assert.Single(input.Contacts).OwnerUserId);
+    }
+
+    [Fact]
     public void CommercialRules_DoNotManufactureRiskFromOverlappingOrContradictoryPredicates()
     {
         var now = new DateTime(2026, 7, 29, 12, 0, 0, DateTimeKind.Utc);

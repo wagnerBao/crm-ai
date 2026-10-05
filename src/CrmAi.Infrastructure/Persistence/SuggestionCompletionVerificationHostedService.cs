@@ -48,7 +48,8 @@ public sealed class SuggestionCompletionVerificationProcessor(
     IAiAgentRuntimeSettingsRepository settingsRepository,
     IOpenAiSuggestionCompletionVerificationClient client,
     IOptions<RabbitMqOptions> rabbitOptions,
-    ILogger<SuggestionCompletionVerificationProcessor> logger)
+    ILogger<SuggestionCompletionVerificationProcessor> logger,
+    IOptions<OpenAiRiskAnalysisOptions> openAiOptions)
 {
     internal const string AgentKey = "suggestion-completion-verification";
     internal const string NotificationEventKey = "activity_suggestion_unfulfilled";
@@ -113,11 +114,20 @@ public sealed class SuggestionCompletionVerificationProcessor(
         {
             var settings = await settingsRepository.GetAsync(AgentKey, suggestion.CompanyId.ToString(), cancellationToken);
             evidence = await LoadEvidenceAsync(suggestion, settings.ContextEntityKeys, cancellationToken);
-            fingerprint = Fingerprint(evidence);
-            if (suggestion.PreviousVerificationStatus == "unfulfilled"
-                && string.Equals(suggestion.PreviousEvidenceFingerprint, fingerprint, StringComparison.Ordinal))
+            using var payloadDocument = JsonDocument.Parse(suggestion.Payload);
+            var input = new SuggestionCompletionVerificationInput(
+                suggestion.Id.ToString(), suggestion.SuggestionType, suggestion.Title,
+                suggestion.Description, suggestion.CreatedAt, suggestion.SuggestedDueAt,
+                payloadDocument.RootElement.Clone(), evidence);
+            var effectiveModel = string.IsNullOrWhiteSpace(settings.Model) ? openAiOptions.Value.Model : settings.Model;
+            fingerprint = SuggestionVerificationCache.Fingerprint(input, settings, effectiveModel, DateTime.UtcNow,
+                SuggestionEvidenceSelectionPolicy.ResolveMode(openAiOptions.Value, suggestion.CompanyId.ToString()));
+            if (SuggestionVerificationCache.CanReuse(suggestion.PreviousVerificationStatus, suggestion.PreviousEvidenceFingerprint, fingerprint))
             {
-                await RestoreUnchangedPriorityAsync(suggestion.Id, fingerprint, suggestion.SuggestedDueAt is not null, cancellationToken);
+                await RestoreUnchangedPriorityAsync(suggestion.Id, fingerprint, suggestion.PreviousVerificationStatus,
+                    suggestion.SuggestedDueAt is not null, cancellationToken);
+                logger.LogInformation("Suggestion verification reused unchanged context. SuggestionId={SuggestionId} Result={Result}",
+                    suggestion.Id, suggestion.PreviousVerificationStatus);
                 return true;
             }
 
@@ -129,18 +139,9 @@ public sealed class SuggestionCompletionVerificationProcessor(
             else
             {
                 if (!settings.IsActive) throw new InvalidOperationException("O agente suggestion-completion-verification está inativo.");
-                using var payloadDocument = JsonDocument.Parse(suggestion.Payload);
                 result = await client.AnalyzeAsync(
                     settings,
-                    new SuggestionCompletionVerificationInput(
-                        suggestion.Id.ToString(),
-                        suggestion.SuggestionType,
-                        suggestion.Title,
-                        suggestion.Description,
-                        suggestion.CreatedAt,
-                        suggestion.SuggestedDueAt,
-                        payloadDocument.RootElement.Clone(),
-                        evidence),
+                    input,
                     new AiAgentInvocationContext(
                         "suggestions.completion-verification",
                         suggestion.CompanyId.ToString(),
@@ -245,7 +246,8 @@ public sealed class SuggestionCompletionVerificationProcessor(
                        'activity' as type,
                        greatest(activity.updated_at, activity.created_at) as occurred_at,
                        concat_ws(' | ', activity.title, activity.activity_type, activity.channel, activity.status,
-                           nullif(activity.completed_notes, ''), nullif(activity.notes, '')) as summary
+                           nullif(activity.completed_notes, ''), nullif(activity.notes, '')) as summary,
+                       null::text as source_stream_id
                 from activities activity
                 where @includeActivities
                   and activity.company_id = @companyId
@@ -255,7 +257,8 @@ public sealed class SuggestionCompletionVerificationProcessor(
                 union all
                 select 'whatsapp:' || message.id::text, 'whatsapp_message', message.message_at,
                        concat_ws(' | ', message.direction, message.message_type,
-                           coalesce(nullif(message.text, ''), transcription.transcript))
+                           coalesce(nullif(message.text, ''), transcription.transcript)),
+                       'whatsapp:' || conversation.id::text
                 from whatsapp_messages message
                 inner join whatsapp_conversations conversation on conversation.id = message.conversation_id
                 left join lateral (
@@ -273,7 +276,8 @@ public sealed class SuggestionCompletionVerificationProcessor(
 
                 union all
                 select 'instagram:' || message.id::text, 'instagram_message', message.message_at,
-                       concat_ws(' | ', message.direction, message.message_type, nullif(message.text, ''))
+                       concat_ws(' | ', message.direction, message.message_type, nullif(message.text, '')),
+                       'instagram:' || conversation.id::text
                 from instagram_messages message
                 inner join instagram_conversations conversation on conversation.id = message.conversation_id
                 where @includeInstagramMessages
@@ -281,7 +285,7 @@ public sealed class SuggestionCompletionVerificationProcessor(
                   and message.message_at >= @windowStart
 
                 union all
-                select 'note:' || note.id::text, 'note', note.created_at, note.text
+                select 'note:' || note.id::text, 'note', note.created_at, note.text, null::text
                 from notes note
                 cross join contact_scope contact
                 where @includeNotes
@@ -293,14 +297,14 @@ public sealed class SuggestionCompletionVerificationProcessor(
                 union all
                 select 'opportunity:' || opportunity.id::text, 'opportunity',
                        greatest(opportunity.updated_at, opportunity.created_at),
-                       concat_ws(' | ', opportunity.name, opportunity.status)
+                       concat_ws(' | ', opportunity.name, opportunity.status), null::text
                 from opportunities opportunity
                 where @includeOpportunities
                   and opportunity.id in (select id from related_opportunities)
                   and greatest(opportunity.updated_at, opportunity.created_at) >= @windowStart
 
                 union all
-                select 'history:' || history.id::text, 'opportunity_history', history.created_at, history.event
+                select 'history:' || history.id::text, 'opportunity_history', history.created_at, history.event, null::text
                 from opportunity_history history
                 where @includeHistory
                   and history.company_id = @companyId
@@ -310,7 +314,7 @@ public sealed class SuggestionCompletionVerificationProcessor(
                 union all
                 select 'meeting:' || recording.id::text, 'meeting_recording',
                        coalesce(recording.transcribed_at, recording.updated_at, recording.created_at),
-                       concat_ws(' | ', nullif(recording.summary, ''), nullif(recording.transcript, ''))
+                       concat_ws(' | ', nullif(recording.summary, ''), nullif(recording.transcript, '')), null::text
                 from meeting_audio_recordings recording
                 left join activities activity on activity.id = recording.activity_id
                 where @includeMeetingAnalysis
@@ -318,7 +322,7 @@ public sealed class SuggestionCompletionVerificationProcessor(
                   and (activity.contact_id = @contactId or recording.opportunity_id in (select id from related_opportunities))
                   and coalesce(recording.transcribed_at, recording.updated_at, recording.created_at) >= @windowStart
             )
-            select id, type, occurred_at, left(summary, 1200)
+            select id, type, occurred_at, left(summary, 1200), source_stream_id
             from evidence
             where nullif(btrim(summary), '') is not null
             order by occurred_at desc
@@ -340,7 +344,7 @@ public sealed class SuggestionCompletionVerificationProcessor(
         while (await reader.ReadAsync(cancellationToken))
         {
             var occurredAt = reader.GetDateTime(2).ToUniversalTime();
-            rows.Add(new(reader.GetString(0), reader.GetString(1), occurredAt, occurredAt < suggestion.CreatedAt, reader.GetString(3)));
+            rows.Add(new(reader.GetString(0), reader.GetString(1), occurredAt, occurredAt < suggestion.CreatedAt, reader.GetString(3), reader.IsDBNull(4) ? null : reader.GetString(4)));
         }
         return rows;
     }
@@ -435,14 +439,26 @@ public sealed class SuggestionCompletionVerificationProcessor(
         logger.LogInformation("Suggestion verification completed. SuggestionId={SuggestionId} Result={Result} Confidence={Confidence}", suggestion.Id, result.Result, result.Confidence);
     }
 
-    private async Task RestoreUnchangedPriorityAsync(Guid suggestionId, string fingerprint, bool hasDueDate, CancellationToken cancellationToken)
+    private async Task RestoreUnchangedPriorityAsync(Guid suggestionId, string fingerprint, string previousStatus, bool hasDueDate, CancellationToken cancellationToken)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var command = new NpgsqlCommand(
-            "update ai_agent_suggestions set verification_status='unfulfilled', evidence_fingerprint=@fingerprint, last_verified_at=now(), next_verification_at=now()+case when @hasDueDate then interval '15 minutes' else interval '24 hours' end, updated_at=now() where id=@id and status='pending';",
+            """
+            update ai_agent_suggestions
+            set verification_status = @previousStatus,
+                evidence_fingerprint = @fingerprint,
+                last_verified_at = now(),
+                next_verification_at = now() + case
+                    when @previousStatus = 'inconclusive' then interval '60 minutes'
+                    when @hasDueDate then interval '15 minutes'
+                    else interval '24 hours' end,
+                updated_at = now()
+            where id = @id and status = 'pending';
+            """,
             connection);
         command.Parameters.AddWithValue("id", suggestionId);
         command.Parameters.AddWithValue("fingerprint", fingerprint);
+        command.Parameters.AddWithValue("previousStatus", previousStatus);
         command.Parameters.AddWithValue("hasDueDate", hasDueDate);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
@@ -798,9 +814,6 @@ public sealed class SuggestionCompletionVerificationProcessor(
         channel.BasicPublish(options.NotificationExchange, $"notification.created.{notification.CompanyId}.{notification.UserId}", false, properties, body);
         channel.WaitForConfirmsOrDie(TimeSpan.FromSeconds(5));
     }
-
-    private static string Fingerprint(IEnumerable<SuggestionCompletionEvidence> evidence) =>
-        Fingerprint(evidence.OrderBy(item => item.Id).Select(item => $"{item.Id}|{item.OccurredAt:O}|{item.Summary}"));
 
     private static string Fingerprint(IEnumerable<string> values) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(string.Join("\n", values)))).ToLowerInvariant();

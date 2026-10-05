@@ -13,6 +13,16 @@ public sealed class OpenAiRiskAnalysisOptions
     public string Model { get; init; } = "gpt-5.6-terra";
 
     public string ResponsesEndpoint { get; init; } = "https://api.openai.com/v1/responses";
+
+    // full: one authoritative call; shadow: compare both, return full;
+    // compact: use validated summaries, retry once with full context on doubt.
+    public string RiskMeetingContextMode { get; init; } = "full";
+
+    public string[] RiskMeetingContextCompanyIds { get; init; } = [];
+
+    public string SuggestionEvidenceSelectionMode { get; init; } = "full";
+
+    public string[] SuggestionEvidenceSelectionCompanyIds { get; init; } = [];
 }
 
 public sealed class OpenAiResponsesRiskAnalysisClient(
@@ -31,6 +41,59 @@ public sealed class OpenAiResponsesRiskAnalysisClient(
         AiAgentInvocationContext invocationContext,
         CancellationToken cancellationToken)
     {
+        var mode = options.Value.RiskMeetingContextMode.ToLowerInvariant();
+        if (mode is not ("full" or "shadow" or "compact"))
+            throw new InvalidOperationException("OpenAI:RiskMeetingContextMode must be full, shadow or compact.");
+        if (mode != "full" && !options.Value.RiskMeetingContextCompanyIds.Contains(invocationContext.CompanyId, StringComparer.OrdinalIgnoreCase))
+            mode = "full";
+        var prompt = RiskMeetingContextOptimization.Build(input);
+        var comparisonId = Guid.NewGuid().ToString("N");
+        if (mode == "full" || !prompt.SavesCharacters)
+            return await AnalyzeRequestAsync(settings, prompt.FullJson, false,
+                prompt.WithMetrics(invocationContext, "original", comparisonId), cancellationToken);
+
+        if (mode == "shadow")
+        {
+            // Obtain the authoritative result before spending credits on the comparison.
+            var full = await AnalyzeRequestAsync(settings, prompt.FullJson, false,
+                prompt.WithMetrics(invocationContext, "shadow-full", comparisonId), cancellationToken);
+            try
+            {
+                var comparisonContext = prompt.WithMetrics(invocationContext, "shadow-compact", comparisonId);
+                comparisonContext = comparisonContext with
+                {
+                    Metadata = new Dictionary<string, object?>(comparisonContext.Metadata!) { ["riskFullResponse"] = full }
+                };
+                await AnalyzeRequestAsync(settings, prompt.CompactJson, true, comparisonContext, cancellationToken);
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                // A failed optional comparison, including exhausted credits, cannot suppress the full result.
+            }
+            return full;
+        }
+
+        try
+        {
+            var compact = await AnalyzeRequestAsync(settings, prompt.CompactJson, true,
+                prompt.WithMetrics(invocationContext, "compact", comparisonId), cancellationToken);
+            if (prompt.Supports(compact)) return compact;
+        }
+        catch (Exception exception) when (exception is JsonException or IncompleteRiskResponseException)
+        {
+            // A refused or malformed model result is insufficient evidence; recover full context once.
+        }
+        return await AnalyzeRequestAsync(settings, prompt.FullJson, false,
+            prompt.WithMetrics(invocationContext, "full-fallback", comparisonId), cancellationToken);
+    }
+
+    private async Task<OpenAiRiskAnalysisResponse> AnalyzeRequestAsync(
+        AiAgentRuntimeSettings settings,
+        string inputJson,
+        bool compact,
+        AiAgentInvocationContext invocationContext,
+        CancellationToken cancellationToken)
+    {
         var configuredOptions = options.Value;
         var apiKey = ResolveApiKey(settings);
         var endpoint = configuredOptions.ResponsesEndpoint;
@@ -40,8 +103,9 @@ public sealed class OpenAiResponsesRiskAnalysisClient(
         {
             model,
             reasoning = OpenAiGpt56RequestOptions.Reasoning(model, "low"),
-            instructions = settings.Instructions,
-            input = JsonSerializer.Serialize(input, SerializerOptions),
+            instructions = string.Join("\n\n", new[] { settings.Instructions, RiskMeetingContextOptimization.ParticipantInstructions }
+                .Concat(compact ? [RiskMeetingContextOptimization.CompactInstructions] : [])),
+            input = inputJson,
             store = false,
             text = new
             {
@@ -50,7 +114,7 @@ public sealed class OpenAiResponsesRiskAnalysisClient(
                     type = "json_schema",
                     name = "risk_analysis_result",
                     strict = true,
-                    schema = RiskAnalysisJsonSchema.Value
+                    schema = compact ? RiskAnalysisJsonSchema.CompactValue : RiskAnalysisJsonSchema.Value
                 }
             }
         };
@@ -133,7 +197,7 @@ public sealed class OpenAiResponsesRiskAnalysisClient(
         {
             outputText = ExtractOutputText(responseBody);
             result = JsonSerializer.Deserialize<OpenAiRiskAnalysisResponse>(outputText, SerializerOptions)
-                ?? throw new InvalidOperationException("OpenAI response did not match the risk analysis schema.");
+                ?? throw new IncompleteRiskResponseException("OpenAI response did not match the risk analysis schema.");
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
@@ -151,6 +215,23 @@ public sealed class OpenAiResponsesRiskAnalysisClient(
                 null,
                 exception), cancellationToken);
             throw;
+        }
+
+        if (invocationContext.Metadata?.TryGetValue("riskFullResponse", out var compared) == true
+            && compared is OpenAiRiskAnalysisResponse fullResponse)
+        {
+            invocationContext = invocationContext with
+            {
+                Metadata = new Dictionary<string, object?>(invocationContext.Metadata)
+                {
+                    ["riskLevelAgreement"] = string.Equals(result.RiskLevel, fullResponse.RiskLevel, StringComparison.OrdinalIgnoreCase),
+                    ["riskScoreDelta"] = result.RiskScore - fullResponse.RiskScore,
+                    ["riskFullReasonsCount"] = fullResponse.Reasons.Count,
+                    ["riskCompactReasonsCount"] = result.Reasons.Count,
+                    ["riskFullRecommendationsCount"] = fullResponse.Recommendations.Count,
+                    ["riskCompactRecommendationsCount"] = result.Recommendations.Count
+                }
+            };
         }
 
         await invocationLogStore.SaveBestEffortAsync(OpenAiInvocationLogBuilder.Create(
@@ -178,15 +259,17 @@ public sealed class OpenAiResponsesRiskAnalysisClient(
     private static string ExtractOutputText(string responseBody)
     {
         var output = JsonSerializer.Deserialize<OpenAiResponseEnvelope>(responseBody, SerializerOptions)
-            ?? throw new InvalidOperationException("OpenAI response was empty.");
+            ?? throw new IncompleteRiskResponseException("OpenAI response was empty.");
         var outputText = output.Output
             .SelectMany(item => item.Content)
             .Where(content => string.Equals(content.Type, "output_text", StringComparison.OrdinalIgnoreCase))
             .Select(content => content.Text)
             .FirstOrDefault(text => !string.IsNullOrWhiteSpace(text));
 
-        return outputText ?? throw new InvalidOperationException("OpenAI response did not include output_text.");
+        return outputText ?? throw new IncompleteRiskResponseException("OpenAI response did not include output_text.");
     }
+
+    private sealed class IncompleteRiskResponseException(string message) : InvalidOperationException(message);
 
     private sealed record OpenAiResponseEnvelope(IReadOnlyCollection<OpenAiOutputItem> Output);
 

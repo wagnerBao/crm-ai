@@ -120,10 +120,10 @@ public sealed class RiskAnalysisAgentInputBuilder(CommercialRuleAssessmentServic
                 .Select(note => new AnalysisNoteSummary(note.Text, note.AuthorUserId, note.CreatedAt.ToUniversalTime()))
                 .ToArray() : [],
             entityKeys.Has("contacts") ? context.Contacts
-                .Select(contact => new AnalysisContactSummary(contact.Name, contact.Role, contact.Status, contact.OwnerUserId))
+                .Select(contact => new AnalysisContactSummary(contact.Name, contact.Role, contact.Status, contact.OwnerUserId, contact.Id))
                 .ToArray() : [],
             entityKeys.Has("users") ? context.Users
-                .Select(user => new AnalysisUserSummary(user.Name, user.Role, user.IsActive))
+                .Select(user => new AnalysisUserSummary(user.Name, user.Role, user.IsActive, user.Id))
                 .ToArray() : [],
             entityKeys.Has("history") ? context.HistoryEvents
                 .OrderByDescending(history => history.CreatedAt)
@@ -142,14 +142,11 @@ public sealed class RiskAnalysisAgentInputBuilder(CommercialRuleAssessmentServic
                 .Take(5)
                 .Select(analysis => new AnalysisMeetingAudioSummary(
                     analysis.ActivityId,
-                    Truncate(analysis.Transcript, 6000),
-                    Truncate(analysis.Summary, 4000),
+                    analysis.Transcript,
+                    analysis.Summary,
                     analysis.TranscribedAt?.ToUniversalTime(),
-                    analysis.UpdatedAt.ToUniversalTime()))
+                    analysis.UpdatedAt.ToUniversalTime(), analysis.RiskContext))
                 .ToArray() : []);
-
-    private static string Truncate(string value, int maximumLength) =>
-        value.Length <= maximumLength ? value : value[..maximumLength];
 
     private static DateTime? GetLatestInteraction(OpportunityAnalysisContext context)
     {
