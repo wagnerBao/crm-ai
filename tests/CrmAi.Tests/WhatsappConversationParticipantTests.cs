@@ -98,6 +98,37 @@ public sealed class WhatsappConversationParticipantTests
             ["text"] = "[2026-09-15 16:03] Equipe - caixa: Diego: Pierre, troca o código do botão?\n[2026-09-15 16:04] Cliente - Jean Pierre: Já troquei, pode testar."
         });
 
+    [Theory]
+    [InlineData("whatsapp", true)]
+    [InlineData("instagram", false)]
+    public async Task Attendance_rules_cover_unanswered_turns_only_for_whatsapp(string platformArea, bool usesAttendanceRules)
+    {
+        var handler = new CapturingHandler();
+        var client = new OpenAiResponsesWhatsappConversationAnalysisClient(
+            new HttpClient(handler), Options.Create(new OpenAiRiskAnalysisOptions()), new NullInvocationLogStore());
+        var settings = new AiAgentRuntimeSettings("whatsapp-conversation-analysis", true, "openai", "gpt-4.1-mini", "test-key", "Prompt personalizado.", 10, null, []);
+
+        await client.AnalyzeAsync(settings, WhatsappConversationAnalysisInput.FromContactEvent(CreateEvent()),
+            AiAgentInvocationContext.Unknown with { PlatformArea = platformArea }, CancellationToken.None);
+
+        using var request = JsonDocument.Parse(handler.Body!);
+        var instructions = request.RootElement.GetProperty("instructions").GetString()!;
+        if (usesAttendanceRules)
+        {
+            Assert.Contains("todo o ultimo turno do cliente", instructions);
+            Assert.Contains("O envio de placa, documento ou dado solicitado", instructions);
+            Assert.Contains("Uma saudacao que inicia ou retoma contato", instructions);
+            Assert.Contains("Uma sugestao existente deduplica o registro, mas nao atende o cliente", instructions);
+            Assert.Contains("Comunicados automaticos, publicidade e spam", instructions);
+            Assert.DoesNotContain("ultima mensagem for apenas agradecimento, emoji, saudacao", instructions);
+        }
+        else
+        {
+            Assert.DoesNotContain("todo o ultimo turno do cliente", instructions);
+            Assert.Contains("ultima mensagem for apenas agradecimento, emoji, saudacao", instructions);
+        }
+    }
+
     private sealed class CapturingHandler : HttpMessageHandler
     {
         public string? Body { get; private set; }

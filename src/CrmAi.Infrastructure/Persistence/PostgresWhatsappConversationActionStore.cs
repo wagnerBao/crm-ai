@@ -21,13 +21,15 @@ public sealed class PostgresWhatsappConversationActionStore(NpgsqlDataSource dat
         }
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        if (await WasProcessedAsync(connection, context.TriggerEvent.EventId, cancellationToken))
+        var runId = GetGuid(context.TriggerEvent, "runId");
+        if (runId is not null
+            ? await IsRunCompletedAsync(connection, runId.Value, cancellationToken)
+            : await WasProcessedAsync(connection, context.TriggerEvent.EventId, cancellationToken))
         {
             return;
         }
 
         var userId = ResolveUserId(context);
-        var runId = GetGuid(context.TriggerEvent, "runId");
         var contactId = GetGuid(context.TriggerEvent, "contactId");
         var conversationId = GetGuid(context.TriggerEvent, "conversationId");
         var accountId = Guid.TryParse(context.Opportunity.AccountId, out var parsedAccountId) ? parsedAccountId : (Guid?)null;
@@ -698,7 +700,15 @@ public sealed class PostgresWhatsappConversationActionStore(NpgsqlDataSource dat
 
         const string sql = """
             with matched as (
-                select id, status, updated_at
+                select id, status, updated_at,
+                       exists (
+                           select 1
+                           from whatsapp_messages message
+                           where message.conversation_id = coalesce(@conversationId, ai_agent_suggestions.conversation_id)
+                             and message.direction = 'incoming'
+                             and coalesce(message.status, '') <> 'deleted'
+                             and message.message_at > ai_agent_suggestions.resolved_at
+                       ) as has_new_customer_message
                 from ai_agent_suggestions
                 where company_id = @companyId
                   and agent_key = 'whatsapp-conversation-analysis'
@@ -725,7 +735,9 @@ public sealed class PostgresWhatsappConversationActionStore(NpgsqlDataSource dat
                   )
             ), updated as (
                 update ai_agent_suggestions suggestion
-                set conversation_id = @conversationId,
+                set status = 'pending',
+                    resolved_at = null,
+                    conversation_id = @conversationId,
                     run_id = @runId,
                     title = @title,
                     description = @description,
@@ -757,6 +769,7 @@ public sealed class PostgresWhatsappConversationActionStore(NpgsqlDataSource dat
                     select id
                     from matched
                     where status in ('pending', 'rejected')
+                      and (status = 'pending' or has_new_customer_message)
                       and not exists (select 1 from matched where status = 'accepted')
                     order by case when status = 'pending' then 0 else 1 end, updated_at desc
                     limit 1
@@ -772,7 +785,7 @@ public sealed class PostgresWhatsappConversationActionStore(NpgsqlDataSource dat
                 @title, @description, @dueAt, @payload, @generationModel, @promptFingerprint,
                 @confidenceScore, @generationReasons, @responseRequiredAt, now(), now()
             where not exists (select 1 from updated)
-              and not exists (select 1 from matched where status = 'accepted')
+              and not exists (select 1 from matched where status = 'accepted' or (status = 'rejected' and not has_new_customer_message))
             on conflict (run_id, suggestion_type) where run_id is not null do nothing;
             """;
         await using var command = new NpgsqlCommand(sql, connection, transaction);

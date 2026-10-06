@@ -42,12 +42,6 @@ public sealed class OpenAiResponsesWhatsappConversationAnalysisClient(
         - Se nao existir acao suficientemente clara para sugerir uma atividade, devolva nextSteps vazio, shouldCreateActivity false e os campos da atividade como null.
         - Nunca deixe uma acao executavel apenas em conversationSummary, commercialObservations ou nextSteps.
 
-        Resposta pendente do atendente:
-        - requiresSellerResponse deve ser true quando a ultima mensagem do novo trecho for do cliente e contiver pergunta, solicitacao ou confirmacao que exija resposta da equipe.
-        - Inclua confirmacoes de agenda, pedidos de informacao e perguntas comerciais, mesmo quando nao houver prazo declarado.
-        - Nesses casos, devolva tambem uma atividade concreta para responder ao cliente; nao use o horario futuro do compromisso como prazo para enviar a resposta.
-        - requiresSellerResponse deve ser false quando a equipe ja respondeu depois da pergunta, ou quando a ultima mensagem for apenas agradecimento, emoji, saudacao, despedida ou confirmacao final sem nova acao.
-
         Scorecard incremental na mesma chamada:
         - Quando input.scorecardTemplate estiver preenchido, devolva exatamente um scorecardItems para cada criterio recebido.
         - Avalie a conversa comercial do dia usando newTranscript e previousDailyItems como estado acumulado compacto; nao solicite nem reconstrua o historico bruto anterior.
@@ -56,6 +50,23 @@ public sealed class OpenAiResponsesWhatsappConversationAnalysisClient(
         - Considere os horarios das mensagens para cadencia e tempo de resposta, distinguindo Equipe e Cliente.
         - Audios transcritos fazem parte de newTranscript e devem ser avaliados como qualquer outra mensagem.
         - Quando input.scorecardTemplate for null, devolva scorecardItems vazio.
+        """;
+    private const string WhatsappAttendanceInstructions = """
+        Resposta pendente do atendente:
+        - Avalie todo o ultimo turno do cliente ainda sem resposta da equipe, em conjunto com previousSummary; nao considere somente a ultima frase. Um emoji, agradecimento ou saudacao depois de um pedido nao resolve esse pedido.
+        - requiresSellerResponse deve ser true quando houver pergunta, solicitacao, confirmacao ou continuidade de atendimento pendente nesse turno.
+        - Inclua confirmacoes de agenda, pedidos de informacao e perguntas comerciais, mesmo quando nao houver prazo declarado. O envio de placa, documento ou dado solicitado para cotacao exige continuidade pela equipe; nao aguarde outra pergunta do cliente para sugerir esse retorno.
+        - Uma saudacao que inicia ou retoma contato e ainda nao foi atendida exige acolhimento e identificacao da demanda: requiresSellerResponse true e uma atividade para iniciar ou retomar o atendimento, mesmo sem oportunidade comercial identificada.
+        - Nesses casos, devolva tambem uma atividade concreta para responder ao cliente; nao use o horario futuro do compromisso como prazo para enviar a resposta.
+        - Uma sugestao existente deduplica o registro, mas nao atende o cliente: devolva a atividade com activityMatchingSuggestionId e requiresSellerResponse true enquanto houver retorno pendente. Uma cotacao solicitada continua pendente depois que o cliente envia os dados pedidos.
+        - requiresSellerResponse deve ser false quando a equipe ja respondeu ou quando o turno inteiro for apenas agradecimento, emoji, despedida ou confirmacao de encerramento sem pendencia. Comunicados automaticos, publicidade e spam sem demanda de atendimento nao exigem resposta.
+        """;
+    private const string InstagramResponseInstructions = """
+        Resposta pendente do atendente:
+        - requiresSellerResponse deve ser true quando a ultima mensagem do novo trecho for do cliente e contiver pergunta, solicitacao ou confirmacao que exija resposta da equipe.
+        - Inclua confirmacoes de agenda, pedidos de informacao e perguntas comerciais, mesmo quando nao houver prazo declarado.
+        - Nesses casos, devolva tambem uma atividade concreta para responder ao cliente; nao use o horario futuro do compromisso como prazo para enviar a resposta.
+        - requiresSellerResponse deve ser false quando a equipe ja respondeu depois da pergunta, ou quando a ultima mensagem for apenas agradecimento, emoji, saudacao, despedida ou confirmacao final sem nova acao.
         """;
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web)
     {
@@ -77,6 +88,7 @@ public sealed class OpenAiResponsesWhatsappConversationAnalysisClient(
             ? "instagram"
             : "whatsapp";
         var operation = $"responses.{channel}-conversation-analysis";
+        var responseInstructions = channel == "whatsapp" ? WhatsappAttendanceInstructions : InstagramResponseInstructions;
         var timeZoneInstructions = $"""
             Consistencia obrigatoria de data e fuso horario:
             - O fuso horario da empresa e {settings.TimeZoneId}.
@@ -89,7 +101,7 @@ public sealed class OpenAiResponsesWhatsappConversationAnalysisClient(
         {
             model,
             reasoning = OpenAiGpt56RequestOptions.Reasoning(model, "none"),
-            instructions = $"{settings.Instructions}\n\n{SemanticDeduplicationInstructions}\n\n{timeZoneInstructions}\n\n{ParticipantIdentityInstructions}",
+            instructions = $"{settings.Instructions}\n\n{SemanticDeduplicationInstructions}\n\n{responseInstructions}\n\n{timeZoneInstructions}\n\n{ParticipantIdentityInstructions}",
             input = JsonSerializer.Serialize(input, SerializerOptions),
             store = false,
             text = new
