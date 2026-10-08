@@ -41,7 +41,38 @@ public sealed class SuggestionVerificationCacheTests
         Assert.NotEqual(baseline, SuggestionVerificationCache.Fingerprint(input, settings, "another-model", EvaluatedAt));
         Assert.NotEqual(baseline, SuggestionVerificationCache.Fingerprint(input, settings with { ContextInstructions = "Nova regra" }, settings.Model, EvaluatedAt));
         Assert.NotEqual(baseline, SuggestionVerificationCache.Fingerprint(input, settings with { ContextEntityKeys = ["notes"] }, settings.Model, EvaluatedAt));
-        Assert.NotEqual(baseline, SuggestionVerificationCache.Fingerprint(input, settings, settings.Model, input.DueAt!.Value.AddMinutes(1)));
-        Assert.NotEqual(baseline, SuggestionVerificationCache.Fingerprint(input, settings, settings.Model, EvaluatedAt.AddDays(1)));
+        Assert.Equal(baseline, SuggestionVerificationCache.Fingerprint(input, settings, settings.Model, input.DueAt!.Value.AddMinutes(1)));
+        Assert.Equal(baseline, SuggestionVerificationCache.Fingerprint(input, settings, settings.Model, EvaluatedAt.AddDays(30)));
+    }
+
+    [Fact]
+    public void Synthetic_activity_updates_do_not_invalidate_a_real_interaction_result()
+    {
+        var input = AiContextOptimizationTests.VerificationInput();
+        var settings = AiContextOptimizationTests.Settings();
+        var baseline = SuggestionVerificationCache.Fingerprint(input, settings, settings.Model, EvaluatedAt);
+        var automatic = input.Evidence.Last() with { Id = "activity:auto", Type = "activity", IsSynthetic = true };
+
+        foreach (var updated in new[] { automatic, automatic with { Summary = "Resumo atualizado", OccurredAt = EvaluatedAt.AddDays(1) } })
+        {
+            var withAutomaticActivity = input with { Evidence = input.Evidence.Append(updated).ToArray() };
+            Assert.Equal(baseline, SuggestionVerificationCache.Fingerprint(withAutomaticActivity, settings, settings.Model, EvaluatedAt));
+        }
+    }
+
+    [Fact]
+    public void Only_context_or_automatic_records_after_creation_do_not_count_as_an_interaction()
+    {
+        var input = AiContextOptimizationTests.VerificationInput();
+        var before = input.Evidence.First();
+        var synthetic = input.Evidence.Last() with { Type = "activity", IsSynthetic = true };
+
+        Assert.False(SuggestionVerificationCache.HasPostSuggestionInteraction(input with { Evidence = [before, synthetic] }));
+        Assert.False(SuggestionVerificationCache.HasPostSuggestionInteraction(input with { Evidence = [] }));
+        Assert.True(SuggestionVerificationCache.HasPostSuggestionInteraction(input));
+        Assert.True(SuggestionVerificationCache.HasPostSuggestionInteraction(input with
+        {
+            Evidence = [synthetic with { IsSynthetic = false }]
+        }));
     }
 }

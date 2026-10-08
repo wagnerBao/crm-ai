@@ -13,7 +13,8 @@ public sealed record SuggestionCompletionEvidence(
     DateTime OccurredAt,
     bool BeforeSuggestion,
     string Summary,
-    [property: JsonIgnore] string? SourceStreamId = null);
+    [property: JsonIgnore] string? SourceStreamId = null,
+    [property: JsonIgnore] bool IsSynthetic = false);
 
 public sealed record SuggestionCompletionVerificationInput(
     string SuggestionId,

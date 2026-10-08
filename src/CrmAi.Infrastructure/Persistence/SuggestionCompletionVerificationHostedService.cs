@@ -70,7 +70,8 @@ public sealed class SuggestionCompletionVerificationProcessor(
         string Payload,
         string PreviousVerificationStatus,
         string? PreviousEvidenceFingerprint,
-        int AttemptCount);
+        int AttemptCount,
+        DateTime ClaimedAt);
 
     private sealed record NotificationCandidate(
         Guid Id,
@@ -125,16 +126,16 @@ public sealed class SuggestionCompletionVerificationProcessor(
             if (SuggestionVerificationCache.CanReuse(suggestion.PreviousVerificationStatus, suggestion.PreviousEvidenceFingerprint, fingerprint))
             {
                 await RestoreUnchangedPriorityAsync(suggestion.Id, fingerprint, suggestion.PreviousVerificationStatus,
-                    suggestion.SuggestedDueAt is not null, cancellationToken);
+                    suggestion.SuggestedDueAt is not null, suggestion.ClaimedAt, cancellationToken);
                 logger.LogInformation("Suggestion verification reused unchanged context. SuggestionId={SuggestionId} Result={Result}",
                     suggestion.Id, suggestion.PreviousVerificationStatus);
                 return true;
             }
 
             SuggestionCompletionVerificationResult result;
-            if (!evidence.Any(item => !item.BeforeSuggestion))
+            if (!SuggestionVerificationCache.HasPostSuggestionInteraction(input))
             {
-                result = new("unfulfilled", 100, "Nenhum registro posterior à sugestão foi encontrado.", []);
+                result = new("unfulfilled", 100, "Nenhuma interação posterior à sugestão foi encontrada.", []);
             }
             else
             {
@@ -166,10 +167,13 @@ public sealed class SuggestionCompletionVerificationProcessor(
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
-        const string sql = """
+        // The correlated eligibility checks have a high estimated cost even on
+        // idle polls. Keep JIT compilation off only for this short transaction.
+        var sql = $$"""
+            set local jit = off;
             with candidate as (
                 select id, verification_status, evidence_fingerprint
-                from ai_agent_suggestions
+                from ai_agent_suggestions suggestion
                 where status = 'pending'
                   and (
                     next_verification_at <= now()
@@ -188,6 +192,7 @@ public sealed class SuggestionCompletionVerificationProcessor(
                     next_verification_at,
                     coalesce(suggested_due_at, created_at) + interval '5 minutes'
                   ) <= now()
+                  {{SuggestionVerificationActivityGate.Sql}}
                 order by case when priority_at is null then 0 else 1 end,
                          suggested_due_at,
                          created_at
@@ -206,7 +211,7 @@ public sealed class SuggestionCompletionVerificationProcessor(
                       suggestion.created_at, suggestion.suggested_due_at, suggestion.payload::text,
                       candidate.verification_status as previous_verification_status,
                       candidate.evidence_fingerprint as previous_evidence_fingerprint,
-                      suggestion.verification_attempt_count;
+                      suggestion.verification_attempt_count, suggestion.updated_at;
             """;
         await using var command = new NpgsqlCommand(sql, connection, transaction);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -217,7 +222,7 @@ public sealed class SuggestionCompletionVerificationProcessor(
                 reader.GetGuid(0), reader.GetGuid(1), reader.GetGuid(2), reader.IsDBNull(3) ? null : reader.GetGuid(3),
                 reader.GetString(4), reader.GetString(5), reader.GetString(6), reader.GetDateTime(7).ToUniversalTime(),
                 reader.IsDBNull(8) ? null : reader.GetDateTime(8).ToUniversalTime(), reader.GetString(9), reader.GetString(10),
-                reader.IsDBNull(11) ? null : reader.GetString(11), reader.GetInt32(12));
+                reader.IsDBNull(11) ? null : reader.GetString(11), reader.GetInt32(12), reader.GetDateTime(13).ToUniversalTime());
         }
         await reader.DisposeAsync();
         await transaction.CommitAsync(cancellationToken);
@@ -247,7 +252,8 @@ public sealed class SuggestionCompletionVerificationProcessor(
                        greatest(activity.updated_at, activity.created_at) as occurred_at,
                        concat_ws(' | ', activity.title, activity.activity_type, activity.channel, activity.status,
                            nullif(activity.completed_notes, ''), nullif(activity.notes, '')) as summary,
-                       null::text as source_stream_id
+                       null::text as source_stream_id,
+                       coalesce(activity.activity_type = 'agent-skopos', false) as is_synthetic
                 from activities activity
                 where @includeActivities
                   and activity.company_id = @companyId
@@ -258,7 +264,7 @@ public sealed class SuggestionCompletionVerificationProcessor(
                 select 'whatsapp:' || message.id::text, 'whatsapp_message', message.message_at,
                        concat_ws(' | ', message.direction, message.message_type,
                            coalesce(nullif(message.text, ''), transcription.transcript)),
-                       'whatsapp:' || conversation.id::text
+                       'whatsapp:' || conversation.id::text, false
                 from whatsapp_messages message
                 inner join whatsapp_conversations conversation on conversation.id = message.conversation_id
                 left join lateral (
@@ -277,7 +283,7 @@ public sealed class SuggestionCompletionVerificationProcessor(
                 union all
                 select 'instagram:' || message.id::text, 'instagram_message', message.message_at,
                        concat_ws(' | ', message.direction, message.message_type, nullif(message.text, '')),
-                       'instagram:' || conversation.id::text
+                       'instagram:' || conversation.id::text, false
                 from instagram_messages message
                 inner join instagram_conversations conversation on conversation.id = message.conversation_id
                 where @includeInstagramMessages
@@ -285,7 +291,7 @@ public sealed class SuggestionCompletionVerificationProcessor(
                   and message.message_at >= @windowStart
 
                 union all
-                select 'note:' || note.id::text, 'note', note.created_at, note.text, null::text
+                select 'note:' || note.id::text, 'note', note.created_at, note.text, null::text, false
                 from notes note
                 cross join contact_scope contact
                 where @includeNotes
@@ -297,14 +303,15 @@ public sealed class SuggestionCompletionVerificationProcessor(
                 union all
                 select 'opportunity:' || opportunity.id::text, 'opportunity',
                        greatest(opportunity.updated_at, opportunity.created_at),
-                       concat_ws(' | ', opportunity.name, opportunity.status), null::text
+                       concat_ws(' | ', opportunity.name, opportunity.status), null::text, false
                 from opportunities opportunity
                 where @includeOpportunities
                   and opportunity.id in (select id from related_opportunities)
                   and greatest(opportunity.updated_at, opportunity.created_at) >= @windowStart
 
                 union all
-                select 'history:' || history.id::text, 'opportunity_history', history.created_at, history.event, null::text
+                select 'history:' || history.id::text, 'opportunity_history', history.created_at, history.event, null::text,
+                       coalesce(history.event like 'Atividade criada automaticamente pelo Agent Skopos%', false)
                 from opportunity_history history
                 where @includeHistory
                   and history.company_id = @companyId
@@ -314,7 +321,7 @@ public sealed class SuggestionCompletionVerificationProcessor(
                 union all
                 select 'meeting:' || recording.id::text, 'meeting_recording',
                        coalesce(recording.transcribed_at, recording.updated_at, recording.created_at),
-                       concat_ws(' | ', nullif(recording.summary, ''), nullif(recording.transcript, '')), null::text
+                       concat_ws(' | ', nullif(recording.summary, ''), nullif(recording.transcript, '')), null::text, false
                 from meeting_audio_recordings recording
                 left join activities activity on activity.id = recording.activity_id
                 where @includeMeetingAnalysis
@@ -322,7 +329,7 @@ public sealed class SuggestionCompletionVerificationProcessor(
                   and (activity.contact_id = @contactId or recording.opportunity_id in (select id from related_opportunities))
                   and coalesce(recording.transcribed_at, recording.updated_at, recording.created_at) >= @windowStart
             )
-            select id, type, occurred_at, left(summary, 1200), source_stream_id
+            select id, type, occurred_at, left(summary, 1200), source_stream_id, is_synthetic
             from evidence
             where nullif(btrim(summary), '') is not null
             order by occurred_at desc
@@ -344,7 +351,7 @@ public sealed class SuggestionCompletionVerificationProcessor(
         while (await reader.ReadAsync(cancellationToken))
         {
             var occurredAt = reader.GetDateTime(2).ToUniversalTime();
-            rows.Add(new(reader.GetString(0), reader.GetString(1), occurredAt, occurredAt < suggestion.CreatedAt, reader.GetString(3), reader.IsDBNull(4) ? null : reader.GetString(4)));
+            rows.Add(new(reader.GetString(0), reader.GetString(1), occurredAt, occurredAt < suggestion.CreatedAt, reader.GetString(3), reader.IsDBNull(4) ? null : reader.GetString(4), reader.GetBoolean(5)));
         }
         return rows;
     }
@@ -402,7 +409,7 @@ public sealed class SuggestionCompletionVerificationProcessor(
             set status = case when @result = 'fulfilled' then 'fulfilled' else status end,
                 resolved_at = case when @result = 'fulfilled' then now() else resolved_at end,
                 verification_status = @result,
-                last_verified_at = now(),
+                last_verified_at = @verifiedAt,
                 next_verification_at = case
                     when @result = 'fulfilled' then null
                     when @result = 'unfulfilled' and @HasDueDate then now() + interval '15 minutes'
@@ -428,6 +435,7 @@ public sealed class SuggestionCompletionVerificationProcessor(
             update.Parameters.AddWithValue("suggestionId", suggestion.Id);
             update.Parameters.AddWithValue("result", result.Result);
             update.Parameters.AddWithValue("HasDueDate", suggestion.SuggestedDueAt is not null);
+            update.Parameters.AddWithValue("verifiedAt", suggestion.ClaimedAt);
             update.Parameters.AddWithValue("fingerprint", fingerprint);
             update.Parameters.AddWithValue("confidence", result.Confidence);
             update.Parameters.AddWithValue("reason", result.Reason);
@@ -439,7 +447,7 @@ public sealed class SuggestionCompletionVerificationProcessor(
         logger.LogInformation("Suggestion verification completed. SuggestionId={SuggestionId} Result={Result} Confidence={Confidence}", suggestion.Id, result.Result, result.Confidence);
     }
 
-    private async Task RestoreUnchangedPriorityAsync(Guid suggestionId, string fingerprint, string previousStatus, bool hasDueDate, CancellationToken cancellationToken)
+    private async Task RestoreUnchangedPriorityAsync(Guid suggestionId, string fingerprint, string previousStatus, bool hasDueDate, DateTime verifiedAt, CancellationToken cancellationToken)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var command = new NpgsqlCommand(
@@ -447,7 +455,12 @@ public sealed class SuggestionCompletionVerificationProcessor(
             update ai_agent_suggestions
             set verification_status = @previousStatus,
                 evidence_fingerprint = @fingerprint,
-                last_verified_at = now(),
+                last_verified_at = @verifiedAt,
+                verification_attempt_count = greatest(0, verification_attempt_count - 1),
+                priority_at = case
+                    when @previousStatus = 'unfulfilled' and @hasDueDate
+                         and suggested_due_at <= now() - interval '5 minutes' then coalesce(priority_at, now())
+                    else priority_at end,
                 next_verification_at = now() + case
                     when @previousStatus = 'inconclusive' then interval '60 minutes'
                     when @hasDueDate then interval '15 minutes'
@@ -460,6 +473,7 @@ public sealed class SuggestionCompletionVerificationProcessor(
         command.Parameters.AddWithValue("fingerprint", fingerprint);
         command.Parameters.AddWithValue("previousStatus", previousStatus);
         command.Parameters.AddWithValue("hasDueDate", hasDueDate);
+        command.Parameters.AddWithValue("verifiedAt", verifiedAt);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 

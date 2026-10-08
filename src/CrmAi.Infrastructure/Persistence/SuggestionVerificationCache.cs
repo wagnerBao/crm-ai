@@ -16,7 +16,7 @@ internal static class SuggestionVerificationCache
     {
         var json = JsonSerializer.Serialize(new
         {
-            version = "verification-cache-v1:lossless-context-v1",
+            version = "verification-cache-v2:interaction-driven",
             contextPolicy = OpenAiSuggestionCompletionVerificationClient.ContextPolicyFingerprint,
             evidenceSelectionMode,
             input.SuggestionId,
@@ -26,19 +26,20 @@ internal static class SuggestionVerificationCache
             input.CreatedAt,
             input.DueAt,
             input.Payload,
-            evidence = input.Evidence.OrderBy(item => item.Id, StringComparer.Ordinal)
+            evidence = input.Evidence.Where(item => !item.IsSynthetic).OrderBy(item => item.Id, StringComparer.Ordinal)
                 .Select(item => new { item.Id, item.Type, item.OccurredAt, item.BeforeSuggestion, item.Summary, item.SourceStreamId }),
             settings.IsActive,
             settings.Provider,
             model = effectiveModel,
             settings.Instructions,
             settings.TimeZoneId,
-            contextEntityKeys = settings.ContextEntityKeys.OrderBy(key => key, StringComparer.Ordinal),
-            evaluationDateUtc = evaluatedAtUtc.Date,
-            dueDatePassed = input.DueAt is { } dueAt && dueAt <= evaluatedAtUtc
+            contextEntityKeys = settings.ContextEntityKeys.OrderBy(key => key, StringComparer.Ordinal)
         });
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(json))).ToLowerInvariant();
     }
+
+    public static bool HasPostSuggestionInteraction(SuggestionCompletionVerificationInput input) =>
+        input.Evidence.Any(item => !item.BeforeSuggestion && !item.IsSynthetic);
 
     public static bool CanReuse(string previousStatus, string? previousFingerprint, string fingerprint) =>
         previousStatus is "unfulfilled" or "inconclusive"
