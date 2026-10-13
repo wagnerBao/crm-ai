@@ -18,11 +18,15 @@ public abstract class RabbitMqOpportunityEventConsumerBase(
 {
     private IConnection? _connection;
     private IModel? _channel;
+    private IModel? _deferredPublisher;
+    private readonly object _deferredPublishGate = new();
 
     protected abstract string ConnectionName { get; }
     protected abstract string QueueName(RabbitMqOptions options);
     protected abstract IReadOnlyCollection<string> ExchangeNames(RabbitMqOptions options);
     protected abstract Task ProcessAsync(IServiceProvider services, OpportunityEvent opportunityEvent, CancellationToken cancellationToken);
+    protected virtual Task OnAiDeferredAsync(IServiceProvider services, OpportunityEvent opportunityEvent,
+        AiInvocationDeferredException deferred, CancellationToken cancellationToken) => Task.CompletedTask;
     protected virtual bool RequiresOpportunityId => true;
     protected virtual bool CanProcessWithoutOpportunityId(OpportunityEvent opportunityEvent) => !RequiresOpportunityId;
 
@@ -75,6 +79,7 @@ public abstract class RabbitMqOpportunityEventConsumerBase(
 
         DeclareDeadLetterTopology(_channel, rabbitOptions, queueName);
         _channel.QueueDeclare(queueName, durable: true, exclusive: false, autoDelete: false);
+        RabbitMqAiDeferredMessages.DeclareTopology(_channel, queueName);
         foreach (var exchange in exchangeNames)
         {
             _channel.QueueBind(queueName, exchange, routingKey: string.Empty);
@@ -103,6 +108,11 @@ public abstract class RabbitMqOpportunityEventConsumerBase(
 
     private void DisposeRabbitResources()
     {
+        lock (_deferredPublishGate)
+        {
+            _deferredPublisher?.Dispose();
+            _deferredPublisher = null;
+        }
         _channel?.Dispose();
         _channel = null;
         _connection?.Dispose();
@@ -116,9 +126,10 @@ public abstract class RabbitMqOpportunityEventConsumerBase(
             return;
         }
 
+        OpportunityEvent? opportunityEvent = null;
         try
         {
-            var opportunityEvent = DeserializeEvent(args);
+            opportunityEvent = DeserializeEvent(args);
             if (string.IsNullOrWhiteSpace(opportunityEvent.OpportunityId) && !CanProcessWithoutOpportunityId(opportunityEvent))
             {
                 logger.LogWarning("Discarding RabbitMQ event without opportunityId from exchange {Exchange}.", args.Exchange);
@@ -131,6 +142,48 @@ public abstract class RabbitMqOpportunityEventConsumerBase(
             await ProcessAsync(scope.ServiceProvider, opportunityEvent, cancellationToken);
 
             _channel.BasicAck(args.DeliveryTag, multiple: false);
+        }
+        catch (AiInvocationDeferredException deferred)
+        {
+            logger.LogWarning("Deferring AI event in {ConsumerName} until {RetryAtUtc}: {Reason}.",
+                GetType().Name, deferred.RetryAtUtc, deferred.Reason);
+            try
+            {
+                lock (_deferredPublishGate)
+                {
+                    if (_deferredPublisher is not { IsOpen: true })
+                    {
+                        _deferredPublisher?.Dispose();
+                        _deferredPublisher = _connection!.CreateModel();
+                        RabbitMqAiDeferredMessages.DeclareTopology(_deferredPublisher, QueueName(rabbitOptions));
+                        _deferredPublisher.ConfirmSelect();
+                    }
+                    RabbitMqAiDeferredMessages.PublishConfirmed(_deferredPublisher, QueueName(rabbitOptions), args, deferred,
+                        opportunityEvent?.EventId, opportunityEvent?.Type, opportunityEvent?.OccurredAt);
+                }
+                await using (var scope = scopeFactory.CreateAsyncScope())
+                    await OnAiDeferredAsync(scope.ServiceProvider, opportunityEvent!, deferred, cancellationToken);
+                _channel.BasicAck(args.DeliveryTag, multiple: false);
+            }
+            catch (Exception publicationException)
+            {
+                logger.LogError(publicationException, "Could not complete deferred AI publication and state update; retaining original delivery.");
+                lock (_deferredPublishGate)
+                {
+                    _deferredPublisher?.Dispose();
+                    _deferredPublisher = null;
+                }
+                try
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(5), cancellationToken);
+                    if (_channel is { IsOpen: true }) _channel.BasicNack(args.DeliveryTag, multiple: false, requeue: true);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Closing the channel returns unacknowledged work to RabbitMQ during shutdown.
         }
         catch (Exception exception)
         {
@@ -204,21 +257,7 @@ public abstract class RabbitMqOpportunityEventConsumerBase(
             return false;
         }
 
-        var openAiException = FindOpenAiException(exception);
-        return openAiException is null || openAiException.IsTransient;
-    }
-
-    private static OpenAiRequestException? FindOpenAiException(Exception exception)
-    {
-        for (var current = exception; current is not null; current = current.InnerException)
-        {
-            if (current is OpenAiRequestException openAiException)
-            {
-                return openAiException;
-            }
-        }
-
-        return null;
+        return AiInvocationFailurePolicy.Classify(exception).Kind == AiInvocationFailureKind.Transient;
     }
 
     private static OpportunityEvent DeserializeEvent(BasicDeliverEventArgs args)
@@ -233,7 +272,7 @@ public abstract class RabbitMqOpportunityEventConsumerBase(
         var type = GetString(root, "type")
             ?? args.BasicProperties?.Type
             ?? args.Exchange;
-        var occurredAt = GetDateTime(root, "occurredAt") ?? DateTime.UtcNow;
+        var occurredAt = GetDateTime(root, "occurredAt") ?? ReadDeferredOccurredAt(args.BasicProperties?.Headers) ?? DateTime.UtcNow;
         var opportunityId = GetString(root, "opportunityId") ?? string.Empty;
         var userId = GetString(root, "userId");
         var data = ReadData(root);
@@ -273,4 +312,12 @@ public abstract class RabbitMqOpportunityEventConsumerBase(
         => element.TryGetProperty(propertyName, out var value) && value.ValueKind == JsonValueKind.String && value.TryGetDateTime(out var dateTime)
             ? dateTime
             : null;
+
+    private static DateTime? ReadDeferredOccurredAt(IDictionary<string, object>? headers)
+    {
+        if (headers is null || !headers.TryGetValue("x-ai-occurred-at", out var value)) return null;
+        var text = value is byte[] bytes ? Encoding.UTF8.GetString(bytes) : value?.ToString();
+        return DateTime.TryParse(text, System.Globalization.CultureInfo.InvariantCulture,
+            System.Globalization.DateTimeStyles.RoundtripKind, out var occurredAt) ? occurredAt : null;
+    }
 }

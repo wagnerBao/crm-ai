@@ -1,0 +1,52 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="4a51a1d4-c945-40bf-b285-2aa7fc4d7516" name="@Diego-Goncalves 2026-10-13 12:42:33" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-10-13T12:42:33.9911840-03:00" queuing="2026-10-13T12:42:33.9911840-03:00" start="2026-10-13T12:42:29.6274450-03:00" finish="2026-10-13T12:42:34.0077220-03:00" />
+  <TestSettings name="default" id="d7e22fa4-a81e-45d8-b0d2-349fbab2f9d6">
+    <Deployment runDeploymentRoot="_Diego-Goncalves_2026-10-13_12_42_33" />
+  </TestSettings>
+  <Results>
+    <UnitTestResult executionId="e82e86e0-b1cc-4fe2-85fc-84606729a211" testId="c9325b6b-f67a-b9d8-26fb-5e7a8139432e" testName="CrmRestApi.Consumers.Tests.ConversationAnalysisDeferredDatabaseTests.Newly_ready_audio_can_request_a_fresh_batch_while_an_older_delivery_is_deferred" computerName="Diego-Goncalves" duration="00:00:00.0583934" startTime="2026-10-13T12:42:33.2390800-03:00" endTime="2026-10-13T12:42:33.2390800-03:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="e82e86e0-b1cc-4fe2-85fc-84606729a211" />
+    <UnitTestResult executionId="ba1ddf97-5105-428a-bcfa-32ec0c166a96" testId="6c08d544-4cc8-3570-46b2-bb87e6ea655f" testName="CrmRestApi.Consumers.Tests.ConversationAnalysisDeferredDatabaseTests.Instagram_dispatch_completion_does_not_overwrite_deferred_or_completed_results" computerName="Diego-Goncalves" duration="00:00:00.0142473" startTime="2026-10-13T12:42:33.3539800-03:00" endTime="2026-10-13T12:42:33.3539800-03:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="ba1ddf97-5105-428a-bcfa-32ec0c166a96" />
+    <UnitTestResult executionId="2f4a6ffb-0173-44bd-9c1c-c58c003ac7c9" testId="57ea92fb-25a9-c9cb-801f-1764debc2437" testName="CrmRestApi.Consumers.Tests.ConversationAnalysisDeferredDatabaseTests.Deferred_conversations_do_not_dispatch_again_but_failed_conversations_still_retry" computerName="Diego-Goncalves" duration="00:00:00.0329973" startTime="2026-10-13T12:42:33.4992180-03:00" endTime="2026-10-13T12:42:33.4992190-03:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="2f4a6ffb-0173-44bd-9c1c-c58c003ac7c9" />
+    <UnitTestResult executionId="30bf72fa-9773-43c3-a04c-dd10757fe622" testId="accaee03-3e0e-dce2-6907-b79cb9a0a1e6" testName="CrmRestApi.Consumers.Tests.ConversationAnalysisDeferredDatabaseTests.Stale_recovery_keeps_deferred_runs_as_active_work_even_when_conversation_is_queued" computerName="Diego-Goncalves" duration="00:00:00.1573950" startTime="2026-10-13T12:42:33.0529360-03:00" endTime="2026-10-13T12:42:33.0530360-03:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="30bf72fa-9773-43c3-a04c-dd10757fe622" />
+  </Results>
+  <TestDefinitions>
+    <UnitTest name="CrmRestApi.Consumers.Tests.ConversationAnalysisDeferredDatabaseTests.Stale_recovery_keeps_deferred_runs_as_active_work_even_when_conversation_is_queued" storage="/users/user1234/crm staff/consumers_crm/tests/crmrestapi.consumers.tests/bin/debug/net9.0/crmrestapi.consumers.tests.dll" id="accaee03-3e0e-dce2-6907-b79cb9a0a1e6">
+      <Execution id="30bf72fa-9773-43c3-a04c-dd10757fe622" />
+      <TestMethod codeBase="/Users/user1234/crm staff/CONSUMERS_CRM/tests/CrmRestApi.Consumers.Tests/bin/Debug/net9.0/CrmRestApi.Consumers.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="CrmRestApi.Consumers.Tests.ConversationAnalysisDeferredDatabaseTests" name="Stale_recovery_keeps_deferred_runs_as_active_work_even_when_conversation_is_queued" />
+    </UnitTest>
+    <UnitTest name="CrmRestApi.Consumers.Tests.ConversationAnalysisDeferredDatabaseTests.Deferred_conversations_do_not_dispatch_again_but_failed_conversations_still_retry" storage="/users/user1234/crm staff/consumers_crm/tests/crmrestapi.consumers.tests/bin/debug/net9.0/crmrestapi.consumers.tests.dll" id="57ea92fb-25a9-c9cb-801f-1764debc2437">
+      <Execution id="2f4a6ffb-0173-44bd-9c1c-c58c003ac7c9" />
+      <TestMethod codeBase="/Users/user1234/crm staff/CONSUMERS_CRM/tests/CrmRestApi.Consumers.Tests/bin/Debug/net9.0/CrmRestApi.Consumers.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="CrmRestApi.Consumers.Tests.ConversationAnalysisDeferredDatabaseTests" name="Deferred_conversations_do_not_dispatch_again_but_failed_conversations_still_retry" />
+    </UnitTest>
+    <UnitTest name="CrmRestApi.Consumers.Tests.ConversationAnalysisDeferredDatabaseTests.Newly_ready_audio_can_request_a_fresh_batch_while_an_older_delivery_is_deferred" storage="/users/user1234/crm staff/consumers_crm/tests/crmrestapi.consumers.tests/bin/debug/net9.0/crmrestapi.consumers.tests.dll" id="c9325b6b-f67a-b9d8-26fb-5e7a8139432e">
+      <Execution id="e82e86e0-b1cc-4fe2-85fc-84606729a211" />
+      <TestMethod codeBase="/Users/user1234/crm staff/CONSUMERS_CRM/tests/CrmRestApi.Consumers.Tests/bin/Debug/net9.0/CrmRestApi.Consumers.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="CrmRestApi.Consumers.Tests.ConversationAnalysisDeferredDatabaseTests" name="Newly_ready_audio_can_request_a_fresh_batch_while_an_older_delivery_is_deferred" />
+    </UnitTest>
+    <UnitTest name="CrmRestApi.Consumers.Tests.ConversationAnalysisDeferredDatabaseTests.Instagram_dispatch_completion_does_not_overwrite_deferred_or_completed_results" storage="/users/user1234/crm staff/consumers_crm/tests/crmrestapi.consumers.tests/bin/debug/net9.0/crmrestapi.consumers.tests.dll" id="6c08d544-4cc8-3570-46b2-bb87e6ea655f">
+      <Execution id="ba1ddf97-5105-428a-bcfa-32ec0c166a96" />
+      <TestMethod codeBase="/Users/user1234/crm staff/CONSUMERS_CRM/tests/CrmRestApi.Consumers.Tests/bin/Debug/net9.0/CrmRestApi.Consumers.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="CrmRestApi.Consumers.Tests.ConversationAnalysisDeferredDatabaseTests" name="Instagram_dispatch_completion_does_not_overwrite_deferred_or_completed_results" />
+    </UnitTest>
+  </TestDefinitions>
+  <TestEntries>
+    <TestEntry testId="c9325b6b-f67a-b9d8-26fb-5e7a8139432e" executionId="e82e86e0-b1cc-4fe2-85fc-84606729a211" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="6c08d544-4cc8-3570-46b2-bb87e6ea655f" executionId="ba1ddf97-5105-428a-bcfa-32ec0c166a96" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="57ea92fb-25a9-c9cb-801f-1764debc2437" executionId="2f4a6ffb-0173-44bd-9c1c-c58c003ac7c9" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="accaee03-3e0e-dce2-6907-b79cb9a0a1e6" executionId="30bf72fa-9773-43c3-a04c-dd10757fe622" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+  </TestEntries>
+  <TestLists>
+    <TestList name="Resultados que não estão em uma lista" id="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestList name="Todos os resultados carregados" id="19431567-8539-422a-85d7-44ee4e166bda" />
+  </TestLists>
+  <ResultSummary outcome="Completed">
+    <Counters total="4" executed="4" passed="4" failed="0" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+    <Output>
+      <StdOut>[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v2.8.2+699d445a1a (64-bit .NET 9.0.16)
+[xUnit.net 00:00:00.29]   Discovering: CrmRestApi.Consumers.Tests
+[xUnit.net 00:00:00.58]   Discovered:  CrmRestApi.Consumers.Tests
+[xUnit.net 00:00:00.60]   Starting:    CrmRestApi.Consumers.Tests
+[xUnit.net 00:00:02.11]   Finished:    CrmRestApi.Consumers.Tests
+</StdOut>
+    </Output>
+  </ResultSummary>
+</TestRun>

@@ -19,8 +19,14 @@ public sealed class RabbitMqOpportunityAnalysisConsumer(
 
     protected override bool CanProcessWithoutOpportunityId(OpportunityEvent opportunityEvent) =>
         string.Equals(opportunityEvent.Type, "opportunity.instagram.message.created", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(opportunityEvent.Type, "opportunity.instagram.conversation.batch", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(opportunityEvent.Type, "opportunity.whatsapp.conversation.batch", StringComparison.OrdinalIgnoreCase)
         || string.Equals(opportunityEvent.Type, "opportunity.meeting_audio.recording.created", StringComparison.OrdinalIgnoreCase);
 
     protected override Task ProcessAsync(IServiceProvider services, OpportunityEvent opportunityEvent, CancellationToken cancellationToken) =>
         services.GetRequiredService<IOpportunityAnalysisEventProcessor>().ProcessAsync(opportunityEvent, cancellationToken);
+
+    protected override Task OnAiDeferredAsync(IServiceProvider services, OpportunityEvent opportunityEvent,
+        AiInvocationDeferredException deferred, CancellationToken cancellationToken) =>
+        services.GetRequiredService<IConversationAnalysisDeferralStore>().MarkDeferredAsync(opportunityEvent, deferred.Reason, cancellationToken);
 }

@@ -120,6 +120,7 @@ public sealed class RabbitRiskAnalysisTests
         services.AddSingleton<RabbitMqRiskAnalysisMessages>();
         services.AddSingleton<IRiskAnalysisMessages>(sp=>sp.GetRequiredService<RabbitMqRiskAnalysisMessages>());
         services.AddScoped<IRiskAnalysisState,PostgresRiskAnalysisState>();
+        services.AddScoped<IAiInvocationGuard,PostgresAiInvocationGuard>();
         services.AddSingleton<IAiAgentRuntimeSettingsRepository>(new RiskAnalysisStateTests.Settings());
         services.AddSingleton<IOpportunityContextRepository>(repository);
         services.AddSingleton<IRiskAnalysisAgent>(agent);services.AddSingleton<IAnalysisResultStore>(new Store());

@@ -96,6 +96,8 @@ public interface IWhatsappScorecardContextRepository
 
 public interface IWhatsappConversationActionStore
 {
+    Task<bool> IsCompletedAsync(OpportunityEvent opportunityEvent, CancellationToken cancellationToken)
+        => Task.FromResult(false);
     Task ApplyAsync(OpportunityAnalysisContext context, WhatsappConversationAnalysisResult result, CancellationToken cancellationToken);
     Task ApplyContactAsync(OpportunityEvent opportunityEvent, WhatsappConversationAnalysisResult result, CancellationToken cancellationToken)
         => Task.CompletedTask;
@@ -107,6 +109,8 @@ public interface IWhatsappConversationAnalysisScheduler
     Task<IReadOnlyCollection<OpportunityEvent>> ClaimDueAsync(int limit, CancellationToken cancellationToken);
     Task CompleteAsync(string eventId, CancellationToken cancellationToken);
     Task FailAsync(string eventId, string error, CancellationToken cancellationToken);
+    Task DeferAsync(string eventId, DateTime retryAtUtc, string reason, CancellationToken cancellationToken)
+        => FailAsync(eventId, reason, cancellationToken);
 }
 
 public interface IInstagramConversationAnalysisService
@@ -192,6 +196,10 @@ public sealed class OpportunityAnalysisEventProcessor(
             opportunityEvent.Type,
             "opportunity.whatsapp.conversation.batch",
             StringComparison.OrdinalIgnoreCase);
+        if (isWhatsappBatch && await whatsappConversationActionStore.IsCompletedAsync(opportunityEvent, cancellationToken))
+        {
+            return;
+        }
         var hasOpportunity = Guid.TryParse(opportunityEvent.OpportunityId, out var batchOpportunityId)
             && batchOpportunityId != Guid.Empty;
         if (isWhatsappBatch && !hasOpportunity)

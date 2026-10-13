@@ -97,12 +97,13 @@ public sealed class OpenAiResponsesWhatsappConversationAnalysisClient(
             - Nao use Z para um horario local, exceto quando o fuso da empresa for UTC.
             - Exemplo: 03/09/2026 as 14h em America/Sao_Paulo deve ser 2026-09-03T14:00:00-03:00.
             """;
+        var requestInput = WithoutRepeatedAdditionalContext(settings, input);
         var payload = new
         {
             model,
             reasoning = OpenAiGpt56RequestOptions.Reasoning(model, "none"),
             instructions = $"{settings.Instructions}\n\n{SemanticDeduplicationInstructions}\n\n{responseInstructions}\n\n{timeZoneInstructions}\n\n{ParticipantIdentityInstructions}",
-            input = JsonSerializer.Serialize(input, SerializerOptions),
+            input = JsonSerializer.Serialize(requestInput, SerializerOptions),
             store = false,
             text = new
             {
@@ -228,6 +229,20 @@ public sealed class OpenAiResponsesWhatsappConversationAnalysisClient(
             OpenAiInvocationLogBuilder.NormalizeJsonBody(outputText)), cancellationToken);
 
         return result;
+    }
+
+    private static WhatsappConversationAnalysisInput WithoutRepeatedAdditionalContext(
+        AiAgentRuntimeSettings settings,
+        WhatsappConversationAnalysisInput input)
+    {
+        var additionalContext = input.AdditionalContext;
+        // Compare complete configured blocks, not incidental substrings or normalized text.
+        // Instructions retain the exact configured content; the original input is not mutated.
+        var isRepeated = !string.IsNullOrWhiteSpace(additionalContext)
+            && (string.Equals(additionalContext, settings.ContextInstructions, StringComparison.Ordinal)
+                || string.Equals(additionalContext, settings.SystemPrompt, StringComparison.Ordinal)
+                || string.Equals(additionalContext, settings.Instructions, StringComparison.Ordinal));
+        return isRepeated ? input with { AdditionalContext = null } : input;
     }
 
     private static string? ResolveApiKey(AiAgentRuntimeSettings settings)

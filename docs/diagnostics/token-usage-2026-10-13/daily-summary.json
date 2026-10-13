@@ -1,0 +1,137 @@
+[
+  {
+    "date": "2026-09-29",
+    "calls": 1535,
+    "tokens": 7123480,
+    "usd": "5.408064350000000000000000",
+    "attempts": 29121,
+    "failures": 28184,
+    "successes": 937
+  },
+  {
+    "date": "2026-09-30",
+    "calls": 3539,
+    "tokens": 25708252,
+    "usd": "8.129920590000000000000000",
+    "attempts": 35419,
+    "failures": 32219,
+    "successes": 3200
+  },
+  {
+    "date": "2026-10-01",
+    "calls": 3512,
+    "tokens": 34476469,
+    "usd": "13.738447210000000000000000",
+    "attempts": 31121,
+    "failures": 27776,
+    "successes": 3345
+  },
+  {
+    "date": "2026-10-02",
+    "calls": 3085,
+    "tokens": 29560209,
+    "usd": "14.790604380000000000000000",
+    "attempts": 13575,
+    "failures": 10800,
+    "successes": 2775
+  },
+  {
+    "date": "2026-10-03",
+    "calls": 993,
+    "tokens": 7568125,
+    "usd": "2.902615760000000000000000",
+    "attempts": 12031,
+    "failures": 11232,
+    "successes": 799
+  },
+  {
+    "date": "2026-10-04",
+    "calls": 523,
+    "tokens": 4248352,
+    "usd": "2.340493630000000000000000",
+    "attempts": 11899,
+    "failures": 11425,
+    "successes": 474
+  },
+  {
+    "date": "2026-10-05",
+    "calls": 3313,
+    "tokens": 27327630,
+    "usd": "14.893321680000000000000000",
+    "attempts": 15971,
+    "failures": 12953,
+    "successes": 3018
+  },
+  {
+    "date": "2026-10-06",
+    "calls": 4797,
+    "tokens": 40378876,
+    "usd": "15.477085440000000000000000",
+    "attempts": 16276,
+    "failures": 11973,
+    "successes": 4303
+  },
+  {
+    "date": "2026-10-07",
+    "calls": 3984,
+    "tokens": 32399387,
+    "usd": "8.932245630000000000000000",
+    "attempts": 20262,
+    "failures": 16527,
+    "successes": 3735
+  },
+  {
+    "date": "2026-10-08",
+    "calls": 3818,
+    "tokens": 28452127,
+    "usd": "9.151888190000000000000000",
+    "attempts": 34600,
+    "failures": 30933,
+    "successes": 3667
+  },
+  {
+    "date": "2026-10-09",
+    "calls": 1708,
+    "tokens": 14061433,
+    "usd": "4.440876750000000000000000",
+    "attempts": 15545,
+    "failures": 14005,
+    "successes": 1540
+  },
+  {
+    "date": "2026-10-10",
+    "calls": 0,
+    "tokens": 0,
+    "usd": 0,
+    "attempts": 26272,
+    "failures": 26272,
+    "successes": 0
+  },
+  {
+    "date": "2026-10-11",
+    "calls": 0,
+    "tokens": 0,
+    "usd": 0,
+    "attempts": 45645,
+    "failures": 45645,
+    "successes": 0
+  },
+  {
+    "date": "2026-10-12",
+    "calls": 0,
+    "tokens": 0,
+    "usd": 0,
+    "attempts": 52363,
+    "failures": 52363,
+    "successes": 0
+  },
+  {
+    "date": "2026-10-13",
+    "calls": 2258,
+    "tokens": 17366507,
+    "usd": "4.694645830000000000000000",
+    "attempts": 22271,
+    "failures": 20201,
+    "successes": 2070
+  }
+]

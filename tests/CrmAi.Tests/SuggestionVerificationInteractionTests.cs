@@ -1,4 +1,5 @@
 using CrmAi.Application;
+using CrmAi.Domain;
 using CrmAi.Infrastructure.Persistence;
 using CrmAi.Infrastructure.RabbitMq;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -27,6 +28,7 @@ public sealed class SuggestionVerificationInteractionTests : IAsyncLifetime
     private NpgsqlDataSource? db;
     private SuggestionCompletionVerificationProcessor worker = null!;
     private readonly TrackingClient client = new();
+    private readonly SettingsRepository settingsRepository = new();
     private readonly Guid companyId = Guid.NewGuid();
     private readonly Guid contactId = Guid.NewGuid();
     private readonly Guid conversationId = Guid.NewGuid();
@@ -59,6 +61,15 @@ public sealed class SuggestionVerificationInteractionTests : IAsyncLifetime
                 id uuid, company_id uuid, suggestion_id uuid, result text, confidence integer, reason text,
                 evidence jsonb, evidence_fingerprint text, model text, prompt_fingerprint text, created_at timestamptz
             );
+            create temporary table ai_agent_settings (
+                company_id uuid, agent_key text, debounce_minutes integer, updated_at timestamptz default now()
+            );
+            create temporary table ai_invocation_cooldowns (
+                company_id uuid, agent_key text, configuration_fingerprint text,
+                blocked_until timestamptz, reason text, updated_at timestamptz default now(),
+                probe_id uuid,
+                primary key(company_id, agent_key, configuration_fingerprint)
+            );
             create temporary table contacts (id uuid, company_id uuid, account_id uuid);
             create temporary table opportunities (
                 id uuid, company_id uuid, account_id uuid, name text, status text,
@@ -71,7 +82,15 @@ public sealed class SuggestionVerificationInteractionTests : IAsyncLifetime
                 status text default 'done', completed_notes text default 'Retorno registrado', notes text,
                 updated_at timestamptz default now(), created_at timestamptz default now()
             );
-            create temporary table whatsapp_conversations (id uuid, company_id uuid, contact_id uuid);
+            create temporary table whatsapp_conversations (
+                id uuid, company_id uuid, contact_id uuid, summary text, last_analyzed_message_at timestamptz,
+                last_analysis_status text, last_analysis_at timestamptz, updated_at timestamptz
+            );
+            create temporary table whatsapp_conversation_analysis_runs (
+                id uuid, company_id uuid, conversation_id uuid, status text,
+                last_message_id uuid, created_at timestamptz default now(), window_end_at timestamptz default now(),
+                summary text, error text, updated_at timestamptz default now()
+            );
             create temporary table instagram_conversations (id uuid, company_id uuid, contact_id uuid);
             create temporary table whatsapp_messages (
                 id uuid default gen_random_uuid(), conversation_id uuid, message_at timestamptz,
@@ -101,18 +120,80 @@ public sealed class SuggestionVerificationInteractionTests : IAsyncLifetime
         Assert.Equal("pg_temp", await Scalar<string>("show search_path"));
         await Sql($"""
             insert into contacts values ('{contactId}', '{companyId}', null);
-            insert into whatsapp_conversations values ('{conversationId}', '{companyId}', '{contactId}');
+            insert into whatsapp_conversations(id,company_id,contact_id) values ('{conversationId}', '{companyId}', '{contactId}');
             insert into instagram_conversations values ('{conversationId}', '{companyId}', '{contactId}');
             insert into ai_agent_suggestions(id, company_id, contact_id, conversation_id)
             values ('{suggestionId}', '{companyId}', '{contactId}', '{conversationId}');
             """);
-        worker = new(db, new SettingsRepository(), client, Options.Create(new RabbitMqOptions()),
-            NullLogger<SuggestionCompletionVerificationProcessor>.Instance, Options.Create(new OpenAiRiskAnalysisOptions()));
+        worker = new(db, settingsRepository, client, Options.Create(new RabbitMqOptions()),
+            NullLogger<SuggestionCompletionVerificationProcessor>.Instance, Options.Create(new OpenAiRiskAnalysisOptions()),
+            new PostgresAiInvocationGuard(db));
     }
 
     public async Task DisposeAsync()
     {
         if (db is not null) await db.DisposeAsync();
+    }
+
+    [SuggestionPostgresFact]
+    public async Task Batch_completion_preflight_requires_the_exact_run_and_tenant_and_keeps_pending_work()
+    {
+        await Sql($"insert into whatsapp_conversation_analysis_runs(id,company_id,conversation_id,status) values ('{suggestionId}','{companyId}','{conversationId}','completed')");
+        var batch = new OpportunityEvent(Guid.NewGuid().ToString(), "opportunity.whatsapp.conversation.batch",
+            DateTime.UtcNow, string.Empty, null, new Dictionary<string, object?>
+            {
+                ["runId"] = suggestionId.ToString(), ["companyId"] = companyId.ToString(),
+                ["conversationId"] = conversationId.ToString()
+            });
+        var store = new PostgresWhatsappConversationActionStore(db!);
+        Assert.True(await store.IsCompletedAsync(batch, ct));
+        foreach (var key in new[] { "runId", "companyId", "conversationId" })
+        {
+            var data = new Dictionary<string, object?>(batch.Data) { [key] = Guid.NewGuid().ToString() };
+            Assert.False(await store.IsCompletedAsync(batch with { Data = data }, ct));
+        }
+        foreach (var status in new[] { "queued", "processing", "failed", "deferred" })
+        {
+            await Sql($"update whatsapp_conversation_analysis_runs set status='{status}'");
+            Assert.False(await store.IsCompletedAsync(batch, ct));
+        }
+        await Sql("update whatsapp_conversation_analysis_runs set status='superseded'");
+        Assert.True(await store.IsCompletedAsync(batch, ct));
+    }
+
+    [SuggestionPostgresFact]
+    public async Task Completed_newer_batch_supersedes_only_older_deferred_versions_of_the_same_last_message()
+    {
+        var newerRun = Guid.NewGuid();
+        var otherWindow = Guid.NewGuid();
+        var pendingCopies = new[] { (Id: Guid.NewGuid(), Status: "queued"),
+            (Id: Guid.NewGuid(), Status: "processing"), (Id: Guid.NewGuid(), Status: "failed") };
+        var lastMessage = Guid.NewGuid();
+        await Sql($"""
+            insert into whatsapp_conversation_analysis_runs(id,company_id,conversation_id,status,last_message_id,created_at)
+            values ('{suggestionId}','{companyId}','{conversationId}','deferred','{lastMessage}',now()-interval '20 minutes'),
+                   ('{newerRun}','{companyId}','{conversationId}','deferred','{lastMessage}',now()),
+                   ('{otherWindow}','{companyId}','{conversationId}','deferred',gen_random_uuid(),now()-interval '30 minutes');
+            """);
+        foreach (var copy in pendingCopies)
+            await Sql($"insert into whatsapp_conversation_analysis_runs(id,company_id,conversation_id,status,last_message_id,created_at) values ('{copy.Id}','{companyId}','{conversationId}','{copy.Status}','{lastMessage}',now()-interval '10 minutes')");
+        await CompleteRun(suggestionId); // The older batch must not discard the updated audio/text in the newer one.
+        Assert.Equal("deferred", await Scalar<string>($"select status from whatsapp_conversation_analysis_runs where id='{newerRun}'"));
+        await Sql($"update whatsapp_conversation_analysis_runs set status='deferred' where id='{suggestionId}'");
+        await CompleteRun(newerRun);
+        Assert.Equal("superseded", await Scalar<string>($"select status from whatsapp_conversation_analysis_runs where id='{suggestionId}'"));
+        Assert.Equal("completed", await Scalar<string>($"select status from whatsapp_conversation_analysis_runs where id='{newerRun}'"));
+        Assert.Equal("deferred", await Scalar<string>($"select status from whatsapp_conversation_analysis_runs where id='{otherWindow}'"));
+        foreach (var copy in pendingCopies)
+            Assert.Equal("superseded", await Scalar<string>($"select status from whatsapp_conversation_analysis_runs where id='{copy.Id}'"));
+    }
+
+    private async Task CompleteRun(Guid runId)
+    {
+        await using var connection = await db!.OpenConnectionAsync();
+        var complete = typeof(PostgresWhatsappConversationActionStore).GetMethod("CompleteQueuedRunAsync",
+            System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)!;
+        await (Task)complete.Invoke(null, [connection, runId, conversationId, "Resumo de fixture", ct])!;
     }
 
     [SuggestionPostgresFact]
@@ -144,6 +225,8 @@ public sealed class SuggestionVerificationInteractionTests : IAsyncLifetime
         Assert.False(await Process());
         await Message("now()");
         await RequestForScope();
+        Assert.False(await Process()); // Collect the new evidence within the configured window.
+        await Due();
         Assert.True(await Process());
         Assert.Equal(2, client.Calls);
         Assert.Equal(2L, await HistoryCount());
@@ -210,9 +293,15 @@ public sealed class SuggestionVerificationInteractionTests : IAsyncLifetime
     public async Task Evidence_arriving_during_the_model_call_is_not_lost_by_the_completion_timestamp()
     {
         await Message("now() - interval '1 day'");
-        client.DuringAnalysis = () => Message("now()");
+        client.DuringAnalysis = async () =>
+        {
+            await Message("now()");
+            await RequestForScope();
+        };
         Assert.True(await Process());
         Assert.True(await Scalar<bool>("select max(created_at) > (select last_verified_at from ai_agent_suggestions) from whatsapp_messages"));
+        Assert.True(await Scalar<bool>("select next_verification_at between now()+interval '4 minutes' and now()+interval '6 minutes' from ai_agent_suggestions"));
+        Assert.False(await Process());
         await Due();
         Assert.True(await Process());
         Assert.Equal(2, client.Calls);
@@ -280,10 +369,96 @@ public sealed class SuggestionVerificationInteractionTests : IAsyncLifetime
         client.FailOnce = true;
         Assert.True(await Process());
         Assert.Equal("failed", await Status());
+        var retryAt = await Scalar<DateTime>("select next_verification_at from ai_agent_suggestions");
+        await RequestForScope();
+        Assert.Equal(retryAt, await Scalar<DateTime>("select next_verification_at from ai_agent_suggestions"));
+        Assert.False(await Process());
         await Due();
         Assert.True(await Process());
         Assert.Equal("unfulfilled", await Status());
         Assert.Equal(2, client.Calls);
+    }
+
+    [SuggestionPostgresFact]
+    public async Task Scheduling_uses_tenant_debounce_and_bursts_keep_the_first_deadline()
+    {
+        await Sql($"""
+            insert into ai_agent_settings(company_id,agent_key,debounce_minutes)
+            values (null,'suggestion-completion-verification',30),
+                   ('{companyId}','suggestion-completion-verification',7),
+                   (gen_random_uuid(),'suggestion-completion-verification',1);
+            """);
+        await RequestForScope();
+        var first = await Scalar<DateTime>("select next_verification_at from ai_agent_suggestions");
+        Assert.True(await Scalar<bool>("select next_verification_at between now()+interval '6 minutes' and now()+interval '8 minutes' from ai_agent_suggestions"));
+        await RequestForScope();
+        Assert.Equal(first, await Scalar<DateTime>("select next_verification_at from ai_agent_suggestions"));
+        Assert.False(await Process());
+        await Due();
+        var elapsed = await Scalar<DateTime>("select next_verification_at from ai_agent_suggestions");
+        await RequestForScope(); // A busy worker cannot let subsequent events postpone an elapsed window.
+        Assert.Equal(elapsed, await Scalar<DateTime>("select next_verification_at from ai_agent_suggestions"));
+        Assert.True(await Process());
+    }
+
+    [SuggestionPostgresFact]
+    public async Task Scheduling_preserves_the_active_processing_lease_and_events_after_its_call()
+    {
+        await Sql("update ai_agent_suggestions set verification_status='processing', updated_at=now(), next_verification_at=now()+interval '15 minutes'");
+        var lease = await Scalar<DateTime>("select updated_at from ai_agent_suggestions");
+        await RequestForScope();
+        Assert.Equal(lease, await Scalar<DateTime>("select updated_at from ai_agent_suggestions"));
+        await Due();
+        Assert.False(await Process());
+        Assert.Equal(0, client.Calls);
+    }
+
+    [SuggestionPostgresFact]
+    public async Task Missing_credentials_defer_without_call_history_or_attempts_and_resume_after_configuration_change()
+    {
+        await Message("now() - interval '1 day'");
+        settingsRepository.ApiKey = null;
+        Assert.True(await Process());
+        Assert.Equal("pending", await Status());
+        Assert.Equal(0, client.Calls);
+        Assert.Equal(0L, await HistoryCount());
+        Assert.Equal(0, await Attempts());
+        Assert.Equal(1L, await Scalar<long>("select count(*) from ai_invocation_cooldowns"));
+        Assert.True(await Scalar<bool>("select next_verification_at > now()+interval '59 minutes' from ai_agent_suggestions"));
+        Assert.False(await Process());
+        settingsRepository.ApiKey = "new-test-credential";
+        await RequestForScope();
+        await Due();
+        Assert.True(await Process());
+        Assert.Equal(1, client.Calls);
+        Assert.Equal(1L, await HistoryCount());
+        Assert.Equal(1, await Attempts());
+        Assert.Equal(1L, await Scalar<long>("select count(*) from ai_invocation_cooldowns where reason='credential_missing'"));
+    }
+
+    [SuggestionPostgresFact]
+    public async Task Quota_failure_is_recorded_once_and_new_events_cannot_cancel_its_cooldown()
+    {
+        await Message("now() - interval '1 day'");
+        client.ExceptionOnce = new OpenAiRequestException("Provider quota exhausted", 429, "credit_balance_exhausted");
+        Assert.True(await Process());
+        Assert.Equal("failed", await Status());
+        Assert.Equal(1, client.Calls);
+        Assert.Equal(1L, await HistoryCount());
+        var retryAt = await Scalar<DateTime>("select next_verification_at from ai_agent_suggestions");
+        await RequestForScope();
+        Assert.Equal(retryAt, await Scalar<DateTime>("select next_verification_at from ai_agent_suggestions"));
+        Assert.False(await Process());
+        await Due(); // Even if another caller prematurely releases the suggestion, the persistent guard holds.
+        Assert.True(await Process());
+        Assert.Equal(1, client.Calls);
+        Assert.Equal(1L, await HistoryCount());
+        Assert.Equal(1, await Attempts());
+        await Sql("update ai_invocation_cooldowns set blocked_until=now()-interval '1 second'");
+        await Due();
+        Assert.True(await Process());
+        Assert.Equal(2, client.Calls);
+        Assert.Equal("unfulfilled", await Status());
     }
 
     [SuggestionPostgresFact]
@@ -331,10 +506,12 @@ public sealed class SuggestionVerificationInteractionTests : IAsyncLifetime
 
     private sealed class SettingsRepository : IAiAgentRuntimeSettingsRepository
     {
+        public string? ApiKey { get; set; } = "test-key";
         public Task<AiAgentRuntimeSettings> GetAsync(string agentKey, string? companyId, CancellationToken cancellationToken) =>
             Task.FromResult(AiContextOptimizationTests.Settings() with
             {
-                AgentKey = agentKey, ContextEntityKeys = ["activities", "notes", "whatsapp_messages", "instagram_messages", "opportunities", "history", "meeting_analysis"]
+                AgentKey = agentKey, ApiKey = ApiKey,
+                ContextEntityKeys = ["activities", "notes", "whatsapp_messages", "instagram_messages", "opportunities", "history", "meeting_analysis"]
             });
     }
     private sealed class TrackingClient : IOpenAiSuggestionCompletionVerificationClient
@@ -342,11 +519,17 @@ public sealed class SuggestionVerificationInteractionTests : IAsyncLifetime
         public int Calls { get; private set; }
         public bool Fulfill { get; set; }
         public bool FailOnce { get; set; }
+        public Exception? ExceptionOnce { get; set; }
         public Func<Task>? DuringAnalysis { get; set; }
         public async Task<SuggestionCompletionVerificationResult> AnalyzeAsync(AiAgentRuntimeSettings settings,
             SuggestionCompletionVerificationInput input, AiAgentInvocationContext invocationContext, CancellationToken cancellationToken)
         {
             Calls++;
+            if (ExceptionOnce is { } exception)
+            {
+                ExceptionOnce = null;
+                throw exception;
+            }
             if (FailOnce)
             {
                 FailOnce = false;

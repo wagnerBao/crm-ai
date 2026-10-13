@@ -1,0 +1,72 @@
+{"section": "audit", "observed_at": "2026-10-13T12:10:11.032013-03:00", "cutoff": "2026-10-13T12:07:36.015118-03:00", "read_only": "on"}
+{"section": "rechecks", "date_local": "2026-10-13", "company": "Staff M&B", "category": "repeat-primary-in-day", "calls": 309, "suggestions": 83, "total_tokens": 5157043, "gap_under_5m": 2, "gap_under_15m": 51}
+{"section": "rechecks", "date_local": "2026-10-13", "company": "Staff M&B", "category": "first-primary-in-day", "calls": 119, "suggestions": 119, "total_tokens": 1829853, "gap_under_5m": 0, "gap_under_15m": 0}
+{"section": "rechecks", "date_local": "2026-10-13", "company": "AVEP", "category": "repeat-primary-in-day", "calls": 135, "suggestions": 57, "total_tokens": 1662915, "gap_under_5m": 46, "gap_under_15m": 77}
+{"section": "rechecks", "date_local": "2026-10-13", "company": "Wagner Brum", "category": "repeat-primary-in-day", "calls": 121, "suggestions": 30, "total_tokens": 1037553, "gap_under_5m": 0, "gap_under_15m": 24}
+{"section": "rechecks", "date_local": "2026-10-13", "company": "Staff M&B", "category": "fallback", "calls": 52, "suggestions": 32, "total_tokens": 999185, "gap_under_5m": 0, "gap_under_15m": 0}
+{"section": "rechecks", "date_local": "2026-10-13", "company": "AVEP", "category": "first-primary-in-day", "calls": 90, "suggestions": 90, "total_tokens": 737505, "gap_under_5m": 0, "gap_under_15m": 0}
+{"section": "rechecks", "date_local": "2026-10-13", "company": "Wagner Brum", "category": "first-primary-in-day", "calls": 37, "suggestions": 37, "total_tokens": 279499, "gap_under_5m": 0, "gap_under_15m": 0}
+{"section": "rechecks", "date_local": "2026-10-13", "company": "Wagner Brum", "category": "fallback", "calls": 16, "suggestions": 11, "total_tokens": 181674, "gap_under_5m": 0, "gap_under_15m": 0}
+{"section": "rechecks", "date_local": "2026-10-13", "company": "Lumyne Estética Avançada", "category": "first-primary-in-day", "calls": 55, "suggestions": 55, "total_tokens": 139889, "gap_under_5m": 0, "gap_under_15m": 0}
+{"section": "rechecks", "date_local": "2026-10-13", "company": "AVEP", "category": "fallback", "calls": 9, "suggestions": 8, "total_tokens": 138977, "gap_under_5m": 0, "gap_under_15m": 0}
+{"section": "rechecks", "date_local": "2026-10-13", "company": "Lumyne Estética Avançada", "category": "repeat-primary-in-day", "calls": 18, "suggestions": 14, "total_tokens": 56757, "gap_under_5m": 8, "gap_under_15m": 12}
+{"section": "rechecks", "date_local": "2026-10-13", "company": "TRIASA CORRETORA DE SEGUROS", "category": "first-primary-in-day", "calls": 8, "suggestions": 8, "total_tokens": 29903, "gap_under_5m": 0, "gap_under_15m": 0}
+{"section": "rechecks", "date_local": "2026-10-13", "company": "TRIASA CORRETORA DE SEGUROS", "category": "repeat-primary-in-day", "calls": 4, "suggestions": 3, "total_tokens": 17255, "gap_under_5m": 2, "gap_under_15m": 3}
+{"section": "rechecks", "date_local": "2026-10-13", "company": "Lumyne Estética Avançada", "category": "fallback", "calls": 4, "suggestions": 4, "total_tokens": 9448, "gap_under_5m": 0, "gap_under_15m": 0}
+{"section": "rechecks", "date_local": "2026-10-13", "company": "Vetor Modular", "category": "first-primary-in-day", "calls": 1, "suggestions": 1, "total_tokens": 3612, "gap_under_5m": 0, "gap_under_15m": 0}
+{"section": "evidence_size", "date_local": "2026-10-13", "mode": "compact", "size_band": "01:0-10", "calls": 66, "total_tokens": 138546, "chars_before": 366081, "chars_after": 330470, "added_instruction_chars": 24486}
+{"section": "evidence_size", "date_local": "2026-10-13", "mode": "full-fallback", "size_band": "01:0-10", "calls": 3, "total_tokens": 5920, "chars_before": 13230, "chars_after": 13230, "added_instruction_chars": 579}
+{"section": "evidence_size", "date_local": "2026-10-13", "mode": "original", "size_band": "01:0-10", "calls": 14, "total_tokens": 21786, "chars_before": 48842, "chars_after": 48842, "added_instruction_chars": 0}
+{"section": "evidence_size", "date_local": "2026-10-13", "mode": "compact", "size_band": "02:11-40", "calls": 181, "total_tokens": 666577, "chars_before": 2001694, "chars_after": 1793793, "added_instruction_chars": 67151}
+{"section": "evidence_size", "date_local": "2026-10-13", "mode": "full-fallback", "size_band": "02:11-40", "calls": 9, "total_tokens": 31085, "chars_before": 77324, "chars_after": 77324, "added_instruction_chars": 1737}
+{"section": "evidence_size", "date_local": "2026-10-13", "mode": "compact", "size_band": "03:41-80", "calls": 64, "total_tokens": 804308, "chars_before": 2511909, "chars_after": 2329795, "added_instruction_chars": 23744}
+{"section": "evidence_size", "date_local": "2026-10-13", "mode": "full-fallback", "size_band": "03:41-80", "calls": 3, "total_tokens": 34026, "chars_before": 93763, "chars_after": 93763, "added_instruction_chars": 579}
+{"section": "evidence_size", "date_local": "2026-10-13", "mode": "compact", "size_band": "04:81-119", "calls": 78, "total_tokens": 1243874, "chars_before": 4129140, "chars_after": 3775495, "added_instruction_chars": 28938}
+{"section": "evidence_size", "date_local": "2026-10-13", "mode": "full-fallback", "size_band": "04:81-119", "calls": 1, "total_tokens": 7982, "chars_before": 21467, "chars_after": 21467, "added_instruction_chars": 193}
+{"section": "evidence_size", "date_local": "2026-10-13", "mode": "compact", "size_band": "05:120", "calls": 494, "total_tokens": 8076693, "chars_before": 27310423, "chars_after": 24681311, "added_instruction_chars": 183274}
+{"section": "evidence_size", "date_local": "2026-10-13", "mode": "full-fallback", "size_band": "05:120", "calls": 65, "total_tokens": 1250271, "chars_before": 3611169, "chars_after": 3611169, "added_instruction_chars": 12545}
+{"section": "verification_result", "date_local": "2026-10-13", "mode": "compact", "result": "unfulfilled", "calls": 760, "total_tokens": 9581720}
+{"section": "verification_result", "date_local": "2026-10-13", "mode": "compact", "result": "inconclusive", "calls": 81, "total_tokens": 1143262}
+{"section": "verification_result", "date_local": "2026-10-13", "mode": "full-fallback", "result": "inconclusive", "calls": 38, "total_tokens": 660577}
+{"section": "verification_result", "date_local": "2026-10-13", "mode": "full-fallback", "result": "unfulfilled", "calls": 42, "total_tokens": 638183}
+{"section": "verification_result", "date_local": "2026-10-13", "mode": "compact", "result": "fulfilled", "calls": 42, "total_tokens": 205016}
+{"section": "verification_result", "date_local": "2026-10-13", "mode": "full-fallback", "result": "fulfilled", "calls": 1, "total_tokens": 30524}
+{"section": "verification_result", "date_local": "2026-10-13", "mode": "original", "result": "unfulfilled", "calls": 6, "total_tokens": 10212}
+{"section": "verification_result", "date_local": "2026-10-13", "mode": "original", "result": "fulfilled", "calls": 5, "total_tokens": 8398}
+{"section": "verification_result", "date_local": "2026-10-13", "mode": "original", "result": "inconclusive", "calls": 3, "total_tokens": 3176}
+{"section": "identical_requests", "date_local": "2026-10-13", "company": "AVEP", "calls": 234, "distinct_requests": 234, "repeated_identical_calls": 0, "tokens_in_repeated_groups": 0}
+{"section": "identical_requests", "date_local": "2026-10-13", "company": "Lumyne Estética Avançada", "calls": 77, "distinct_requests": 77, "repeated_identical_calls": 0, "tokens_in_repeated_groups": 0}
+{"section": "identical_requests", "date_local": "2026-10-13", "company": "Staff M&B", "calls": 480, "distinct_requests": 480, "repeated_identical_calls": 0, "tokens_in_repeated_groups": 0}
+{"section": "identical_requests", "date_local": "2026-10-13", "company": "TRIASA CORRETORA DE SEGUROS", "calls": 12, "distinct_requests": 12, "repeated_identical_calls": 0, "tokens_in_repeated_groups": 0}
+{"section": "identical_requests", "date_local": "2026-10-13", "company": "Vetor Modular", "calls": 1, "distinct_requests": 1, "repeated_identical_calls": 0, "tokens_in_repeated_groups": 0}
+{"section": "identical_requests", "date_local": "2026-10-13", "company": "Wagner Brum", "calls": 174, "distinct_requests": 174, "repeated_identical_calls": 0, "tokens_in_repeated_groups": 0}
+{"section": "whatsapp_payload", "date_local": "2026-10-13", "company": "AVEP", "calls": 256, "duplicate_calls": 256, "repeated_chars": 387328, "instructions_chars": 3423488, "input_chars": 3954863, "scorecard_chars": 2168618, "additional_context_chars": 390912, "existing_suggestions_chars": 465574, "new_transcript_chars": 119856}
+{"section": "whatsapp_payload", "date_local": "2026-10-13", "company": "Lumyne Estética Avançada", "calls": 178, "duplicate_calls": 178, "repeated_chars": 20292, "instructions_chars": 1503922, "input_chars": 1319892, "scorecard_chars": 920537, "additional_context_chars": 20648, "existing_suggestions_chars": 107905, "new_transcript_chars": 73643}
+{"section": "whatsapp_payload", "date_local": "2026-10-13", "company": "Staff M&B", "calls": 60, "duplicate_calls": 60, "repeated_chars": 171660, "instructions_chars": 730860, "input_chars": 1095562, "scorecard_chars": 289135, "additional_context_chars": 175560, "existing_suggestions_chars": 270870, "new_transcript_chars": 51499}
+{"section": "whatsapp_payload", "date_local": "2026-10-13", "company": "TRIASA CORRETORA DE SEGUROS", "calls": 8, "duplicate_calls": 8, "repeated_chars": 912, "instructions_chars": 67592, "input_chars": 55358, "scorecard_chars": 33309, "additional_context_chars": 928, "existing_suggestions_chars": 8615, "new_transcript_chars": 3400}
+{"section": "whatsapp_payload", "date_local": "2026-10-13", "company": "Vetor Modular", "calls": 3, "duplicate_calls": 3, "repeated_chars": 6795, "instructions_chars": 33852, "input_chars": 39489, "scorecard_chars": 27327, "additional_context_chars": 6852, "existing_suggestions_chars": 477, "new_transcript_chars": 1342}
+{"section": "whatsapp_payload", "date_local": "2026-10-13", "company": "Wagner Brum", "calls": 8, "duplicate_calls": 8, "repeated_chars": 22888, "instructions_chars": 96736, "input_chars": 170044, "scorecard_chars": 50274, "additional_context_chars": 23408, "existing_suggestions_chars": 84041, "new_transcript_chars": 2760}
+{"section": "verification_outcomes_today", "company": "Multiplix", "result": "failed", "outcomes": 6850, "no_fingerprint": 326, "latest_at": "2026-10-13T12:07:23.364636-03:00"}
+{"section": "verification_outcomes_today", "company": "Staff M&B", "result": "unfulfilled", "outcomes": 399, "no_fingerprint": 0, "latest_at": "2026-10-13T12:05:21.99488-03:00"}
+{"section": "verification_outcomes_today", "company": "Staff M&B", "result": "failed", "outcomes": 323, "no_fingerprint": 28, "latest_at": "2026-10-13T09:58:01.707473-03:00"}
+{"section": "verification_outcomes_today", "company": "AVEP", "result": "failed", "outcomes": 254, "no_fingerprint": 16, "latest_at": "2026-10-13T10:21:01.142639-03:00"}
+{"section": "verification_outcomes_today", "company": "Lumyne Estética Avançada", "result": "failed", "outcomes": 241, "no_fingerprint": 20, "latest_at": "2026-10-13T10:07:06.094237-03:00"}
+{"section": "verification_outcomes_today", "company": "AVEP", "result": "unfulfilled", "outcomes": 205, "no_fingerprint": 0, "latest_at": "2026-10-13T11:59:30.874096-03:00"}
+{"section": "verification_outcomes_today", "company": "Wagner Brum", "result": "unfulfilled", "outcomes": 156, "no_fingerprint": 0, "latest_at": "2026-10-13T11:49:12.729294-03:00"}
+{"section": "verification_outcomes_today", "company": "Lumyne Estética Avançada", "result": "unfulfilled", "outcomes": 74, "no_fingerprint": 0, "latest_at": "2026-10-13T12:05:11.051279-03:00"}
+{"section": "verification_outcomes_today", "company": "Wagner Brum", "result": "failed", "outcomes": 70, "no_fingerprint": 9, "latest_at": "2026-10-13T10:49:02.350786-03:00"}
+{"section": "verification_outcomes_today", "company": "TRIASA CORRETORA DE SEGUROS", "result": "failed", "outcomes": 32, "no_fingerprint": 2, "latest_at": "2026-10-13T07:52:11.616657-03:00"}
+{"section": "verification_outcomes_today", "company": "Staff M&B", "result": "inconclusive", "outcomes": 30, "no_fingerprint": 0, "latest_at": "2026-10-13T11:08:31.825375-03:00"}
+{"section": "verification_outcomes_today", "company": "AVEP", "result": "fulfilled", "outcomes": 19, "no_fingerprint": 0, "latest_at": "2026-10-13T11:35:15.07152-03:00"}
+{"section": "verification_outcomes_today", "company": "Lumyne Estética Avançada", "result": "fulfilled", "outcomes": 18, "no_fingerprint": 0, "latest_at": "2026-10-13T10:32:31.95169-03:00"}
+{"section": "verification_outcomes_today", "company": "TRIASA CORRETORA DE SEGUROS", "result": "unfulfilled", "outcomes": 10, "no_fingerprint": 0, "latest_at": "2026-10-13T12:03:26.184099-03:00"}
+{"section": "verification_outcomes_today", "company": "Vetor Modular", "result": "failed", "outcomes": 8, "no_fingerprint": 0, "latest_at": "2026-10-13T07:50:05.847436-03:00"}
+{"section": "verification_outcomes_today", "company": "Staff M&B", "result": "fulfilled", "outcomes": 8, "no_fingerprint": 0, "latest_at": "2026-10-13T11:07:59.563063-03:00"}
+{"section": "verification_outcomes_today", "company": "Lumyne Estética Avançada", "result": "inconclusive", "outcomes": 6, "no_fingerprint": 0, "latest_at": "2026-10-13T12:01:55.330946-03:00"}
+{"section": "verification_outcomes_today", "company": "Wagner Brum", "result": "inconclusive", "outcomes": 3, "no_fingerprint": 0, "latest_at": "2026-10-13T10:37:13.858891-03:00"}
+{"section": "verification_outcomes_today", "company": "TRIASA CORRETORA DE SEGUROS", "result": "fulfilled", "outcomes": 2, "no_fingerprint": 0, "latest_at": "2026-10-13T08:12:02.09269-03:00"}
+{"section": "verification_outcomes_today", "company": "AVEP", "result": "inconclusive", "outcomes": 2, "no_fingerprint": 0, "latest_at": "2026-10-13T08:04:20.264445-03:00"}
+{"section": "verification_outcomes_today", "company": "Vetor Modular", "result": "unfulfilled", "outcomes": 1, "no_fingerprint": 0, "latest_at": "2026-10-13T08:15:02.451858-03:00"}
+{"section": "risk_work_state", "company": "Vetor Modular", "tracked": 13, "unprocessed": 0, "due": 0, "leased": 0, "max_attempts": 1}
+{"section": "risk_work_state", "company": "AVEP", "tracked": 134, "unprocessed": 0, "due": 0, "leased": 0, "max_attempts": 1}
+{"section": "risk_work_state", "company": "Staff M&B", "tracked": 35, "unprocessed": 0, "due": 0, "leased": 0, "max_attempts": 1}

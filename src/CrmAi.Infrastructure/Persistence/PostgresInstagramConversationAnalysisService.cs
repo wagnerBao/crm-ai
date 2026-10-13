@@ -11,7 +11,8 @@ public sealed class PostgresInstagramConversationAnalysisService(
     IAiAgentRuntimeSettingsRepository settingsRepository,
     IOpportunityContextRepository contextRepository,
     IWhatsappSuggestionContextRepository suggestionContextRepository,
-    IOpenAiWhatsappConversationAnalysisClient openAiClient) : IInstagramConversationAnalysisService
+    IOpenAiWhatsappConversationAnalysisClient openAiClient,
+    IAiInvocationGuard? invocationGuard = null) : IInstagramConversationAnalysisService
 {
     private const string AgentKey = "instagram-conversation-analysis";
     private const string SkoposActivityType = "agent-skopos";
@@ -45,6 +46,8 @@ public sealed class PostgresInstagramConversationAnalysisService(
         {
             return;
         }
+        var permit = invocationGuard is null ? null
+            : await invocationGuard.EnsureAvailableAsync(settings, conversation.CompanyId.ToString(), cancellationToken);
 
         var data = new Dictionary<string, object?>(opportunityEvent.Data, StringComparer.OrdinalIgnoreCase)
         {
@@ -94,7 +97,22 @@ public sealed class PostgresInstagramConversationAnalysisService(
                 ["conversationId"] = conversationId
             });
 
-        var response = await openAiClient.AnalyzeAsync(settings, input, invocationContext, cancellationToken);
+        OpenAiWhatsappConversationAnalysisResponse response;
+        try
+        {
+            response = await openAiClient.AnalyzeAsync(settings, input, invocationContext, cancellationToken);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            if (invocationGuard is not null)
+            {
+                var deferred = await invocationGuard.RecordFailureAsync(settings, conversation.CompanyId.ToString(), exception, cancellationToken);
+                if (deferred is not null) throw deferred;
+            }
+            throw;
+        }
+        if (invocationGuard is not null)
+            await invocationGuard.RecordSuccessAsync(settings, conversation.CompanyId.ToString(), cancellationToken, permit);
         var summary = FirstNotEmpty(response.ConversationSummary, conversation.Summary, input.NewTranscript);
         await PersistAsync(connection, conversation, opportunityId, opportunityEvent, response, summary, settings.Model, cancellationToken);
     }

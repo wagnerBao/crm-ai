@@ -1,0 +1,88 @@
+{"section" : "audit", "observed_at" : "2026-10-13T11:07:54.657093-03:00", "cutoff" : "2026-10-13T11:00:00-03:00", "read_only" : "on"}
+{"section":"evidence_types","date_local":"2026-10-07","mode":"compact","evidence_type":"activity","kind":"agent-skopos","records":25376,"representation_chars":33065374}
+{"section":"evidence_types","date_local":"2026-10-07","mode":"compact","evidence_type":"whatsapp_message","kind":"other-evidence","records":102823,"representation_chars":20608191}
+{"section":"evidence_types","date_local":"2026-10-07","mode":"full-fallback","evidence_type":"activity","kind":"agent-skopos","records":2236,"representation_chars":2993570}
+{"section":"evidence_types","date_local":"2026-10-07","mode":"full-fallback","evidence_type":"whatsapp_message","kind":"other-evidence","records":10181,"representation_chars":2460584}
+{"section":"evidence_types","date_local":"2026-10-07","mode":"compact","evidence_type":"activity","kind":"other-activity","records":2424,"representation_chars":723979}
+{"section":"evidence_types","date_local":"2026-10-07","mode":"original","evidence_type":"activity","kind":"agent-skopos","records":402,"representation_chars":525043}
+{"section":"evidence_types","date_local":"2026-10-07","mode":"compact","evidence_type":"opportunity_history","kind":"other-evidence","records":1650,"representation_chars":492992}
+{"section":"evidence_types","date_local":"2026-10-07","mode":"compact","evidence_type":"opportunity","kind":"other-evidence","records":1165,"representation_chars":176374}
+{"section":"evidence_types","date_local":"2026-10-07","mode":"original","evidence_type":"whatsapp_message","kind":"other-evidence","records":469,"representation_chars":129523}
+{"section":"evidence_types","date_local":"2026-10-07","mode":"full-fallback","evidence_type":"activity","kind":"other-activity","records":170,"representation_chars":63391}
+{"section":"evidence_types","date_local":"2026-10-07","mode":"full-fallback","evidence_type":"opportunity_history","kind":"other-evidence","records":54,"representation_chars":20488}
+{"section":"evidence_types","date_local":"2026-10-07","mode":"compact","evidence_type":"note","kind":"other-evidence","records":10,"representation_chars":4850}
+{"section":"evidence_types","date_local":"2026-10-07","mode":"full-fallback","evidence_type":"opportunity","kind":"other-evidence","records":23,"representation_chars":4494}
+{"section":"evidence_types","date_local":"2026-10-07","mode":"compact","evidence_type":"meeting_recording","kind":"other-evidence","records":2,"representation_chars":1495}
+{"section":"evidence_types","date_local":"2026-10-07","mode":"original","evidence_type":"opportunity","kind":"other-evidence","records":5,"representation_chars":921}
+{"section":"evidence_types","date_local":"2026-10-07","mode":"original","evidence_type":"opportunity_history","kind":"other-evidence","records":3,"representation_chars":725}
+{"section":"evidence_types","date_local":"2026-10-07","mode":"original","evidence_type":"note","kind":"other-evidence","records":1,"representation_chars":393}
+{"section":"evidence_types","date_local":"2026-10-07","mode":"original","evidence_type":"activity","kind":"other-activity","records":1,"representation_chars":289}
+{"section":"evidence_types","date_local":"2026-10-08","mode":"compact","evidence_type":"activity","kind":"agent-skopos","records":20097,"representation_chars":26325786}
+{"section":"evidence_types","date_local":"2026-10-08","mode":"compact","evidence_type":"whatsapp_message","kind":"other-evidence","records":67874,"representation_chars":13633131}
+{"section":"evidence_types","date_local":"2026-10-08","mode":"full-fallback","evidence_type":"activity","kind":"agent-skopos","records":1608,"representation_chars":2151122}
+{"section":"evidence_types","date_local":"2026-10-08","mode":"full-fallback","evidence_type":"whatsapp_message","kind":"other-evidence","records":7134,"representation_chars":1720947}
+{"section":"evidence_types","date_local":"2026-10-08","mode":"compact","evidence_type":"activity","kind":"other-activity","records":2283,"representation_chars":703069}
+{"section":"evidence_types","date_local":"2026-10-08","mode":"original","evidence_type":"activity","kind":"agent-skopos","records":406,"representation_chars":517882}
+{"section":"evidence_types","date_local":"2026-10-08","mode":"compact","evidence_type":"opportunity_history","kind":"other-evidence","records":1228,"representation_chars":262020}
+{"section":"evidence_types","date_local":"2026-10-08","mode":"compact","evidence_type":"opportunity","kind":"other-evidence","records":1138,"representation_chars":173761}
+{"section":"evidence_types","date_local":"2026-10-08","mode":"original","evidence_type":"whatsapp_message","kind":"other-evidence","records":449,"representation_chars":121808}
+{"section":"evidence_types","date_local":"2026-10-08","mode":"full-fallback","evidence_type":"activity","kind":"other-activity","records":150,"representation_chars":55246}
+{"section":"evidence_types","date_local":"2026-10-08","mode":"full-fallback","evidence_type":"opportunity_history","kind":"other-evidence","records":56,"representation_chars":15313}
+{"section":"evidence_types","date_local":"2026-10-08","mode":"full-fallback","evidence_type":"opportunity","kind":"other-evidence","records":38,"representation_chars":7602}
+{"section":"evidence_types","date_local":"2026-10-08","mode":"compact","evidence_type":"note","kind":"other-evidence","records":12,"representation_chars":6323}
+{"section":"evidence_types","date_local":"2026-10-08","mode":"compact","evidence_type":"meeting_recording","kind":"other-evidence","records":5,"representation_chars":4319}
+{"section":"evidence_types","date_local":"2026-10-08","mode":"full-fallback","evidence_type":"meeting_recording","kind":"other-evidence","records":1,"representation_chars":1375}
+{"section":"evidence_types","date_local":"2026-10-08","mode":"full-fallback","evidence_type":"note","kind":"other-evidence","records":1,"representation_chars":1359}
+{"section":"evidence_types","date_local":"2026-10-08","mode":"original","evidence_type":"opportunity","kind":"other-evidence","records":3,"representation_chars":583}
+{"section":"evidence_types","date_local":"2026-10-08","mode":"original","evidence_type":"note","kind":"other-evidence","records":1,"representation_chars":393}
+{"section":"evidence_types","date_local":"2026-10-08","mode":"original","evidence_type":"activity","kind":"other-activity","records":1,"representation_chars":289}
+{"section":"evidence_types","date_local":"2026-10-08","mode":"original","evidence_type":"opportunity_history","kind":"other-evidence","records":1,"representation_chars":241}
+{"section":"evidence_types","date_local":"2026-10-09","mode":"compact","evidence_type":"activity","kind":"agent-skopos","records":11454,"representation_chars":15014218}
+{"section":"evidence_types","date_local":"2026-10-09","mode":"compact","evidence_type":"whatsapp_message","kind":"other-evidence","records":31533,"representation_chars":6241701}
+{"section":"evidence_types","date_local":"2026-10-09","mode":"full-fallback","evidence_type":"activity","kind":"agent-skopos","records":1288,"representation_chars":1754962}
+{"section":"evidence_types","date_local":"2026-10-09","mode":"full-fallback","evidence_type":"whatsapp_message","kind":"other-evidence","records":3448,"representation_chars":790705}
+{"section":"evidence_types","date_local":"2026-10-09","mode":"compact","evidence_type":"activity","kind":"other-activity","records":1264,"representation_chars":405428}
+{"section":"evidence_types","date_local":"2026-10-09","mode":"full-fallback","evidence_type":"activity","kind":"other-activity","records":208,"representation_chars":77995}
+{"section":"evidence_types","date_local":"2026-10-09","mode":"compact","evidence_type":"opportunity","kind":"other-evidence","records":366,"representation_chars":55691}
+{"section":"evidence_types","date_local":"2026-10-09","mode":"compact","evidence_type":"opportunity_history","kind":"other-evidence","records":284,"representation_chars":48370}
+{"section":"evidence_types","date_local":"2026-10-09","mode":"original","evidence_type":"activity","kind":"agent-skopos","records":26,"representation_chars":32634}
+{"section":"evidence_types","date_local":"2026-10-09","mode":"compact","evidence_type":"meeting_recording","kind":"other-evidence","records":12,"representation_chars":15991}
+{"section":"evidence_types","date_local":"2026-10-09","mode":"original","evidence_type":"whatsapp_message","kind":"other-evidence","records":46,"representation_chars":11147}
+{"section":"evidence_types","date_local":"2026-10-09","mode":"full-fallback","evidence_type":"opportunity","kind":"other-evidence","records":2,"representation_chars":398}
+{"section":"evidence_types","date_local":"2026-10-09","mode":"full-fallback","evidence_type":"opportunity_history","kind":"other-evidence","records":1,"representation_chars":242}
+{"section":"evidence_types","date_local":"2026-10-13","mode":"compact","evidence_type":"activity","kind":"agent-skopos","records":12510,"representation_chars":16389692}
+{"section":"evidence_types","date_local":"2026-10-13","mode":"compact","evidence_type":"whatsapp_message","kind":"other-evidence","records":54169,"representation_chars":10522049}
+{"section":"evidence_types","date_local":"2026-10-13","mode":"full-fallback","evidence_type":"activity","kind":"agent-skopos","records":1226,"representation_chars":1665214}
+{"section":"evidence_types","date_local":"2026-10-13","mode":"full-fallback","evidence_type":"whatsapp_message","kind":"other-evidence","records":5636,"representation_chars":1289331}
+{"section":"evidence_types","date_local":"2026-10-13","mode":"compact","evidence_type":"activity","kind":"other-activity","records":1247,"representation_chars":427945}
+{"section":"evidence_types","date_local":"2026-10-13","mode":"full-fallback","evidence_type":"activity","kind":"other-activity","records":173,"representation_chars":67450}
+{"section":"evidence_types","date_local":"2026-10-13","mode":"compact","evidence_type":"opportunity","kind":"other-evidence","records":175,"representation_chars":26884}
+{"section":"evidence_types","date_local":"2026-10-13","mode":"compact","evidence_type":"opportunity_history","kind":"other-evidence","records":117,"representation_chars":24171}
+{"section":"evidence_types","date_local":"2026-10-13","mode":"original","evidence_type":"activity","kind":"agent-skopos","records":17,"representation_chars":21530}
+{"section":"evidence_types","date_local":"2026-10-13","mode":"compact","evidence_type":"meeting_recording","kind":"other-evidence","records":6,"representation_chars":7995}
+{"section":"evidence_types","date_local":"2026-10-13","mode":"original","evidence_type":"whatsapp_message","kind":"other-evidence","records":24,"representation_chars":6499}
+{"section":"evidence_types","date_local":"2026-10-13","mode":"full-fallback","evidence_type":"opportunity_history","kind":"other-evidence","records":1,"representation_chars":276}
+{"section":"evidence_types","date_local":"2026-10-13","mode":"full-fallback","evidence_type":"opportunity","kind":"other-evidence","records":1,"representation_chars":209}
+{"section":"fallback_pairs","date_local":"2026-10-07","company":"AVEP","pairs":36,"changed_results":19,"both_passes_tokens":1155217}
+{"section":"fallback_pairs","date_local":"2026-10-07","company":"Lumyne Estética Avançada","pairs":2,"changed_results":2,"both_passes_tokens":12730}
+{"section":"fallback_pairs","date_local":"2026-10-07","company":"Staff M&B","pairs":51,"changed_results":26,"both_passes_tokens":1765096}
+{"section":"fallback_pairs","date_local":"2026-10-07","company":"TRIASA CORRETORA DE SEGUROS","pairs":2,"changed_results":2,"both_passes_tokens":15395}
+{"section":"fallback_pairs","date_local":"2026-10-07","company":"Vetor Modular","pairs":17,"changed_results":10,"both_passes_tokens":333309}
+{"section":"fallback_pairs","date_local":"2026-10-07","company":"Wagner Brum","pairs":34,"changed_results":15,"both_passes_tokens":671183}
+{"section":"fallback_pairs","date_local":"2026-10-08","company":"AVEP","pairs":18,"changed_results":11,"both_passes_tokens":451827}
+{"section":"fallback_pairs","date_local":"2026-10-08","company":"Lumyne Estética Avançada","pairs":7,"changed_results":5,"both_passes_tokens":44051}
+{"section":"fallback_pairs","date_local":"2026-10-08","company":"Staff M&B","pairs":47,"changed_results":24,"both_passes_tokens":1395623}
+{"section":"fallback_pairs","date_local":"2026-10-08","company":"TRIASA CORRETORA DE SEGUROS","pairs":1,"changed_results":0,"both_passes_tokens":4362}
+{"section":"fallback_pairs","date_local":"2026-10-08","company":"Vetor Modular","pairs":40,"changed_results":18,"both_passes_tokens":751148}
+{"section":"fallback_pairs","date_local":"2026-10-08","company":"Wagner Brum","pairs":14,"changed_results":7,"both_passes_tokens":248139}
+{"section":"fallback_pairs","date_local":"2026-10-09","company":"AVEP","pairs":9,"changed_results":6,"both_passes_tokens":324296}
+{"section":"fallback_pairs","date_local":"2026-10-09","company":"Lumyne Estética Avançada","pairs":3,"changed_results":2,"both_passes_tokens":23583}
+{"section":"fallback_pairs","date_local":"2026-10-09","company":"Staff M&B","pairs":34,"changed_results":11,"both_passes_tokens":1458092}
+{"section":"fallback_pairs","date_local":"2026-10-09","company":"TRIASA CORRETORA DE SEGUROS","pairs":2,"changed_results":2,"both_passes_tokens":12151}
+{"section":"fallback_pairs","date_local":"2026-10-09","company":"Wagner Brum","pairs":1,"changed_results":0,"both_passes_tokens":17368}
+{"section":"fallback_pairs","date_local":"2026-10-13","company":"AVEP","pairs":7,"changed_results":5,"both_passes_tokens":252130}
+{"section":"fallback_pairs","date_local":"2026-10-13","company":"Lumyne Estética Avançada","pairs":3,"changed_results":1,"both_passes_tokens":12838}
+{"section":"fallback_pairs","date_local":"2026-10-13","company":"Staff M&B","pairs":42,"changed_results":18,"both_passes_tokens":1510318}
+{"section":"fallback_pairs","date_local":"2026-10-13","company":"Wagner Brum","pairs":16,"changed_results":13,"both_passes_tokens":319667}
+{"section":"cross_source_exact","matched":29863,"usage_mismatches":0,"different_day":0}
+{"section" : "audit_sessions", "other_audit_connections" : 0}

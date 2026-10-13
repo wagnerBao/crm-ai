@@ -1,0 +1,328 @@
+{
+  "cutoff": "2026-10-13T12:07:36.015118-03:00",
+  "read_only": true,
+  "today": {
+    "calls": 2532,
+    "input_tokens": 18463489,
+    "output_tokens": 1098043,
+    "cached_tokens": 3223921,
+    "total_tokens": 19561532,
+    "estimated_usd": 5.520409560000002
+  },
+  "attempts_today": {
+    "attempts": 23147,
+    "successes": 2301,
+    "failures": 20846
+  },
+  "last_hour": {
+    "attempts": 747,
+    "successes": 172,
+    "failure_causes": [
+      {
+        "section": "last_hour_errors",
+        "company": "Multiplix",
+        "agent_key": "suggestion-completion-verification",
+        "http_status": null,
+        "error_type": "OpenAiRequestException",
+        "error_code": "missing-local-key",
+        "attempts": 551,
+        "first_at": "2026-10-13T11:08:14.643209-03:00",
+        "latest_at": "2026-10-13T12:07:23.361674-03:00"
+      },
+      {
+        "section": "last_hour_errors",
+        "company": "Wagner Brum",
+        "agent_key": "instagram-conversation-analysis",
+        "http_status": null,
+        "error_type": "OpenAiRequestException",
+        "error_code": "missing-local-key",
+        "attempts": 20,
+        "first_at": "2026-10-13T11:09:05.060693-03:00",
+        "latest_at": "2026-10-13T12:07:02.369086-03:00"
+      },
+      {
+        "section": "last_hour_errors",
+        "company": "Academia Digital Pro",
+        "agent_key": "instagram-conversation-analysis",
+        "http_status": null,
+        "error_type": "OpenAiRequestException",
+        "error_code": "missing-local-key",
+        "attempts": 4,
+        "first_at": "2026-10-13T11:09:05.061602-03:00",
+        "latest_at": "2026-10-13T11:57:00.531205-03:00"
+      }
+    ]
+  },
+  "pending": {
+    "pending": 4755,
+    "due_at_cutoff": 1802,
+    "over_7_days": 2932,
+    "with_fingerprint": 2481
+  },
+  "blocked_credential_presence": [
+    {
+      "section": "credential_presence",
+      "company": "Academia Digital Pro",
+      "agent_key": "instagram-conversation-analysis",
+      "is_active": true,
+      "provider": "openai",
+      "model": "gpt-5.6-luna",
+      "debounce_minutes": 10,
+      "updated_at": "2026-08-03T15:32:47.820049-03:00",
+      "global_settings_selected": true,
+      "settings_absent": false,
+      "has_selected_own_key": false,
+      "has_global_same_agent_key": false,
+      "has_supported_fallback_key": false
+    },
+    {
+      "section": "credential_presence",
+      "company": "Multiplix",
+      "agent_key": "suggestion-completion-verification",
+      "is_active": true,
+      "provider": "openai",
+      "model": "gpt-5.6-luna",
+      "debounce_minutes": 5,
+      "updated_at": "2026-08-31T09:46:19.769386-03:00",
+      "global_settings_selected": false,
+      "settings_absent": false,
+      "has_selected_own_key": false,
+      "has_global_same_agent_key": false,
+      "has_supported_fallback_key": false
+    },
+    {
+      "section": "credential_presence",
+      "company": "Wagner Brum",
+      "agent_key": "instagram-conversation-analysis",
+      "is_active": true,
+      "provider": "openai",
+      "model": "gpt-5.6-luna",
+      "debounce_minutes": 1,
+      "updated_at": "2026-09-04T12:30:25.901829-03:00",
+      "global_settings_selected": false,
+      "settings_absent": false,
+      "has_selected_own_key": false,
+      "has_global_same_agent_key": false,
+      "has_supported_fallback_key": false
+    }
+  ],
+  "observed_policy_metadata": [
+    {
+      "section": "observed_policy_metadata",
+      "agent_key": "suggestion-completion-verification",
+      "context_optimization_version": "lossless-context-v1",
+      "evidence_selection_version": null,
+      "context_mode": "compact",
+      "calls": 883,
+      "first_today_at": "2026-10-13T07:54:03.690421-03:00",
+      "latest_today_at": "2026-10-13T12:05:19.294446-03:00",
+      "tokens": 10929998
+    },
+    {
+      "section": "observed_policy_metadata",
+      "agent_key": "instagram-conversation-analysis",
+      "context_optimization_version": null,
+      "evidence_selection_version": null,
+      "context_mode": null,
+      "calls": 793,
+      "first_today_at": "2026-10-13T07:53:41.593566-03:00",
+      "latest_today_at": "2026-10-13T12:07:02.378312-03:00",
+      "tokens": 2315254
+    },
+    {
+      "section": "observed_policy_metadata",
+      "agent_key": "whatsapp-conversation-analysis",
+      "context_optimization_version": null,
+      "evidence_selection_version": null,
+      "context_mode": null,
+      "calls": 513,
+      "first_today_at": "2026-10-13T07:53:23.009062-03:00",
+      "latest_today_at": "2026-10-13T12:07:02.312626-03:00",
+      "tokens": 4413415
+    },
+    {
+      "section": "observed_policy_metadata",
+      "agent_key": "suggestion-completion-verification",
+      "context_optimization_version": "lossless-context-v1",
+      "evidence_selection_version": null,
+      "context_mode": "full-fallback",
+      "calls": 81,
+      "first_today_at": "2026-10-13T07:54:11.80351-03:00",
+      "latest_today_at": "2026-10-13T12:01:51.986794-03:00",
+      "tokens": 1329284
+    },
+    {
+      "section": "observed_policy_metadata",
+      "agent_key": "suggestion-completion-verification",
+      "context_optimization_version": "lossless-context-v1",
+      "evidence_selection_version": null,
+      "context_mode": "original",
+      "calls": 14,
+      "first_today_at": "2026-10-13T07:55:30.351075-03:00",
+      "latest_today_at": "2026-10-13T11:46:17.699191-03:00",
+      "tokens": 21786
+    },
+    {
+      "section": "observed_policy_metadata",
+      "agent_key": "risk-analysis",
+      "context_optimization_version": "risk-meeting-context-v1",
+      "evidence_selection_version": null,
+      "context_mode": "original",
+      "calls": 11,
+      "first_today_at": "2026-10-13T08:07:33.841284-03:00",
+      "latest_today_at": "2026-10-13T11:47:53.114111-03:00",
+      "tokens": 309054
+    },
+    {
+      "section": "observed_policy_metadata",
+      "agent_key": "daily-checkout",
+      "context_optimization_version": "lossless-context-v1",
+      "evidence_selection_version": null,
+      "context_mode": "compact",
+      "calls": 5,
+      "first_today_at": "2026-10-13T08:03:26.951848-03:00",
+      "latest_today_at": "2026-10-13T08:04:02.548311-03:00",
+      "tokens": 149436
+    },
+    {
+      "section": "observed_policy_metadata",
+      "agent_key": "daily-checkout",
+      "context_optimization_version": "lossless-context-v1",
+      "evidence_selection_version": null,
+      "context_mode": "original",
+      "calls": 1,
+      "first_today_at": "2026-10-13T08:03:41.281648-03:00",
+      "latest_today_at": "2026-10-13T08:03:41.281648-03:00",
+      "tokens": 2507
+    }
+  ],
+  "version_limits": "No deployed build SHA/commit observed. Metadata shows policy versions only; local workflow and code do not prove deploy. Evidence fingerprints are SHA256 hex, not version-prefixed; their value does not identify policy version. No runtime modifications.",
+  "whatsapp_payload": {
+    "calls": 513,
+    "duplicate_calls": 513,
+    "repeated_chars": 609875,
+    "scorecard_chars": 3489200,
+    "input_chars": 6635208
+  },
+  "rechecks": {
+    "repeat-primary-in-day": {
+      "calls": 587,
+      "total_tokens": 7931523,
+      "gap_under_5m": 58,
+      "gap_under_15m": 167
+    },
+    "first-primary-in-day": {
+      "calls": 310,
+      "total_tokens": 3020261,
+      "gap_under_5m": 0,
+      "gap_under_15m": 0
+    },
+    "fallback": {
+      "calls": 81,
+      "total_tokens": 1329284,
+      "gap_under_5m": 0,
+      "gap_under_15m": 0
+    }
+  },
+  "usage_by_agent": {
+    "suggestion-completion-verification": {
+      "calls": 978,
+      "total_tokens": 12281068,
+      "estimated_usd": 2.6631456
+    },
+    "whatsapp-conversation-analysis": {
+      "calls": 513,
+      "total_tokens": 4413415,
+      "estimated_usd": 1.30268904
+    },
+    "instagram-conversation-analysis": {
+      "calls": 793,
+      "total_tokens": 2315254,
+      "estimated_usd": 0.38292948
+    },
+    "risk-analysis": {
+      "calls": 11,
+      "total_tokens": 309054,
+      "estimated_usd": 0.686308
+    },
+    "daily-checkout": {
+      "calls": 6,
+      "total_tokens": 151943,
+      "estimated_usd": 0.3712444
+    },
+    "service-agent.whatsapp": {
+      "calls": 14,
+      "total_tokens": 42926,
+      "estimated_usd": 0.00488054
+    },
+    "whatsapp.audio-transcription.consumer": {
+      "calls": 217,
+      "total_tokens": 47872,
+      "estimated_usd": 0.1092125
+    }
+  },
+  "usage_by_company": {
+    "Staff M&B": {
+      "calls": 548,
+      "total_tokens": 8738369,
+      "estimated_usd": 2.15634194
+    },
+    "AVEP": {
+      "calls": 616,
+      "total_tokens": 5426508,
+      "estimated_usd": 1.93387335
+    },
+    "Multiplix": {
+      "calls": 794,
+      "total_tokens": 2320162,
+      "estimated_usd": 0.40228548
+    },
+    "Wagner Brum": {
+      "calls": 182,
+      "total_tokens": 1587662,
+      "estimated_usd": 0.3622405
+    },
+    "Lumyne Estética Avançada": {
+      "calls": 350,
+      "total_tokens": 1285194,
+      "estimated_usd": 0.4635117
+    },
+    "TRIASA CORRETORA DE SEGUROS": {
+      "calls": 23,
+      "total_tokens": 95150,
+      "estimated_usd": 0.03542205
+    },
+    "Dominus Imóveis": {
+      "calls": 14,
+      "total_tokens": 42926,
+      "estimated_usd": 0.00488054
+    },
+    "Vetor Modular": {
+      "calls": 5,
+      "total_tokens": 65561,
+      "estimated_usd": 0.161854
+    }
+  },
+  "usage_by_model": {
+    "gpt-5.6-luna": {
+      "calls": 2296,
+      "total_tokens": 19033885,
+      "estimated_usd": 4.29575946
+    },
+    "gpt-5.6-terra": {
+      "calls": 19,
+      "total_tokens": 479775,
+      "estimated_usd": 1.1154376
+    },
+    "gpt-4o-mini-transcribe": {
+      "calls": 217,
+      "total_tokens": 47872,
+      "estimated_usd": 0.1092125
+    }
+  },
+  "cause_counts_today": {
+    "credit_balance_exhausted": 14096,
+    "missing-local-key": 6743,
+    "unclassified": 7
+  }
+}

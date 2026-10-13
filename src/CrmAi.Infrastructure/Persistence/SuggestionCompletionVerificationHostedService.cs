@@ -49,7 +49,8 @@ public sealed class SuggestionCompletionVerificationProcessor(
     IOpenAiSuggestionCompletionVerificationClient client,
     IOptions<RabbitMqOptions> rabbitOptions,
     ILogger<SuggestionCompletionVerificationProcessor> logger,
-    IOptions<OpenAiRiskAnalysisOptions> openAiOptions)
+    IOptions<OpenAiRiskAnalysisOptions> openAiOptions,
+    IAiInvocationGuard invocationGuard)
 {
     internal const string AgentKey = "suggestion-completion-verification";
     internal const string NotificationEventKey = "activity_suggestion_unfulfilled";
@@ -111,9 +112,10 @@ public sealed class SuggestionCompletionVerificationProcessor(
 
         IReadOnlyCollection<SuggestionCompletionEvidence> evidence = [];
         string? fingerprint = null;
+        AiAgentRuntimeSettings? settings = null;
         try
         {
-            var settings = await settingsRepository.GetAsync(AgentKey, suggestion.CompanyId.ToString(), cancellationToken);
+            settings = await settingsRepository.GetAsync(AgentKey, suggestion.CompanyId.ToString(), cancellationToken);
             evidence = await LoadEvidenceAsync(suggestion, settings.ContextEntityKeys, cancellationToken);
             using var payloadDocument = JsonDocument.Parse(suggestion.Payload);
             var input = new SuggestionCompletionVerificationInput(
@@ -140,6 +142,7 @@ public sealed class SuggestionCompletionVerificationProcessor(
             else
             {
                 if (!settings.IsActive) throw new InvalidOperationException("O agente suggestion-completion-verification está inativo.");
+                var permit = await invocationGuard.EnsureAvailableAsync(settings, suggestion.CompanyId.ToString(), cancellationToken);
                 result = await client.AnalyzeAsync(
                     settings,
                     input,
@@ -151,14 +154,21 @@ public sealed class SuggestionCompletionVerificationProcessor(
                         ContextEntityKeys: settings.ContextEntityKeys,
                         Metadata: new Dictionary<string, object?> { ["suggestionId"] = suggestion.Id }),
                     cancellationToken);
+                await invocationGuard.RecordSuccessAsync(settings, suggestion.CompanyId.ToString(), cancellationToken, permit);
             }
 
             var normalized = NormalizeResult(result);
             await CompleteAsync(suggestion, normalized, evidence, fingerprint, cancellationToken);
         }
+        catch (AiInvocationDeferredException deferred)
+        {
+            await DeferAsync(suggestion, deferred, cancellationToken);
+        }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            await FailAsync(suggestion, exception, evidence, fingerprint, cancellationToken);
+            var deferred = settings is null ? null : await invocationGuard.RecordFailureAsync(
+                settings, suggestion.CompanyId.ToString(), exception, cancellationToken);
+            await FailAsync(suggestion, exception, evidence, fingerprint, deferred?.RetryAtUtc, cancellationToken);
         }
         return true;
     }
@@ -412,6 +422,11 @@ public sealed class SuggestionCompletionVerificationProcessor(
                 last_verified_at = @verifiedAt,
                 next_verification_at = case
                     when @result = 'fulfilled' then null
+                    when next_verification_at is distinct from @verifiedAt + interval '15 minutes' then
+                        least(next_verification_at, now() + case
+                            when @result = 'unfulfilled' and @HasDueDate then interval '15 minutes'
+                            when @result = 'unfulfilled' then interval '24 hours'
+                            else interval '5 minutes' * least(12, verification_attempt_count) end)
                     when @result = 'unfulfilled' and @HasDueDate then now() + interval '15 minutes'
                     when @result = 'unfulfilled' then now() + interval '24 hours'
                     else now() + interval '5 minutes' * least(12, verification_attempt_count)
@@ -461,10 +476,16 @@ public sealed class SuggestionCompletionVerificationProcessor(
                     when @previousStatus = 'unfulfilled' and @hasDueDate
                          and suggested_due_at <= now() - interval '5 minutes' then coalesce(priority_at, now())
                     else priority_at end,
-                next_verification_at = now() + case
-                    when @previousStatus = 'inconclusive' then interval '60 minutes'
-                    when @hasDueDate then interval '15 minutes'
-                    else interval '24 hours' end,
+                next_verification_at = case
+                    when next_verification_at is distinct from @verifiedAt + interval '15 minutes' then
+                        least(next_verification_at, now() + case
+                            when @previousStatus = 'inconclusive' then interval '60 minutes'
+                            when @hasDueDate then interval '15 minutes'
+                            else interval '24 hours' end)
+                    else now() + case
+                        when @previousStatus = 'inconclusive' then interval '60 minutes'
+                        when @hasDueDate then interval '15 minutes'
+                        else interval '24 hours' end end,
                 updated_at = now()
             where id = @id and status = 'pending';
             """,
@@ -477,11 +498,29 @@ public sealed class SuggestionCompletionVerificationProcessor(
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
+    private async Task DeferAsync(ClaimedSuggestion suggestion, AiInvocationDeferredException deferred, CancellationToken cancellationToken)
+    {
+        await using var command = dataSource.CreateCommand("""
+            update ai_agent_suggestions
+            set verification_status=@previousStatus,
+                verification_attempt_count=greatest(0,verification_attempt_count-1),
+                next_verification_at=@retryAt, updated_at=now()
+            where id=@id and status='pending';
+            """);
+        command.Parameters.AddWithValue("id", suggestion.Id);
+        command.Parameters.AddWithValue("previousStatus", suggestion.PreviousVerificationStatus);
+        command.Parameters.AddWithValue("retryAt", deferred.RetryAtUtc);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+        logger.LogInformation("Suggestion verification deferred. SuggestionId={SuggestionId} Reason={Reason} RetryAt={RetryAt}",
+            suggestion.Id, deferred.Reason, deferred.RetryAtUtc);
+    }
+
     private async Task FailAsync(
         ClaimedSuggestion suggestion,
         Exception exception,
         IReadOnlyCollection<SuggestionCompletionEvidence> evidence,
         string? fingerprint,
+        DateTime? retryAt,
         CancellationToken cancellationToken)
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
@@ -500,11 +539,12 @@ public sealed class SuggestionCompletionVerificationProcessor(
             await history.ExecuteNonQueryAsync(cancellationToken);
         }
         await using (var update = new NpgsqlCommand(
-            "update ai_agent_suggestions set verification_status='failed', last_verified_at=now(), next_verification_at=now()+interval '5 minutes'*least(12,verification_attempt_count), evidence_fingerprint=@fingerprint, verification_reason=@reason, updated_at=now() where id=@id and status='pending';",
+            "update ai_agent_suggestions set verification_status='failed', last_verified_at=now(), next_verification_at=greatest(now()+interval '5 minutes'*least(12,verification_attempt_count), @retryAt), evidence_fingerprint=@fingerprint, verification_reason=@reason, updated_at=now() where id=@id and status='pending';",
             connection, transaction))
         {
             update.Parameters.AddWithValue("id", suggestion.Id);
             update.Parameters.AddWithValue("reason", reason);
+            update.Parameters.Add("retryAt", NpgsqlDbType.TimestampTz).Value = retryAt is null ? DBNull.Value : retryAt.Value;
             update.Parameters.Add("fingerprint", NpgsqlDbType.Text).Value = fingerprint is null ? DBNull.Value : fingerprint;
             await update.ExecuteNonQueryAsync(cancellationToken);
         }

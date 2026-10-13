@@ -13,6 +13,25 @@ public sealed class PostgresWhatsappConversationActionStore(NpgsqlDataSource dat
     private const string ResponsePendingNotificationEventKey = "activity_suggestion_response_pending";
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
 
+    public async Task<bool> IsCompletedAsync(OpportunityEvent opportunityEvent, CancellationToken cancellationToken)
+    {
+        var runId = GetGuid(opportunityEvent, "runId");
+        var companyId = GetGuid(opportunityEvent, "companyId");
+        var conversationId = GetGuid(opportunityEvent, "conversationId");
+        if (runId is null || companyId is null || conversationId is null) return false;
+        await using var command = dataSource.CreateCommand("""
+            select exists (
+                select 1 from whatsapp_conversation_analysis_runs
+                where id=@runId and company_id=@companyId and conversation_id=@conversationId
+                  and status in ('completed','superseded')
+            );
+            """);
+        command.Parameters.AddWithValue("runId", runId.Value);
+        command.Parameters.AddWithValue("companyId", companyId.Value);
+        command.Parameters.AddWithValue("conversationId", conversationId.Value);
+        return (bool)(await command.ExecuteScalarAsync(cancellationToken))!;
+    }
+
     public async Task ApplyAsync(OpportunityAnalysisContext context, WhatsappConversationAnalysisResult result, CancellationToken cancellationToken)
     {
         if (!Guid.TryParse(context.Opportunity.Id, out var opportunityId))
@@ -22,6 +41,14 @@ public sealed class PostgresWhatsappConversationActionStore(NpgsqlDataSource dat
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         var runId = GetGuid(context.TriggerEvent, "runId");
+        var conversationId = GetGuid(context.TriggerEvent, "conversationId");
+        var companyId = await ReadOpportunityCompanyIdAsync(connection, opportunityId, cancellationToken);
+        if (conversationId is not null
+            && await ReadConversationCompanyIdAsync(connection, conversationId.Value, cancellationToken) != companyId)
+            throw new InvalidOperationException("WhatsApp conversation and opportunity must belong to the same company.");
+        await using var persistenceLock = conversationId is null ? null
+            : await PostgresConversationPersistenceLock.AcquireAsync(connection, companyId, conversationId.Value, cancellationToken);
+        // Recheck after the lock: a newer result may have superseded this run while this writer waited.
         if (runId is not null
             ? await IsRunCompletedAsync(connection, runId.Value, cancellationToken)
             : await WasProcessedAsync(connection, context.TriggerEvent.EventId, cancellationToken))
@@ -31,9 +58,7 @@ public sealed class PostgresWhatsappConversationActionStore(NpgsqlDataSource dat
 
         var userId = ResolveUserId(context);
         var contactId = GetGuid(context.TriggerEvent, "contactId");
-        var conversationId = GetGuid(context.TriggerEvent, "conversationId");
         var accountId = Guid.TryParse(context.Opportunity.AccountId, out var parsedAccountId) ? parsedAccountId : (Guid?)null;
-        var companyId = await ReadOpportunityCompanyIdAsync(connection, opportunityId, cancellationToken);
 
         if (conversationId is not null && !string.IsNullOrWhiteSpace(result.ConversationSummary))
         {
@@ -87,6 +112,11 @@ public sealed class PostgresWhatsappConversationActionStore(NpgsqlDataSource dat
         }
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        var actualCompanyId = await ReadConversationCompanyIdAsync(connection, conversationId.Value, cancellationToken);
+        if (actualCompanyId != companyId)
+            throw new InvalidOperationException("WhatsApp conversation and analysis must belong to the same company.");
+        await using var persistenceLock = await PostgresConversationPersistenceLock.AcquireAsync(
+            connection, actualCompanyId, conversationId.Value, cancellationToken);
         if (await IsRunCompletedAsync(connection, runId.Value, cancellationToken))
         {
             return;
@@ -112,10 +142,18 @@ public sealed class PostgresWhatsappConversationActionStore(NpgsqlDataSource dat
 
     private static async Task<bool> IsRunCompletedAsync(NpgsqlConnection connection, Guid runId, CancellationToken cancellationToken)
     {
-        const string sql = "select coalesce((select status = 'completed' from whatsapp_conversation_analysis_runs where id = @runId), false)";
+        const string sql = "select coalesce((select status in ('completed','superseded') from whatsapp_conversation_analysis_runs where id = @runId), false)";
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue("runId", runId);
         return (bool)(await command.ExecuteScalarAsync(cancellationToken) ?? false);
+    }
+
+    private static async Task<Guid?> ReadConversationCompanyIdAsync(NpgsqlConnection connection, Guid conversationId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand("select company_id from whatsapp_conversations where id=@conversation", connection);
+        command.Parameters.AddWithValue("conversation", conversationId);
+        return await command.ExecuteScalarAsync(cancellationToken) is Guid company ? company : null;
     }
 
     private static void AppendAnalysisSections(List<string> lines, WhatsappConversationAnalysisResult result)
@@ -929,7 +967,9 @@ public sealed class PostgresWhatsappConversationActionStore(NpgsqlDataSource dat
               and previous.id <> current_run.id
               and previous.conversation_id = current_run.conversation_id
               and previous.last_message_id = current_run.last_message_id
-              and previous.status = 'completed';
+              and previous.company_id is not distinct from current_run.company_id
+              and previous.created_at < current_run.created_at
+              and previous.status in ('completed', 'deferred', 'queued', 'processing', 'failed');
 
             update whatsapp_conversation_analysis_runs
             set status = 'completed',

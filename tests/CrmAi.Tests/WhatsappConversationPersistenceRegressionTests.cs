@@ -211,7 +211,6 @@ public sealed class WhatsappConversationPersistenceRegressionTests
         var worker = ReadSource("src/CrmAi.Infrastructure/Persistence/SuggestionCompletionVerificationHostedService.cs");
 
         scheduler.ShouldContainAll(
-            "set next_verification_at = now()",
             "suggestion.suggestion_type = 'activity'",
             "from opportunity_contacts relation",
             "opportunity.account_id = contact.account_id");

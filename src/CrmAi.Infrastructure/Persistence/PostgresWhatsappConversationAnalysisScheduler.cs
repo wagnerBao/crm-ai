@@ -142,6 +142,22 @@ public sealed class PostgresWhatsappConversationAnalysisScheduler(
         await UpdateStatusAsync(connection, id, "failed", error, cancellationToken);
     }
 
+    public async Task DeferAsync(string eventId, DateTime retryAtUtc, string reason, CancellationToken cancellationToken)
+    {
+        if (!Guid.TryParse(eventId, out var id)) return;
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = new NpgsqlCommand("""
+            update ai_insights
+            set status='pending', updated_at=now(),
+                message=jsonb_set(message::jsonb, '{nextAttemptUtc}', to_jsonb(@retryAt::timestamptz), true)::text
+            where id=@id and kind=@kind and status='processing';
+            """, connection);
+        command.Parameters.AddWithValue("id", id);
+        command.Parameters.AddWithValue("kind", Kind);
+        command.Parameters.AddWithValue("retryAt", retryAtUtc);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
     private static async Task<PendingWhatsappAnalysis?> ReadPendingAsync(NpgsqlConnection connection, Guid opportunityId, string conversationId, CancellationToken cancellationToken)
     {
         const string sql = """
@@ -181,6 +197,8 @@ public sealed class PostgresWhatsappConversationAnalysisScheduler(
               and insight.status = 'pending'
               and settings.is_active = true
               and insight.updated_at <= now() - (settings.debounce_minutes * interval '1 minute')
+              and (nullif(insight.message::jsonb ->> 'nextAttemptUtc', '')::timestamptz is null
+                   or (insight.message::jsonb ->> 'nextAttemptUtc')::timestamptz <= now())
             order by insight.updated_at
             limit @limit
             """;
@@ -536,5 +554,6 @@ public sealed class PostgresWhatsappConversationAnalysisScheduler(
         int MessageCount,
         DateTime FirstMessageAt,
         DateTime LatestMessageAt,
-        string? LatestText);
+        string? LatestText,
+        DateTime? NextAttemptUtc = null);
 }

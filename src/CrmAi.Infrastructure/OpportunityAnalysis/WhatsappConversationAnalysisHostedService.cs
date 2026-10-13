@@ -35,6 +35,13 @@ public sealed class WhatsappConversationAnalysisHostedService(
                     await processor.ProcessAsync(opportunityEvent, cancellationToken);
                     await scheduler.CompleteAsync(opportunityEvent.EventId, cancellationToken);
                 }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+                catch (AiInvocationDeferredException deferred)
+                {
+                    await scheduler.DeferAsync(opportunityEvent.EventId, deferred.RetryAtUtc, deferred.Reason, cancellationToken);
+                    logger.LogWarning("Deferred WhatsApp analysis event {EventId} until {RetryAtUtc}: {Reason}.",
+                        opportunityEvent.EventId, deferred.RetryAtUtc, deferred.Reason);
+                }
                 catch (Exception exception)
                 {
                     logger.LogError(exception, "Failed to process consolidated WhatsApp analysis event {EventId}.", opportunityEvent.EventId);

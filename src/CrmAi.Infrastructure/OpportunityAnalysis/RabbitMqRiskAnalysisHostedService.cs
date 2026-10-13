@@ -17,6 +17,7 @@ public sealed class RabbitMqRiskAnalysisHostedService(IServiceScopeFactory scope
     public override async Task StartAsync(CancellationToken cancellationToken)
     {
         await using var scope = scopeFactory.CreateAsyncScope();
+        await scope.ServiceProvider.GetRequiredService<IAiInvocationGuard>().InitializeAsync(cancellationToken);
         await scope.ServiceProvider.GetRequiredService<IRiskAnalysisState>().InitializeAsync(cancellationToken);
         await base.StartAsync(cancellationToken);
     }

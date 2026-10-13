@@ -1,0 +1,75 @@
+{"section" : "audit", "observed_at" : "2026-10-13T11:00:06.106394-03:00", "read_only" : "on", "isolation" : "repeatable read"}
+{"section":"coverage","source":"events","records":33065,"earliest":"2026-09-29T02:21:14.22446-03:00","latest":"2026-10-13T10:59:16.501174-03:00"}
+{"section":"coverage","source":"invocations","records":382373,"earliest":"2026-09-29T00:00:06.353366-03:00","latest":"2026-10-13T11:00:05.560805-03:00"}
+{"section":"columns","table_name":"ai_agent_suggestion_verifications","column_name":"id","data_type":"uuid"}
+{"section":"columns","table_name":"ai_agent_suggestion_verifications","column_name":"company_id","data_type":"uuid"}
+{"section":"columns","table_name":"ai_agent_suggestion_verifications","column_name":"suggestion_id","data_type":"uuid"}
+{"section":"columns","table_name":"ai_agent_suggestion_verifications","column_name":"result","data_type":"text"}
+{"section":"columns","table_name":"ai_agent_suggestion_verifications","column_name":"confidence","data_type":"integer"}
+{"section":"columns","table_name":"ai_agent_suggestion_verifications","column_name":"reason","data_type":"text"}
+{"section":"columns","table_name":"ai_agent_suggestion_verifications","column_name":"evidence","data_type":"jsonb"}
+{"section":"columns","table_name":"ai_agent_suggestion_verifications","column_name":"evidence_fingerprint","data_type":"text"}
+{"section":"columns","table_name":"ai_agent_suggestion_verifications","column_name":"model","data_type":"text"}
+{"section":"columns","table_name":"ai_agent_suggestion_verifications","column_name":"prompt_fingerprint","data_type":"text"}
+{"section":"columns","table_name":"ai_agent_suggestion_verifications","column_name":"created_at","data_type":"timestamp with time zone"}
+{"section":"columns","table_name":"ai_agent_suggestions","column_name":"id","data_type":"uuid"}
+{"section":"columns","table_name":"ai_agent_suggestions","column_name":"company_id","data_type":"uuid"}
+{"section":"columns","table_name":"ai_agent_suggestions","column_name":"agent_key","data_type":"text"}
+{"section":"columns","table_name":"ai_agent_suggestions","column_name":"suggestion_type","data_type":"text"}
+{"section":"columns","table_name":"ai_agent_suggestions","column_name":"status","data_type":"text"}
+{"section":"columns","table_name":"ai_agent_suggestions","column_name":"contact_id","data_type":"uuid"}
+{"section":"columns","table_name":"ai_agent_suggestions","column_name":"conversation_id","data_type":"uuid"}
+{"section":"columns","table_name":"ai_agent_suggestions","column_name":"run_id","data_type":"uuid"}
+{"section":"columns","table_name":"ai_agent_suggestions","column_name":"title","data_type":"text"}
+{"section":"columns","table_name":"ai_agent_suggestions","column_name":"description","data_type":"text"}
+{"section":"columns","table_name":"ai_agent_suggestions","column_name":"suggested_due_at","data_type":"timestamp with time zone"}
+{"section":"columns","table_name":"ai_agent_suggestions","column_name":"payload","data_type":"jsonb"}
+{"section":"columns","table_name":"ai_agent_suggestions","column_name":"created_at","data_type":"timestamp with time zone"}
+{"section":"columns","table_name":"ai_agent_suggestions","column_name":"updated_at","data_type":"timestamp with time zone"}
+{"section":"columns","table_name":"ai_agent_suggestions","column_name":"resolved_at","data_type":"timestamp with time zone"}
+{"section":"columns","table_name":"ai_agent_suggestions","column_name":"generation_model","data_type":"text"}
+{"section":"columns","table_name":"ai_agent_suggestions","column_name":"prompt_fingerprint","data_type":"text"}
+{"section":"columns","table_name":"ai_agent_suggestions","column_name":"confidence_score","data_type":"integer"}
+{"section":"columns","table_name":"ai_agent_suggestions","column_name":"generation_reasons","data_type":"jsonb"}
+{"section":"columns","table_name":"ai_agent_suggestions","column_name":"verification_status","data_type":"text"}
+{"section":"columns","table_name":"ai_agent_suggestions","column_name":"verification_attempt_count","data_type":"integer"}
+{"section":"columns","table_name":"ai_agent_suggestions","column_name":"next_verification_at","data_type":"timestamp with time zone"}
+{"section":"columns","table_name":"ai_agent_suggestions","column_name":"last_verified_at","data_type":"timestamp with time zone"}
+{"section":"columns","table_name":"ai_agent_suggestions","column_name":"priority_at","data_type":"timestamp with time zone"}
+{"section":"columns","table_name":"ai_agent_suggestions","column_name":"priority_notified_at","data_type":"timestamp with time zone"}
+{"section":"columns","table_name":"ai_agent_suggestions","column_name":"evidence_fingerprint","data_type":"text"}
+{"section":"columns","table_name":"ai_agent_suggestions","column_name":"verification_confidence","data_type":"integer"}
+{"section":"columns","table_name":"ai_agent_suggestions","column_name":"verification_reason","data_type":"text"}
+{"section":"columns","table_name":"ai_agent_suggestions","column_name":"verification_model","data_type":"text"}
+{"section":"columns","table_name":"ai_agent_suggestions","column_name":"verification_evidence","data_type":"jsonb"}
+{"section":"columns","table_name":"ai_agent_suggestions","column_name":"response_required_at","data_type":"timestamp with time zone"}
+{"section":"columns","table_name":"ai_agent_suggestions","column_name":"response_reminder_notified_at","data_type":"timestamp with time zone"}
+{"section":"columns","table_name":"ai_credit_ledger_entries","column_name":"id","data_type":"uuid"}
+{"section":"columns","table_name":"ai_credit_ledger_entries","column_name":"company_id","data_type":"uuid"}
+{"section":"columns","table_name":"ai_credit_ledger_entries","column_name":"lot_id","data_type":"uuid"}
+{"section":"columns","table_name":"ai_credit_ledger_entries","column_name":"entry_type","data_type":"character varying"}
+{"section":"columns","table_name":"ai_credit_ledger_entries","column_name":"credits","data_type":"bigint"}
+{"section":"columns","table_name":"ai_credit_ledger_entries","column_name":"description","data_type":"text"}
+{"section":"columns","table_name":"ai_credit_ledger_entries","column_name":"invocation_id","data_type":"character varying"}
+{"section":"columns","table_name":"ai_credit_ledger_entries","column_name":"created_by","data_type":"uuid"}
+{"section":"columns","table_name":"ai_credit_ledger_entries","column_name":"created_at","data_type":"timestamp with time zone"}
+{"section":"columns","table_name":"ai_rate_cards","column_name":"id","data_type":"uuid"}
+{"section":"columns","table_name":"ai_rate_cards","column_name":"provider","data_type":"character varying"}
+{"section":"columns","table_name":"ai_rate_cards","column_name":"model_pattern","data_type":"character varying"}
+{"section":"columns","table_name":"ai_rate_cards","column_name":"input_credits_per_thousand","data_type":"numeric"}
+{"section":"columns","table_name":"ai_rate_cards","column_name":"output_credits_per_thousand","data_type":"numeric"}
+{"section":"columns","table_name":"ai_rate_cards","column_name":"cached_credits_per_thousand","data_type":"numeric"}
+{"section":"columns","table_name":"ai_rate_cards","column_name":"effective_from","data_type":"timestamp with time zone"}
+{"section":"columns","table_name":"ai_rate_cards","column_name":"effective_to","data_type":"timestamp with time zone"}
+{"section":"columns","table_name":"ai_rate_cards","column_name":"created_at","data_type":"timestamp with time zone"}
+{"section":"columns","table_name":"ai_rate_cards","column_name":"provider_input_usd_per_million","data_type":"numeric"}
+{"section":"columns","table_name":"ai_rate_cards","column_name":"provider_output_usd_per_million","data_type":"numeric"}
+{"section":"columns","table_name":"ai_rate_cards","column_name":"provider_cached_input_usd_per_million","data_type":"numeric"}
+{"section":"columns","table_name":"ai_rate_cards","column_name":"provider_price_source_url","data_type":"text"}
+{"section":"columns","table_name":"ai_rate_cards","column_name":"provider_price_verified_at","data_type":"date"}
+{"section":"rates","provider":"openai","model_pattern":"*","provider_input_usd_per_million":null,"provider_output_usd_per_million":null,"provider_cached_input_usd_per_million":null,"provider_price_source_url":null,"provider_price_verified_at":null,"effective_from":"2026-09-07T14:33:15.542338-03:00","effective_to":null}
+{"section":"rates","provider":"openai","model_pattern":"gpt-4.1-mini","provider_input_usd_per_million":0.400000,"provider_output_usd_per_million":1.600000,"provider_cached_input_usd_per_million":0.100000,"provider_price_source_url":"https://developers.openai.com/api/docs/models/gpt-4.1-mini","provider_price_verified_at":"2026-09-15","effective_from":"2026-09-15T18:09:46.802793-03:00","effective_to":null}
+{"section":"rates","provider":"openai","model_pattern":"gpt-4o-mini-transcribe","provider_input_usd_per_million":1.250000,"provider_output_usd_per_million":5.000000,"provider_cached_input_usd_per_million":0.000000,"provider_price_source_url":"https://developers.openai.com/api/docs/models/gpt-4o-mini-transcribe","provider_price_verified_at":"2026-09-15","effective_from":"2026-09-15T18:09:46.802793-03:00","effective_to":null}
+{"section":"rates","provider":"openai","model_pattern":"gpt-4o-transcribe-diarize","provider_input_usd_per_million":2.500000,"provider_output_usd_per_million":10.000000,"provider_cached_input_usd_per_million":0.000000,"provider_price_source_url":"https://developers.openai.com/api/docs/models/gpt-4o-transcribe-diarize","provider_price_verified_at":"2026-09-15","effective_from":"2026-09-15T18:09:46.802793-03:00","effective_to":null}
+{"section":"rates","provider":"openai","model_pattern":"gpt-5.6-luna","provider_input_usd_per_million":0.200000,"provider_output_usd_per_million":1.200000,"provider_cached_input_usd_per_million":0.020000,"provider_price_source_url":"https://developers.openai.com/api/docs/models/gpt-5.6-luna","provider_price_verified_at":"2026-09-15","effective_from":"2026-09-15T18:09:46.802793-03:00","effective_to":null}
+{"section":"rates","provider":"openai","model_pattern":"gpt-5.6-terra","provider_input_usd_per_million":2.000000,"provider_output_usd_per_million":12.000000,"provider_cached_input_usd_per_million":0.200000,"provider_price_source_url":"https://developers.openai.com/api/docs/models/gpt-5.6-terra","provider_price_verified_at":"2026-09-15","effective_from":"2026-09-15T18:09:46.802793-03:00","effective_to":null}

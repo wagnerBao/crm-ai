@@ -10,7 +10,8 @@ public sealed class WhatsappConversationAnalysisAgent(
     IOpenAiWhatsappConversationAnalysisClient openAiClient,
     IAiAgentRuntimeSettingsRepository agentSettingsRepository,
     IWhatsappSuggestionContextRepository suggestionContextRepository,
-    IWhatsappScorecardContextRepository? scorecardContextRepository = null) : IWhatsappConversationAnalysisAgent
+    IWhatsappScorecardContextRepository? scorecardContextRepository = null,
+    IAiInvocationGuard? invocationGuard = null) : IWhatsappConversationAnalysisAgent
 {
     private const string AgentKey = "whatsapp-conversation-analysis";
 
@@ -116,7 +117,24 @@ public sealed class WhatsappConversationAnalysisAgent(
         AiAgentInvocationContext invocationContext,
         CancellationToken cancellationToken)
     {
-        var response = await openAiClient.AnalyzeAsync(settings, input, invocationContext, cancellationToken);
+        var permit = invocationGuard is null ? null
+            : await invocationGuard.EnsureAvailableAsync(settings, invocationContext.CompanyId, cancellationToken);
+        OpenAiWhatsappConversationAnalysisResponse response;
+        try
+        {
+            response = await openAiClient.AnalyzeAsync(settings, input, invocationContext, cancellationToken);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            if (invocationGuard is not null)
+            {
+                var deferred = await invocationGuard.RecordFailureAsync(settings, invocationContext.CompanyId, exception, cancellationToken);
+                if (deferred is not null) throw deferred;
+            }
+            throw;
+        }
+        if (invocationGuard is not null)
+            await invocationGuard.RecordSuccessAsync(settings, invocationContext.CompanyId, cancellationToken, permit);
         var dueAt = ParseDateTime(response.ActivityDueAt, settings.TimeZoneId);
         var nextSteps = CleanOptional(response.NextSteps);
         var activityTitle = CleanNullableText(response.ActivityTitle);

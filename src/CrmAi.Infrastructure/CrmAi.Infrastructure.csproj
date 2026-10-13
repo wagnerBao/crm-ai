@@ -26,5 +26,6 @@
 
   <ItemGroup>
     <EmbeddedResource Include="../../database/20260909_create_risk_analysis_state.sql" LogicalName="RiskAnalysisState.sql" />
+    <EmbeddedResource Include="../../database/20261013_create_ai_invocation_cooldowns.sql" LogicalName="AiInvocationCooldowns.sql" />
   </ItemGroup>
 </Project>

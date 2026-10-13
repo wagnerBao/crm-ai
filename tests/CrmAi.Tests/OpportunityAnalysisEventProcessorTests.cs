@@ -5,6 +5,26 @@ namespace CrmAi.Tests;
 
 public sealed class OpportunityAnalysisEventProcessorTests
 {
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Completed_whatsapp_batch_redelivery_does_not_repeat_inference(bool hasOpportunity)
+    {
+        var contextRepository = new CountingOpportunityContextRepository();
+        var risk = new CountingRiskAnalysisScheduler();
+        var agent = new StubWhatsappConversationAnalysisAgent(null);
+        var store = new CountingWhatsappConversationActionStore { Completed = true };
+        var processor = new OpportunityAnalysisEventProcessor(contextRepository, risk, agent, store,
+            new CountingWhatsappConversationAnalysisScheduler(), new NullMeetingAudioAnalysisService());
+        var batch = CreateEvent("opportunity.whatsapp.conversation.batch");
+        if (!hasOpportunity) batch = batch with { OpportunityId = string.Empty };
+        await processor.ProcessAsync(batch, CancellationToken.None);
+        Assert.Equal(0, agent.Calls);
+        Assert.Equal(0, agent.ContactCalls);
+        Assert.Equal(0, contextRepository.Calls);
+        Assert.Equal(0, risk.Calls);
+        Assert.Equal(0, store.Calls);
+    }
     [Fact]
     public async Task ProcessAsync_SchedulesWhatsappConversationAnalysis_ForWhatsappMessageEvents()
     {
@@ -322,6 +342,13 @@ public sealed class OpportunityAnalysisEventProcessorTests
     private sealed class StubWhatsappConversationAnalysisAgent(WhatsappConversationAnalysisResult? result) : IWhatsappConversationAnalysisAgent
     {
         public int Calls { get; private set; }
+        public int ContactCalls { get; private set; }
+
+        public Task<WhatsappConversationAnalysisResult?> AnalyzeContactAsync(OpportunityEvent opportunityEvent, CancellationToken cancellationToken)
+        {
+            ContactCalls++;
+            return Task.FromResult(result);
+        }
 
         public Task<WhatsappConversationAnalysisResult?> AnalyzeAsync(OpportunityAnalysisContext context, CancellationToken cancellationToken)
         {
@@ -332,6 +359,8 @@ public sealed class OpportunityAnalysisEventProcessorTests
 
     private sealed class CountingWhatsappConversationActionStore : IWhatsappConversationActionStore
     {
+        public bool Completed { get; set; }
+        public Task<bool> IsCompletedAsync(OpportunityEvent opportunityEvent, CancellationToken cancellationToken) => Task.FromResult(Completed);
         public int Calls { get; private set; }
         public OpportunityAnalysisContext? LastContext { get; private set; }
 

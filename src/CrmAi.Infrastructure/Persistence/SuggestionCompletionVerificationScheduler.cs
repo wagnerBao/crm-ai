@@ -23,9 +23,34 @@ internal static class SuggestionCompletionVerificationScheduler
         }
 
         const string sql = """
+            with timing as (
+                select now() + interval '1 minute' * greatest(1, least(1440, coalesce((
+                    select settings.debounce_minutes
+                    from ai_agent_settings settings
+                    where settings.agent_key = 'suggestion-completion-verification'
+                      and (settings.company_id = @companyId or settings.company_id is null)
+                    order by case when settings.company_id = @companyId then 0 else 1 end,
+                             settings.updated_at desc
+                    limit 1
+                ), 5))) as requested_at
+            )
             update ai_agent_suggestions suggestion
-            set next_verification_at = now(),
-                updated_at = now()
+            set next_verification_at = case
+                    -- New evidence cannot cancel a failed invocation's backoff.
+                    when suggestion.verification_status = 'failed' and suggestion.next_verification_at > now()
+                        then suggestion.next_verification_at
+                    -- Keep the worker's lease timestamp; a changed next date records
+                    -- evidence received during its call for the completion path.
+                    when suggestion.verification_status = 'processing'
+                         and suggestion.next_verification_at = suggestion.updated_at + interval '15 minutes'
+                        then timing.requested_at
+                    when suggestion.next_verification_at is not null
+                        then least(suggestion.next_verification_at, timing.requested_at)
+                    else timing.requested_at
+                end,
+                updated_at = case when suggestion.verification_status = 'processing'
+                                  then suggestion.updated_at else now() end
+            from timing
             where suggestion.company_id = @companyId
               and suggestion.status = 'pending'
               and suggestion.suggestion_type = 'activity'

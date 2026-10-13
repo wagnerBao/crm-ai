@@ -24,6 +24,8 @@ public static class DependencyInjection
         services.AddSingleton(new NpgsqlDataSourceBuilder(connectionString).Build());
         services.AddScoped<IOpportunityContextRepository, PostgresOpportunityContextRepository>();
         services.AddScoped<IAiAgentRuntimeSettingsRepository, PostgresAiAgentRuntimeSettingsRepository>();
+        services.AddScoped<IAiInvocationGuard, PostgresAiInvocationGuard>();
+        services.AddScoped<IConversationAnalysisDeferralStore, PostgresConversationAnalysisDeferralStore>();
         services.AddScoped<IAiAgentInvocationLogStore, PostgresAiAgentInvocationLogStore>();
         services.AddScoped<IAnalysisResultStore, PostgresAnalysisResultStore>();
         services.AddScoped<IWhatsappConversationActionStore, PostgresWhatsappConversationActionStore>();

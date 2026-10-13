@@ -1,0 +1,461 @@
+{"section" : "audit", "observed_at" : "2026-10-13T11:04:24.744971-03:00", "cutoff" : "2026-10-13T11:00:00-03:00", "read_only" : "on"}
+{"section":"rechecks","date_local":"2026-09-29","company":"Wagner Brum","category":"repeat-primary-in-day","calls":151,"suggestions":13,"total_tokens":1507129,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-09-29","company":"Staff M&B","category":"repeat-primary-in-day","calls":96,"suggestions":27,"total_tokens":1231103,"gap_under_5m":0,"gap_under_15m":1}
+{"section":"rechecks","date_local":"2026-09-29","company":"Staff M&B","category":"first-primary-in-day","calls":56,"suggestions":56,"total_tokens":590024,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-09-29","company":"AVEP","category":"repeat-primary-in-day","calls":28,"suggestions":3,"total_tokens":449323,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-09-29","company":"Wagner Brum","category":"first-primary-in-day","calls":13,"suggestions":13,"total_tokens":128137,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-09-29","company":"AVEP","category":"first-primary-in-day","calls":7,"suggestions":7,"total_tokens":61175,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-09-30","company":"AVEP","category":"first-primary-in-day","calls":1228,"suggestions":1228,"total_tokens":9317516,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-09-30","company":"AVEP","category":"repeat-primary-in-day","calls":379,"suggestions":131,"total_tokens":3917118,"gap_under_5m":0,"gap_under_15m":183}
+{"section":"rechecks","date_local":"2026-09-30","company":"Staff M&B","category":"repeat-primary-in-day","calls":216,"suggestions":53,"total_tokens":2880713,"gap_under_5m":0,"gap_under_15m":18}
+{"section":"rechecks","date_local":"2026-09-30","company":"Staff M&B","category":"first-primary-in-day","calls":232,"suggestions":232,"total_tokens":1731922,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-09-30","company":"Vetor Modular","category":"repeat-primary-in-day","calls":194,"suggestions":54,"total_tokens":1650074,"gap_under_5m":0,"gap_under_15m":82}
+{"section":"rechecks","date_local":"2026-09-30","company":"Vetor Modular","category":"first-primary-in-day","calls":191,"suggestions":191,"total_tokens":1362018,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-09-30","company":"Wagner Brum","category":"repeat-primary-in-day","calls":133,"suggestions":14,"total_tokens":1355274,"gap_under_5m":0,"gap_under_15m":3}
+{"section":"rechecks","date_local":"2026-09-30","company":"Wagner Brum","category":"first-primary-in-day","calls":18,"suggestions":18,"total_tokens":176225,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-09-30","company":"TRIASA CORRETORA DE SEGUROS","category":"first-primary-in-day","calls":24,"suggestions":24,"total_tokens":107727,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-09-30","company":"TRIASA CORRETORA DE SEGUROS","category":"repeat-primary-in-day","calls":8,"suggestions":2,"total_tokens":22916,"gap_under_5m":0,"gap_under_15m":2}
+{"section":"rechecks","date_local":"2026-10-01","company":"AVEP","category":"repeat-primary-in-day","calls":491,"suggestions":293,"total_tokens":8075260,"gap_under_5m":27,"gap_under_15m":152}
+{"section":"rechecks","date_local":"2026-10-01","company":"AVEP","category":"first-primary-in-day","calls":796,"suggestions":796,"total_tokens":6723462,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-01","company":"Staff M&B","category":"repeat-primary-in-day","calls":410,"suggestions":174,"total_tokens":5033200,"gap_under_5m":15,"gap_under_15m":42}
+{"section":"rechecks","date_local":"2026-10-01","company":"Staff M&B","category":"first-primary-in-day","calls":228,"suggestions":228,"total_tokens":1934216,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-01","company":"Vetor Modular","category":"repeat-primary-in-day","calls":115,"suggestions":37,"total_tokens":1369841,"gap_under_5m":7,"gap_under_15m":19}
+{"section":"rechecks","date_local":"2026-10-01","company":"Wagner Brum","category":"repeat-primary-in-day","calls":100,"suggestions":20,"total_tokens":1013312,"gap_under_5m":1,"gap_under_15m":1}
+{"section":"rechecks","date_local":"2026-10-01","company":"Vetor Modular","category":"first-primary-in-day","calls":52,"suggestions":52,"total_tokens":570276,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-01","company":"Wagner Brum","category":"first-primary-in-day","calls":21,"suggestions":21,"total_tokens":205048,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-01","company":"TRIASA CORRETORA DE SEGUROS","category":"first-primary-in-day","calls":6,"suggestions":6,"total_tokens":14991,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-01","company":"TRIASA CORRETORA DE SEGUROS","category":"repeat-primary-in-day","calls":6,"suggestions":2,"total_tokens":13769,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-02","company":"Staff M&B","category":"repeat-primary-in-day","calls":556,"suggestions":99,"total_tokens":8743644,"gap_under_5m":117,"gap_under_15m":238}
+{"section":"rechecks","date_local":"2026-10-02","company":"Staff M&B","category":"first-primary-in-day","calls":149,"suggestions":149,"total_tokens":1788945,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-02","company":"Wagner Brum","category":"repeat-primary-in-day","calls":144,"suggestions":24,"total_tokens":1455237,"gap_under_5m":10,"gap_under_15m":46}
+{"section":"rechecks","date_local":"2026-10-02","company":"AVEP","category":"repeat-primary-in-day","calls":190,"suggestions":51,"total_tokens":1281306,"gap_under_5m":41,"gap_under_15m":86}
+{"section":"rechecks","date_local":"2026-10-02","company":"Vetor Modular","category":"repeat-primary-in-day","calls":93,"suggestions":9,"total_tokens":1132709,"gap_under_5m":0,"gap_under_15m":1}
+{"section":"rechecks","date_local":"2026-10-02","company":"AVEP","category":"first-primary-in-day","calls":154,"suggestions":154,"total_tokens":654047,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-02","company":"Wagner Brum","category":"first-primary-in-day","calls":26,"suggestions":26,"total_tokens":236517,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-02","company":"Vetor Modular","category":"first-primary-in-day","calls":13,"suggestions":13,"total_tokens":142150,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-02","company":"Lumyne Estética Avançada","category":"repeat-primary-in-day","calls":16,"suggestions":6,"total_tokens":48737,"gap_under_5m":7,"gap_under_15m":10}
+{"section":"rechecks","date_local":"2026-10-02","company":"Lumyne Estética Avançada","category":"first-primary-in-day","calls":16,"suggestions":16,"total_tokens":31719,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-03","company":"Staff M&B","category":"repeat-primary-in-day","calls":117,"suggestions":32,"total_tokens":1842777,"gap_under_5m":21,"gap_under_15m":39}
+{"section":"rechecks","date_local":"2026-10-03","company":"Vetor Modular","category":"repeat-primary-in-day","calls":86,"suggestions":15,"total_tokens":1162518,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-03","company":"Staff M&B","category":"first-primary-in-day","calls":68,"suggestions":68,"total_tokens":809495,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-03","company":"Vetor Modular","category":"first-primary-in-day","calls":43,"suggestions":43,"total_tokens":560225,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-03","company":"AVEP","category":"first-primary-in-day","calls":44,"suggestions":44,"total_tokens":293612,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-03","company":"Lumyne Estética Avançada","category":"repeat-primary-in-day","calls":40,"suggestions":18,"total_tokens":167577,"gap_under_5m":9,"gap_under_15m":20}
+{"section":"rechecks","date_local":"2026-10-03","company":"Lumyne Estética Avançada","category":"first-primary-in-day","calls":53,"suggestions":53,"total_tokens":143544,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-03","company":"Wagner Brum","category":"repeat-primary-in-day","calls":11,"suggestions":3,"total_tokens":126851,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-03","company":"Wagner Brum","category":"first-primary-in-day","calls":5,"suggestions":5,"total_tokens":47600,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-03","company":"TRIASA CORRETORA DE SEGUROS","category":"first-primary-in-day","calls":5,"suggestions":5,"total_tokens":25583,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-03","company":"AVEP","category":"repeat-primary-in-day","calls":3,"suggestions":2,"total_tokens":10742,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-04","company":"Staff M&B","category":"repeat-primary-in-day","calls":61,"suggestions":27,"total_tokens":810054,"gap_under_5m":12,"gap_under_15m":24}
+{"section":"rechecks","date_local":"2026-10-04","company":"Vetor Modular","category":"repeat-primary-in-day","calls":46,"suggestions":2,"total_tokens":641661,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-04","company":"Staff M&B","category":"first-primary-in-day","calls":52,"suggestions":52,"total_tokens":584749,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-04","company":"Lumyne Estética Avançada","category":"first-primary-in-day","calls":25,"suggestions":25,"total_tokens":58246,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-04","company":"Vetor Modular","category":"first-primary-in-day","calls":3,"suggestions":3,"total_tokens":30715,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-04","company":"Wagner Brum","category":"first-primary-in-day","calls":3,"suggestions":3,"total_tokens":24860,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-04","company":"Wagner Brum","category":"repeat-primary-in-day","calls":2,"suggestions":2,"total_tokens":13475,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-04","company":"TRIASA CORRETORA DE SEGUROS","category":"first-primary-in-day","calls":5,"suggestions":5,"total_tokens":11976,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-04","company":"Lumyne Estética Avançada","category":"repeat-primary-in-day","calls":5,"suggestions":5,"total_tokens":10996,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-04","company":"AVEP","category":"first-primary-in-day","calls":4,"suggestions":4,"total_tokens":6965,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-05","company":"Staff M&B","category":"repeat-primary-in-day","calls":372,"suggestions":62,"total_tokens":4615114,"gap_under_5m":58,"gap_under_15m":129}
+{"section":"rechecks","date_local":"2026-10-05","company":"Wagner Brum","category":"repeat-primary-in-day","calls":277,"suggestions":28,"total_tokens":2984867,"gap_under_5m":38,"gap_under_15m":91}
+{"section":"rechecks","date_local":"2026-10-05","company":"Staff M&B","category":"first-primary-in-day","calls":116,"suggestions":116,"total_tokens":1456620,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-05","company":"AVEP","category":"repeat-primary-in-day","calls":151,"suggestions":81,"total_tokens":1271181,"gap_under_5m":43,"gap_under_15m":54}
+{"section":"rechecks","date_local":"2026-10-05","company":"AVEP","category":"first-primary-in-day","calls":310,"suggestions":310,"total_tokens":1170412,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-05","company":"Vetor Modular","category":"repeat-primary-in-day","calls":36,"suggestions":2,"total_tokens":485081,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-05","company":"Lumyne Estética Avançada","category":"first-primary-in-day","calls":118,"suggestions":118,"total_tokens":294430,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-05","company":"Wagner Brum","category":"first-primary-in-day","calls":32,"suggestions":32,"total_tokens":278765,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-05","company":"Lumyne Estética Avançada","category":"repeat-primary-in-day","calls":68,"suggestions":40,"total_tokens":198129,"gap_under_5m":13,"gap_under_15m":21}
+{"section":"rechecks","date_local":"2026-10-05","company":"Vetor Modular","category":"first-primary-in-day","calls":3,"suggestions":3,"total_tokens":30541,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-05","company":"TRIASA CORRETORA DE SEGUROS","category":"first-primary-in-day","calls":3,"suggestions":3,"total_tokens":7989,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-05","company":"TRIASA CORRETORA DE SEGUROS","category":"repeat-primary-in-day","calls":1,"suggestions":1,"total_tokens":2079,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-06","company":"Staff M&B","category":"repeat-primary-in-day","calls":874,"suggestions":193,"total_tokens":10256715,"gap_under_5m":45,"gap_under_15m":162}
+{"section":"rechecks","date_local":"2026-10-06","company":"AVEP","category":"repeat-primary-in-day","calls":270,"suggestions":91,"total_tokens":3745591,"gap_under_5m":44,"gap_under_15m":87}
+{"section":"rechecks","date_local":"2026-10-06","company":"Wagner Brum","category":"repeat-primary-in-day","calls":395,"suggestions":38,"total_tokens":3353135,"gap_under_5m":33,"gap_under_15m":130}
+{"section":"rechecks","date_local":"2026-10-06","company":"Staff M&B","category":"first-primary-in-day","calls":262,"suggestions":262,"total_tokens":2101884,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-06","company":"AVEP","category":"first-primary-in-day","calls":323,"suggestions":323,"total_tokens":1582766,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-06","company":"Staff M&B","category":"fallback","calls":78,"suggestions":49,"total_tokens":1149994,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-06","company":"AVEP","category":"fallback","calls":45,"suggestions":26,"total_tokens":790182,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-06","company":"Vetor Modular","category":"first-primary-in-day","calls":105,"suggestions":105,"total_tokens":721469,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-06","company":"Lumyne Estética Avançada","category":"repeat-primary-in-day","calls":141,"suggestions":67,"total_tokens":647778,"gap_under_5m":39,"gap_under_15m":51}
+{"section":"rechecks","date_local":"2026-10-06","company":"Vetor Modular","category":"fallback","calls":52,"suggestions":34,"total_tokens":531438,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-06","company":"Wagner Brum","category":"fallback","calls":42,"suggestions":22,"total_tokens":467149,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-06","company":"Lumyne Estética Avançada","category":"first-primary-in-day","calls":128,"suggestions":128,"total_tokens":362370,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-06","company":"Wagner Brum","category":"first-primary-in-day","calls":40,"suggestions":40,"total_tokens":360066,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-06","company":"Vetor Modular","category":"repeat-primary-in-day","calls":36,"suggestions":25,"total_tokens":321875,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-06","company":"Lumyne Estética Avançada","category":"fallback","calls":12,"suggestions":9,"total_tokens":60685,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-06","company":"TRIASA CORRETORA DE SEGUROS","category":"first-primary-in-day","calls":17,"suggestions":17,"total_tokens":46082,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-06","company":"TRIASA CORRETORA DE SEGUROS","category":"repeat-primary-in-day","calls":16,"suggestions":14,"total_tokens":39896,"gap_under_5m":0,"gap_under_15m":1}
+{"section":"rechecks","date_local":"2026-10-06","company":"TRIASA CORRETORA DE SEGUROS","category":"fallback","calls":2,"suggestions":1,"total_tokens":4683,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-07","company":"Staff M&B","category":"repeat-primary-in-day","calls":679,"suggestions":169,"total_tokens":9936134,"gap_under_5m":105,"gap_under_15m":215}
+{"section":"rechecks","date_local":"2026-10-07","company":"AVEP","category":"repeat-primary-in-day","calls":172,"suggestions":45,"total_tokens":3033633,"gap_under_5m":30,"gap_under_15m":63}
+{"section":"rechecks","date_local":"2026-10-07","company":"Staff M&B","category":"first-primary-in-day","calls":441,"suggestions":441,"total_tokens":2637574,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-07","company":"Wagner Brum","category":"repeat-primary-in-day","calls":272,"suggestions":31,"total_tokens":2322933,"gap_under_5m":49,"gap_under_15m":91}
+{"section":"rechecks","date_local":"2026-10-07","company":"AVEP","category":"first-primary-in-day","calls":304,"suggestions":304,"total_tokens":1533353,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-07","company":"Staff M&B","category":"fallback","calls":51,"suggestions":34,"total_tokens":945723,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-07","company":"Vetor Modular","category":"first-primary-in-day","calls":108,"suggestions":108,"total_tokens":613073,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-07","company":"AVEP","category":"fallback","calls":36,"suggestions":19,"total_tokens":604836,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-07","company":"Wagner Brum","category":"fallback","calls":34,"suggestions":19,"total_tokens":384157,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-07","company":"Wagner Brum","category":"first-primary-in-day","calls":32,"suggestions":32,"total_tokens":249128,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-07","company":"Lumyne Estética Avançada","category":"first-primary-in-day","calls":64,"suggestions":64,"total_tokens":184910,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-07","company":"Vetor Modular","category":"fallback","calls":17,"suggestions":17,"total_tokens":180936,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-07","company":"Lumyne Estética Avançada","category":"repeat-primary-in-day","calls":30,"suggestions":14,"total_tokens":125684,"gap_under_5m":3,"gap_under_15m":13}
+{"section":"rechecks","date_local":"2026-10-07","company":"TRIASA CORRETORA DE SEGUROS","category":"first-primary-in-day","calls":15,"suggestions":15,"total_tokens":60724,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-07","company":"TRIASA CORRETORA DE SEGUROS","category":"fallback","calls":2,"suggestions":2,"total_tokens":8200,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-07","company":"Vetor Modular","category":"repeat-primary-in-day","calls":2,"suggestions":2,"total_tokens":7902,"gap_under_5m":0,"gap_under_15m":1}
+{"section":"rechecks","date_local":"2026-10-07","company":"Lumyne Estética Avançada","category":"fallback","calls":2,"suggestions":2,"total_tokens":6984,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-08","company":"Staff M&B","category":"repeat-primary-in-day","calls":484,"suggestions":147,"total_tokens":8583498,"gap_under_5m":48,"gap_under_15m":149}
+{"section":"rechecks","date_local":"2026-10-08","company":"Staff M&B","category":"first-primary-in-day","calls":590,"suggestions":590,"total_tokens":2821486,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-08","company":"AVEP","category":"first-primary-in-day","calls":224,"suggestions":224,"total_tokens":1389744,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-08","company":"Vetor Modular","category":"first-primary-in-day","calls":135,"suggestions":135,"total_tokens":845354,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-08","company":"Staff M&B","category":"fallback","calls":47,"suggestions":37,"total_tokens":745593,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-08","company":"Wagner Brum","category":"repeat-primary-in-day","calls":81,"suggestions":28,"total_tokens":682041,"gap_under_5m":4,"gap_under_15m":31}
+{"section":"rechecks","date_local":"2026-10-08","company":"AVEP","category":"repeat-primary-in-day","calls":45,"suggestions":20,"total_tokens":461333,"gap_under_5m":14,"gap_under_15m":19}
+{"section":"rechecks","date_local":"2026-10-08","company":"Vetor Modular","category":"fallback","calls":40,"suggestions":40,"total_tokens":408276,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-08","company":"Lumyne Estética Avançada","category":"first-primary-in-day","calls":128,"suggestions":128,"total_tokens":352453,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-08","company":"Wagner Brum","category":"first-primary-in-day","calls":40,"suggestions":40,"total_tokens":307202,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-08","company":"Lumyne Estética Avançada","category":"repeat-primary-in-day","calls":38,"suggestions":14,"total_tokens":259079,"gap_under_5m":6,"gap_under_15m":18}
+{"section":"rechecks","date_local":"2026-10-08","company":"AVEP","category":"fallback","calls":18,"suggestions":17,"total_tokens":236410,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-08","company":"Wagner Brum","category":"fallback","calls":14,"suggestions":11,"total_tokens":140953,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-08","company":"TRIASA CORRETORA DE SEGUROS","category":"first-primary-in-day","calls":20,"suggestions":20,"total_tokens":62355,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-08","company":"Lumyne Estética Avançada","category":"fallback","calls":7,"suggestions":6,"total_tokens":24007,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-08","company":"Vetor Modular","category":"repeat-primary-in-day","calls":2,"suggestions":1,"total_tokens":7340,"gap_under_5m":1,"gap_under_15m":1}
+{"section":"rechecks","date_local":"2026-10-08","company":"TRIASA CORRETORA DE SEGUROS","category":"repeat-primary-in-day","calls":1,"suggestions":1,"total_tokens":2819,"gap_under_5m":0,"gap_under_15m":1}
+{"section":"rechecks","date_local":"2026-10-08","company":"TRIASA CORRETORA DE SEGUROS","category":"fallback","calls":1,"suggestions":1,"total_tokens":2379,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-09","company":"Staff M&B","category":"repeat-primary-in-day","calls":198,"suggestions":75,"total_tokens":3735732,"gap_under_5m":23,"gap_under_15m":65}
+{"section":"rechecks","date_local":"2026-10-09","company":"Staff M&B","category":"first-primary-in-day","calls":155,"suggestions":155,"total_tokens":1606241,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-09","company":"AVEP","category":"repeat-primary-in-day","calls":108,"suggestions":26,"total_tokens":1501587,"gap_under_5m":35,"gap_under_15m":44}
+{"section":"rechecks","date_local":"2026-10-09","company":"Staff M&B","category":"fallback","calls":34,"suggestions":17,"total_tokens":776468,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-09","company":"AVEP","category":"first-primary-in-day","calls":45,"suggestions":45,"total_tokens":413148,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-09","company":"Wagner Brum","category":"repeat-primary-in-day","calls":47,"suggestions":12,"total_tokens":365955,"gap_under_5m":3,"gap_under_15m":16}
+{"section":"rechecks","date_local":"2026-10-09","company":"AVEP","category":"fallback","calls":9,"suggestions":5,"total_tokens":170841,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-09","company":"Lumyne Estética Avançada","category":"repeat-primary-in-day","calls":24,"suggestions":11,"total_tokens":119565,"gap_under_5m":5,"gap_under_15m":12}
+{"section":"rechecks","date_local":"2026-10-09","company":"Lumyne Estética Avançada","category":"first-primary-in-day","calls":27,"suggestions":27,"total_tokens":110165,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-09","company":"Wagner Brum","category":"first-primary-in-day","calls":12,"suggestions":12,"total_tokens":83869,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-09","company":"TRIASA CORRETORA DE SEGUROS","category":"first-primary-in-day","calls":9,"suggestions":9,"total_tokens":29777,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-09","company":"TRIASA CORRETORA DE SEGUROS","category":"repeat-primary-in-day","calls":7,"suggestions":5,"total_tokens":28567,"gap_under_5m":0,"gap_under_15m":3}
+{"section":"rechecks","date_local":"2026-10-09","company":"Lumyne Estética Avançada","category":"fallback","calls":3,"suggestions":2,"total_tokens":13152,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-09","company":"Wagner Brum","category":"fallback","calls":1,"suggestions":1,"total_tokens":9787,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-09","company":"TRIASA CORRETORA DE SEGUROS","category":"fallback","calls":2,"suggestions":2,"total_tokens":6408,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-09","company":"Vetor Modular","category":"first-primary-in-day","calls":2,"suggestions":2,"total_tokens":5306,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-09","company":"Vetor Modular","category":"repeat-primary-in-day","calls":1,"suggestions":1,"total_tokens":3316,"gap_under_5m":0,"gap_under_15m":1}
+{"section":"rechecks","date_local":"2026-10-13","company":"Staff M&B","category":"repeat-primary-in-day","calls":268,"suggestions":81,"total_tokens":4560217,"gap_under_5m":2,"gap_under_15m":45}
+{"section":"rechecks","date_local":"2026-10-13","company":"Staff M&B","category":"first-primary-in-day","calls":114,"suggestions":114,"total_tokens":1818066,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-13","company":"AVEP","category":"repeat-primary-in-day","calls":93,"suggestions":44,"total_tokens":1302378,"gap_under_5m":23,"gap_under_15m":48}
+{"section":"rechecks","date_local":"2026-10-13","company":"Wagner Brum","category":"repeat-primary-in-day","calls":112,"suggestions":30,"total_tokens":969147,"gap_under_5m":0,"gap_under_15m":24}
+{"section":"rechecks","date_local":"2026-10-13","company":"Staff M&B","category":"fallback","calls":42,"suggestions":28,"total_tokens":809286,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-13","company":"AVEP","category":"first-primary-in-day","calls":83,"suggestions":83,"total_tokens":722616,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-13","company":"Wagner Brum","category":"first-primary-in-day","calls":37,"suggestions":37,"total_tokens":279499,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-13","company":"Wagner Brum","category":"fallback","calls":16,"suggestions":11,"total_tokens":181674,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-13","company":"AVEP","category":"fallback","calls":7,"suggestions":6,"total_tokens":133390,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-13","company":"Lumyne Estética Avançada","category":"first-primary-in-day","calls":51,"suggestions":51,"total_tokens":128005,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-13","company":"Lumyne Estética Avançada","category":"repeat-primary-in-day","calls":13,"suggestions":11,"total_tokens":39128,"gap_under_5m":5,"gap_under_15m":9}
+{"section":"rechecks","date_local":"2026-10-13","company":"TRIASA CORRETORA DE SEGUROS","category":"first-primary-in-day","calls":7,"suggestions":7,"total_tokens":27166,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-13","company":"TRIASA CORRETORA DE SEGUROS","category":"repeat-primary-in-day","calls":2,"suggestions":2,"total_tokens":10567,"gap_under_5m":0,"gap_under_15m":1}
+{"section":"rechecks","date_local":"2026-10-13","company":"Lumyne Estética Avançada","category":"fallback","calls":3,"suggestions":3,"total_tokens":6981,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"rechecks","date_local":"2026-10-13","company":"Vetor Modular","category":"first-primary-in-day","calls":1,"suggestions":1,"total_tokens":3612,"gap_under_5m":0,"gap_under_15m":0}
+{"section":"evidence_size","date_local":"2026-09-29","mode":"baseline","size_band":"01:0-10","calls":6,"total_tokens":13788,"chars_before":0,"chars_after":0,"added_instruction_chars":0}
+{"section":"evidence_size","date_local":"2026-09-29","mode":"baseline","size_band":"02:11-40","calls":31,"total_tokens":227617,"chars_before":0,"chars_after":0,"added_instruction_chars":0}
+{"section":"evidence_size","date_local":"2026-09-29","mode":"baseline","size_band":"03:41-80","calls":25,"total_tokens":214544,"chars_before":0,"chars_after":0,"added_instruction_chars":0}
+{"section":"evidence_size","date_local":"2026-09-29","mode":"baseline","size_band":"04:81-119","calls":6,"total_tokens":65963,"chars_before":0,"chars_after":0,"added_instruction_chars":0}
+{"section":"evidence_size","date_local":"2026-09-29","mode":"baseline","size_band":"05:120","calls":283,"total_tokens":3444979,"chars_before":0,"chars_after":0,"added_instruction_chars":0}
+{"section":"evidence_size","date_local":"2026-09-30","mode":"baseline","size_band":"01:0-10","calls":655,"total_tokens":1282237,"chars_before":0,"chars_after":0,"added_instruction_chars":0}
+{"section":"evidence_size","date_local":"2026-09-30","mode":"baseline","size_band":"02:11-40","calls":650,"total_tokens":2803694,"chars_before":0,"chars_after":0,"added_instruction_chars":0}
+{"section":"evidence_size","date_local":"2026-09-30","mode":"baseline","size_band":"03:41-80","calls":354,"total_tokens":3227267,"chars_before":0,"chars_after":0,"added_instruction_chars":0}
+{"section":"evidence_size","date_local":"2026-09-30","mode":"baseline","size_band":"04:81-119","calls":212,"total_tokens":3215680,"chars_before":0,"chars_after":0,"added_instruction_chars":0}
+{"section":"evidence_size","date_local":"2026-09-30","mode":"baseline","size_band":"05:120","calls":752,"total_tokens":11992625,"chars_before":0,"chars_after":0,"added_instruction_chars":0}
+{"section":"evidence_size","date_local":"2026-10-01","mode":"baseline","size_band":"01:0-10","calls":512,"total_tokens":1001094,"chars_before":0,"chars_after":0,"added_instruction_chars":0}
+{"section":"evidence_size","date_local":"2026-10-01","mode":"baseline","size_band":"02:11-40","calls":418,"total_tokens":1961552,"chars_before":0,"chars_after":0,"added_instruction_chars":0}
+{"section":"evidence_size","date_local":"2026-10-01","mode":"baseline","size_band":"03:41-80","calls":275,"total_tokens":2880620,"chars_before":0,"chars_after":0,"added_instruction_chars":0}
+{"section":"evidence_size","date_local":"2026-10-01","mode":"baseline","size_band":"04:81-119","calls":199,"total_tokens":3574240,"chars_before":0,"chars_after":0,"added_instruction_chars":0}
+{"section":"evidence_size","date_local":"2026-10-01","mode":"baseline","size_band":"05:120","calls":821,"total_tokens":15535869,"chars_before":0,"chars_after":0,"added_instruction_chars":0}
+{"section":"evidence_size","date_local":"2026-10-02","mode":"baseline","size_band":"01:0-10","calls":161,"total_tokens":352515,"chars_before":0,"chars_after":0,"added_instruction_chars":0}
+{"section":"evidence_size","date_local":"2026-10-02","mode":"baseline","size_band":"02:11-40","calls":273,"total_tokens":1338595,"chars_before":0,"chars_after":0,"added_instruction_chars":0}
+{"section":"evidence_size","date_local":"2026-10-02","mode":"baseline","size_band":"03:41-80","calls":196,"total_tokens":2260347,"chars_before":0,"chars_after":0,"added_instruction_chars":0}
+{"section":"evidence_size","date_local":"2026-10-02","mode":"baseline","size_band":"04:81-119","calls":187,"total_tokens":2363645,"chars_before":0,"chars_after":0,"added_instruction_chars":0}
+{"section":"evidence_size","date_local":"2026-10-02","mode":"baseline","size_band":"05:120","calls":540,"total_tokens":9199909,"chars_before":0,"chars_after":0,"added_instruction_chars":0}
+{"section":"evidence_size","date_local":"2026-10-03","mode":"baseline","size_band":"01:0-10","calls":65,"total_tokens":129142,"chars_before":0,"chars_after":0,"added_instruction_chars":0}
+{"section":"evidence_size","date_local":"2026-10-03","mode":"baseline","size_band":"02:11-40","calls":98,"total_tokens":475222,"chars_before":0,"chars_after":0,"added_instruction_chars":0}
+{"section":"evidence_size","date_local":"2026-10-03","mode":"baseline","size_band":"03:41-80","calls":77,"total_tokens":767376,"chars_before":0,"chars_after":0,"added_instruction_chars":0}
+{"section":"evidence_size","date_local":"2026-10-03","mode":"baseline","size_band":"04:81-119","calls":79,"total_tokens":975321,"chars_before":0,"chars_after":0,"added_instruction_chars":0}
+{"section":"evidence_size","date_local":"2026-10-03","mode":"baseline","size_band":"05:120","calls":156,"total_tokens":2843463,"chars_before":0,"chars_after":0,"added_instruction_chars":0}
+{"section":"evidence_size","date_local":"2026-10-04","mode":"baseline","size_band":"01:0-10","calls":38,"total_tokens":75633,"chars_before":0,"chars_after":0,"added_instruction_chars":0}
+{"section":"evidence_size","date_local":"2026-10-04","mode":"baseline","size_band":"02:11-40","calls":29,"total_tokens":154374,"chars_before":0,"chars_after":0,"added_instruction_chars":0}
+{"section":"evidence_size","date_local":"2026-10-04","mode":"baseline","size_band":"03:41-80","calls":8,"total_tokens":74921,"chars_before":0,"chars_after":0,"added_instruction_chars":0}
+{"section":"evidence_size","date_local":"2026-10-04","mode":"baseline","size_band":"04:81-119","calls":42,"total_tokens":498360,"chars_before":0,"chars_after":0,"added_instruction_chars":0}
+{"section":"evidence_size","date_local":"2026-10-04","mode":"baseline","size_band":"05:120","calls":89,"total_tokens":1390409,"chars_before":0,"chars_after":0,"added_instruction_chars":0}
+{"section":"evidence_size","date_local":"2026-10-05","mode":"baseline","size_band":"01:0-10","calls":389,"total_tokens":726515,"chars_before":0,"chars_after":0,"added_instruction_chars":0}
+{"section":"evidence_size","date_local":"2026-10-05","mode":"baseline","size_band":"02:11-40","calls":295,"total_tokens":1539500,"chars_before":0,"chars_after":0,"added_instruction_chars":0}
+{"section":"evidence_size","date_local":"2026-10-05","mode":"baseline","size_band":"03:41-80","calls":131,"total_tokens":1587060,"chars_before":0,"chars_after":0,"added_instruction_chars":0}
+{"section":"evidence_size","date_local":"2026-10-05","mode":"baseline","size_band":"04:81-119","calls":79,"total_tokens":1024138,"chars_before":0,"chars_after":0,"added_instruction_chars":0}
+{"section":"evidence_size","date_local":"2026-10-05","mode":"baseline","size_band":"05:120","calls":593,"total_tokens":7917995,"chars_before":0,"chars_after":0,"added_instruction_chars":0}
+{"section":"evidence_size","date_local":"2026-10-06","mode":"baseline","size_band":"01:0-10","calls":75,"total_tokens":155767,"chars_before":0,"chars_after":0,"added_instruction_chars":0}
+{"section":"evidence_size","date_local":"2026-10-06","mode":"compact","size_band":"01:0-10","calls":260,"total_tokens":606248,"chars_before":1616408,"chars_after":1481810,"added_instruction_chars":96460}
+{"section":"evidence_size","date_local":"2026-10-06","mode":"full-fallback","size_band":"01:0-10","calls":16,"total_tokens":42027,"chars_before":94325,"chars_after":94325,"added_instruction_chars":3088}
+{"section":"evidence_size","date_local":"2026-10-06","mode":"original","size_band":"01:0-10","calls":283,"total_tokens":420372,"chars_before":928549,"chars_after":928549,"added_instruction_chars":0}
+{"section":"evidence_size","date_local":"2026-10-06","mode":"baseline","size_band":"02:11-40","calls":95,"total_tokens":566684,"chars_before":0,"chars_after":0,"added_instruction_chars":0}
+{"section":"evidence_size","date_local":"2026-10-06","mode":"compact","size_band":"02:11-40","calls":418,"total_tokens":2006170,"chars_before":5946473,"chars_after":5463255,"added_instruction_chars":155078}
+{"section":"evidence_size","date_local":"2026-10-06","mode":"full-fallback","size_band":"02:11-40","calls":53,"total_tokens":307616,"chars_before":799126,"chars_after":799126,"added_instruction_chars":10229}
+{"section":"evidence_size","date_local":"2026-10-06","mode":"baseline","size_band":"03:41-80","calls":61,"total_tokens":620704,"chars_before":0,"chars_after":0,"added_instruction_chars":0}
+{"section":"evidence_size","date_local":"2026-10-06","mode":"compact","size_band":"03:41-80","calls":209,"total_tokens":2544746,"chars_before":7999367,"chars_after":7387193,"added_instruction_chars":77539}
+{"section":"evidence_size","date_local":"2026-10-06","mode":"full-fallback","size_band":"03:41-80","calls":29,"total_tokens":399905,"chars_before":1100763,"chars_after":1100763,"added_instruction_chars":5597}
+{"section":"evidence_size","date_local":"2026-10-06","mode":"baseline","size_band":"04:81-119","calls":48,"total_tokens":761949,"chars_before":0,"chars_after":0,"added_instruction_chars":0}
+{"section":"evidence_size","date_local":"2026-10-06","mode":"compact","size_band":"04:81-119","calls":230,"total_tokens":3710591,"chars_before":12005285,"chars_after":10993362,"added_instruction_chars":85330}
+{"section":"evidence_size","date_local":"2026-10-06","mode":"full-fallback","size_band":"04:81-119","calls":42,"total_tokens":783350,"chars_before":2189926,"chars_after":2189926,"added_instruction_chars":8106}
+{"section":"evidence_size","date_local":"2026-10-06","mode":"baseline","size_band":"05:120","calls":110,"total_tokens":1368699,"chars_before":0,"chars_after":0,"added_instruction_chars":0}
+{"section":"evidence_size","date_local":"2026-10-06","mode":"compact","size_band":"05:120","calls":818,"total_tokens":10777697,"chars_before":37508086,"chars_after":33180650,"added_instruction_chars":303478}
+{"section":"evidence_size","date_local":"2026-10-06","mode":"full-fallback","size_band":"05:120","calls":91,"total_tokens":1471233,"chars_before":4178617,"chars_after":4178617,"added_instruction_chars":17563}
+{"section":"evidence_size","date_local":"2026-10-07","mode":"compact","size_band":"01:0-10","calls":283,"total_tokens":586716,"chars_before":1507362,"chars_after":1366713,"added_instruction_chars":104993}
+{"section":"evidence_size","date_local":"2026-10-07","mode":"full-fallback","size_band":"01:0-10","calls":6,"total_tokens":14699,"chars_before":32294,"chars_after":32294,"added_instruction_chars":1158}
+{"section":"evidence_size","date_local":"2026-10-07","mode":"original","size_band":"01:0-10","calls":328,"total_tokens":452424,"chars_before":973394,"chars_after":973394,"added_instruction_chars":0}
+{"section":"evidence_size","date_local":"2026-10-07","mode":"compact","size_band":"02:11-40","calls":328,"total_tokens":1551559,"chars_before":4543196,"chars_after":4167524,"added_instruction_chars":121688}
+{"section":"evidence_size","date_local":"2026-10-07","mode":"full-fallback","size_band":"02:11-40","calls":23,"total_tokens":145502,"chars_before":380954,"chars_after":380954,"added_instruction_chars":4439}
+{"section":"evidence_size","date_local":"2026-10-07","mode":"compact","size_band":"03:41-80","calls":214,"total_tokens":2869439,"chars_before":8967169,"chars_after":8350881,"added_instruction_chars":79394}
+{"section":"evidence_size","date_local":"2026-10-07","mode":"full-fallback","size_band":"03:41-80","calls":20,"total_tokens":316682,"chars_before":884334,"chars_after":884334,"added_instruction_chars":3860}
+{"section":"evidence_size","date_local":"2026-10-07","mode":"compact","size_band":"04:81-119","calls":236,"total_tokens":4503684,"chars_before":14481460,"chars_after":13418380,"added_instruction_chars":87556}
+{"section":"evidence_size","date_local":"2026-10-07","mode":"full-fallback","size_band":"04:81-119","calls":17,"total_tokens":324156,"chars_before":917900,"chars_after":917900,"added_instruction_chars":3281}
+{"section":"evidence_size","date_local":"2026-10-07","mode":"compact","size_band":"05:120","calls":730,"total_tokens":10741226,"chars_before":36575940,"chars_after":32703292,"added_instruction_chars":270830}
+{"section":"evidence_size","date_local":"2026-10-07","mode":"full-fallback","size_band":"05:120","calls":76,"total_tokens":1329797,"chars_before":3778371,"chars_after":3778371,"added_instruction_chars":14668}
+{"section":"evidence_size","date_local":"2026-10-08","mode":"compact","size_band":"01:0-10","calls":302,"total_tokens":606115,"chars_before":1558071,"chars_after":1406071,"added_instruction_chars":112042}
+{"section":"evidence_size","date_local":"2026-10-08","mode":"full-fallback","size_band":"01:0-10","calls":19,"total_tokens":47478,"chars_before":106323,"chars_after":106323,"added_instruction_chars":3667}
+{"section":"evidence_size","date_local":"2026-10-08","mode":"original","size_band":"01:0-10","calls":338,"total_tokens":454522,"chars_before":963124,"chars_after":963124,"added_instruction_chars":0}
+{"section":"evidence_size","date_local":"2026-10-08","mode":"compact","size_band":"02:11-40","calls":361,"total_tokens":1626646,"chars_before":4773007,"chars_after":4347736,"added_instruction_chars":133931}
+{"section":"evidence_size","date_local":"2026-10-08","mode":"full-fallback","size_band":"02:11-40","calls":27,"total_tokens":134298,"chars_before":331140,"chars_after":331140,"added_instruction_chars":5211}
+{"section":"evidence_size","date_local":"2026-10-08","mode":"compact","size_band":"03:41-80","calls":160,"total_tokens":1805642,"chars_before":5697349,"chars_after":5238841,"added_instruction_chars":59360}
+{"section":"evidence_size","date_local":"2026-10-08","mode":"full-fallback","size_band":"03:41-80","calls":18,"total_tokens":195315,"chars_before":524382,"chars_after":524382,"added_instruction_chars":3474}
+{"section":"evidence_size","date_local":"2026-10-08","mode":"compact","size_band":"04:81-119","calls":118,"total_tokens":1612499,"chars_before":5335394,"chars_after":4811048,"added_instruction_chars":43778}
+{"section":"evidence_size","date_local":"2026-10-08","mode":"full-fallback","size_band":"04:81-119","calls":15,"total_tokens":225489,"chars_before":622606,"chars_after":622606,"added_instruction_chars":2895}
+{"section":"evidence_size","date_local":"2026-10-08","mode":"compact","size_band":"05:120","calls":509,"total_tokens":9669280,"chars_before":31966129,"chars_after":29241036,"added_instruction_chars":188839}
+{"section":"evidence_size","date_local":"2026-10-08","mode":"full-fallback","size_band":"05:120","calls":48,"total_tokens":955038,"chars_before":2707901,"chars_after":2707901,"added_instruction_chars":9264}
+{"section":"evidence_size","date_local":"2026-10-09","mode":"compact","size_band":"01:0-10","calls":85,"total_tokens":173050,"chars_before":458131,"chars_after":412397,"added_instruction_chars":31535}
+{"section":"evidence_size","date_local":"2026-10-09","mode":"full-fallback","size_band":"01:0-10","calls":3,"total_tokens":5992,"chars_before":13219,"chars_after":13219,"added_instruction_chars":579}
+{"section":"evidence_size","date_local":"2026-10-09","mode":"original","size_band":"01:0-10","calls":19,"total_tokens":28215,"chars_before":61352,"chars_after":61352,"added_instruction_chars":0}
+{"section":"evidence_size","date_local":"2026-10-09","mode":"compact","size_band":"02:11-40","calls":114,"total_tokens":473601,"chars_before":1423185,"chars_after":1287140,"added_instruction_chars":42294}
+{"section":"evidence_size","date_local":"2026-10-09","mode":"full-fallback","size_band":"02:11-40","calls":3,"total_tokens":14117,"chars_before":37204,"chars_after":37204,"added_instruction_chars":579}
+{"section":"evidence_size","date_local":"2026-10-09","mode":"compact","size_band":"03:41-80","calls":117,"total_tokens":1361034,"chars_before":4337860,"chars_after":4014861,"added_instruction_chars":43407}
+{"section":"evidence_size","date_local":"2026-10-09","mode":"full-fallback","size_band":"03:41-80","calls":4,"total_tokens":40768,"chars_before":114533,"chars_after":114533,"added_instruction_chars":772}
+{"section":"evidence_size","date_local":"2026-10-09","mode":"compact","size_band":"04:81-119","calls":44,"total_tokens":649888,"chars_before":2139139,"chars_after":1957267,"added_instruction_chars":16324}
+{"section":"evidence_size","date_local":"2026-10-09","mode":"full-fallback","size_band":"04:81-119","calls":2,"total_tokens":21797,"chars_before":60598,"chars_after":60598,"added_instruction_chars":386}
+{"section":"evidence_size","date_local":"2026-10-09","mode":"compact","size_band":"05:120","calls":256,"total_tokens":5317440,"chars_before":17564604,"chars_after":16204202,"added_instruction_chars":94976}
+{"section":"evidence_size","date_local":"2026-10-09","mode":"full-fallback","size_band":"05:120","calls":37,"total_tokens":893982,"chars_before":2624002,"chars_after":2624002,"added_instruction_chars":7141}
+{"section":"evidence_size","date_local":"2026-10-13","mode":"compact","size_band":"01:0-10","calls":57,"total_tokens":118807,"chars_before":313671,"chars_after":283032,"added_instruction_chars":21147}
+{"section":"evidence_size","date_local":"2026-10-13","mode":"full-fallback","size_band":"01:0-10","calls":3,"total_tokens":5920,"chars_before":13230,"chars_after":13230,"added_instruction_chars":579}
+{"section":"evidence_size","date_local":"2026-10-13","mode":"original","size_band":"01:0-10","calls":12,"total_tokens":17846,"chars_before":39827,"chars_after":39827,"added_instruction_chars":0}
+{"section":"evidence_size","date_local":"2026-10-13","mode":"compact","size_band":"02:11-40","calls":135,"total_tokens":494360,"chars_before":1478693,"chars_after":1325155,"added_instruction_chars":50085}
+{"section":"evidence_size","date_local":"2026-10-13","mode":"full-fallback","size_band":"02:11-40","calls":6,"total_tokens":23031,"chars_before":57253,"chars_after":57253,"added_instruction_chars":1158}
+{"section":"evidence_size","date_local":"2026-10-13","mode":"compact","size_band":"03:41-80","calls":53,"total_tokens":640073,"chars_before":2016749,"chars_after":1863962,"added_instruction_chars":19663}
+{"section":"evidence_size","date_local":"2026-10-13","mode":"full-fallback","size_band":"03:41-80","calls":3,"total_tokens":34026,"chars_before":93763,"chars_after":93763,"added_instruction_chars":579}
+{"section":"evidence_size","date_local":"2026-10-13","mode":"compact","size_band":"04:81-119","calls":65,"total_tokens":1048866,"chars_before":3473234,"chars_after":3180942,"added_instruction_chars":24115}
+{"section":"evidence_size","date_local":"2026-10-13","mode":"full-fallback","size_band":"04:81-119","calls":1,"total_tokens":7982,"chars_before":21467,"chars_after":21467,"added_instruction_chars":193}
+{"section":"evidence_size","date_local":"2026-10-13","mode":"compact","size_band":"05:120","calls":459,"total_tokens":7540449,"chars_before":25482099,"chars_after":23038655,"added_instruction_chars":170289}
+{"section":"evidence_size","date_local":"2026-10-13","mode":"full-fallback","size_band":"05:120","calls":55,"total_tokens":1060372,"chars_before":3065140,"chars_after":3065140,"added_instruction_chars":10615}
+{"section":"verification_result","date_local":"2026-09-29","mode":"baseline","result":"unfulfilled","calls":298,"total_tokens":3361140}
+{"section":"verification_result","date_local":"2026-09-29","mode":"baseline","result":"inconclusive","calls":52,"total_tokens":595345}
+{"section":"verification_result","date_local":"2026-09-29","mode":"baseline","result":"fulfilled","calls":1,"total_tokens":10406}
+{"section":"verification_result","date_local":"2026-09-30","mode":"baseline","result":"unfulfilled","calls":1465,"total_tokens":13065448}
+{"section":"verification_result","date_local":"2026-09-30","mode":"baseline","result":"inconclusive","calls":630,"total_tokens":6169273}
+{"section":"verification_result","date_local":"2026-09-30","mode":"baseline","result":"fulfilled","calls":528,"total_tokens":3286782}
+{"section":"verification_result","date_local":"2026-10-01","mode":"baseline","result":"unfulfilled","calls":1685,"total_tokens":19450260}
+{"section":"verification_result","date_local":"2026-10-01","mode":"baseline","result":"inconclusive","calls":432,"total_tokens":4689445}
+{"section":"verification_result","date_local":"2026-10-01","mode":"baseline","result":"fulfilled","calls":108,"total_tokens":813670}
+{"section":"verification_result","date_local":"2026-10-02","mode":"baseline","result":"unfulfilled","calls":1005,"total_tokens":12138985}
+{"section":"verification_result","date_local":"2026-10-02","mode":"baseline","result":"inconclusive","calls":299,"total_tokens":3162788}
+{"section":"verification_result","date_local":"2026-10-02","mode":"baseline","result":"fulfilled","calls":53,"total_tokens":213238}
+{"section":"verification_result","date_local":"2026-10-03","mode":"baseline","result":"unfulfilled","calls":301,"total_tokens":3141933}
+{"section":"verification_result","date_local":"2026-10-03","mode":"baseline","result":"inconclusive","calls":146,"total_tokens":1928506}
+{"section":"verification_result","date_local":"2026-10-03","mode":"baseline","result":"fulfilled","calls":28,"total_tokens":120085}
+{"section":"verification_result","date_local":"2026-10-04","mode":"baseline","result":"unfulfilled","calls":135,"total_tokens":1333233}
+{"section":"verification_result","date_local":"2026-10-04","mode":"baseline","result":"inconclusive","calls":65,"total_tokens":849981}
+{"section":"verification_result","date_local":"2026-10-04","mode":"baseline","result":"fulfilled","calls":6,"total_tokens":10483}
+{"section":"verification_result","date_local":"2026-10-05","mode":"baseline","result":"unfulfilled","calls":1164,"total_tokens":10690439}
+{"section":"verification_result","date_local":"2026-10-05","mode":"baseline","result":"inconclusive","calls":181,"total_tokens":1634682}
+{"section":"verification_result","date_local":"2026-10-05","mode":"baseline","result":"fulfilled","calls":142,"total_tokens":470087}
+{"section":"verification_result","date_local":"2026-10-06","mode":"compact","result":"unfulfilled","calls":1605,"total_tokens":16524939}
+{"section":"verification_result","date_local":"2026-10-06","mode":"baseline","result":"unfulfilled","calls":284,"total_tokens":2746291}
+{"section":"verification_result","date_local":"2026-10-06","mode":"compact","result":"inconclusive","calls":229,"total_tokens":2543992}
+{"section":"verification_result","date_local":"2026-10-06","mode":"full-fallback","result":"inconclusive","calls":125,"total_tokens":1707888}
+{"section":"verification_result","date_local":"2026-10-06","mode":"full-fallback","result":"unfulfilled","calls":91,"total_tokens":1149327}
+{"section":"verification_result","date_local":"2026-10-06","mode":"compact","result":"fulfilled","calls":101,"total_tokens":576521}
+{"section":"verification_result","date_local":"2026-10-06","mode":"baseline","result":"inconclusive","calls":65,"total_tokens":502691}
+{"section":"verification_result","date_local":"2026-10-06","mode":"original","result":"unfulfilled","calls":240,"total_tokens":357580}
+{"section":"verification_result","date_local":"2026-10-06","mode":"baseline","result":"fulfilled","calls":40,"total_tokens":224821}
+{"section":"verification_result","date_local":"2026-10-06","mode":"full-fallback","result":"fulfilled","calls":15,"total_tokens":146916}
+{"section":"verification_result","date_local":"2026-10-06","mode":"original","result":"inconclusive","calls":27,"total_tokens":38364}
+{"section":"verification_result","date_local":"2026-10-06","mode":"original","result":"fulfilled","calls":16,"total_tokens":24428}
+{"section":"verification_result","date_local":"2026-10-07","mode":"compact","result":"unfulfilled","calls":1540,"total_tokens":17856250}
+{"section":"verification_result","date_local":"2026-10-07","mode":"compact","result":"inconclusive","calls":144,"total_tokens":1839982}
+{"section":"verification_result","date_local":"2026-10-07","mode":"full-fallback","result":"inconclusive","calls":68,"total_tokens":1081012}
+{"section":"verification_result","date_local":"2026-10-07","mode":"full-fallback","result":"unfulfilled","calls":70,"total_tokens":992161}
+{"section":"verification_result","date_local":"2026-10-07","mode":"compact","result":"fulfilled","calls":107,"total_tokens":556392}
+{"section":"verification_result","date_local":"2026-10-07","mode":"original","result":"unfulfilled","calls":284,"total_tokens":387376}
+{"section":"verification_result","date_local":"2026-10-07","mode":"full-fallback","result":"fulfilled","calls":4,"total_tokens":57663}
+{"section":"verification_result","date_local":"2026-10-07","mode":"original","result":"fulfilled","calls":25,"total_tokens":37758}
+{"section":"verification_result","date_local":"2026-10-07","mode":"original","result":"inconclusive","calls":19,"total_tokens":27290}
+{"section":"verification_result","date_local":"2026-10-08","mode":"compact","result":"unfulfilled","calls":1242,"total_tokens":13626878}
+{"section":"verification_result","date_local":"2026-10-08","mode":"compact","result":"inconclusive","calls":125,"total_tokens":1333640}
+{"section":"verification_result","date_local":"2026-10-08","mode":"full-fallback","result":"unfulfilled","calls":57,"total_tokens":754958}
+{"section":"verification_result","date_local":"2026-10-08","mode":"full-fallback","result":"inconclusive","calls":63,"total_tokens":752423}
+{"section":"verification_result","date_local":"2026-10-08","mode":"original","result":"unfulfilled","calls":270,"total_tokens":361880}
+{"section":"verification_result","date_local":"2026-10-08","mode":"compact","result":"fulfilled","calls":83,"total_tokens":359664}
+{"section":"verification_result","date_local":"2026-10-08","mode":"full-fallback","result":"fulfilled","calls":7,"total_tokens":50237}
+{"section":"verification_result","date_local":"2026-10-08","mode":"original","result":"fulfilled","calls":36,"total_tokens":49126}
+{"section":"verification_result","date_local":"2026-10-08","mode":"original","result":"inconclusive","calls":32,"total_tokens":43516}
+{"section":"verification_result","date_local":"2026-10-09","mode":"compact","result":"unfulfilled","calls":534,"total_tokens":6930543}
+{"section":"verification_result","date_local":"2026-10-09","mode":"compact","result":"inconclusive","calls":49,"total_tokens":858834}
+{"section":"verification_result","date_local":"2026-10-09","mode":"full-fallback","result":"inconclusive","calls":28,"total_tokens":602875}
+{"section":"verification_result","date_local":"2026-10-09","mode":"full-fallback","result":"unfulfilled","calls":18,"total_tokens":339708}
+{"section":"verification_result","date_local":"2026-10-09","mode":"compact","result":"fulfilled","calls":33,"total_tokens":185636}
+{"section":"verification_result","date_local":"2026-10-09","mode":"full-fallback","result":"fulfilled","calls":3,"total_tokens":34073}
+{"section":"verification_result","date_local":"2026-10-09","mode":"original","result":"unfulfilled","calls":17,"total_tokens":25510}
+{"section":"verification_result","date_local":"2026-10-09","mode":"original","result":"fulfilled","calls":1,"total_tokens":1701}
+{"section":"verification_result","date_local":"2026-10-09","mode":"original","result":"inconclusive","calls":1,"total_tokens":1004}
+{"section":"verification_result","date_local":"2026-10-13","mode":"compact","result":"unfulfilled","calls":663,"total_tokens":8698959}
+{"section":"verification_result","date_local":"2026-10-13","mode":"compact","result":"inconclusive","calls":68,"total_tokens":974157}
+{"section":"verification_result","date_local":"2026-10-13","mode":"full-fallback","result":"inconclusive","calls":32,"total_tokens":568101}
+{"section":"verification_result","date_local":"2026-10-13","mode":"full-fallback","result":"unfulfilled","calls":35,"total_tokens":532706}
+{"section":"verification_result","date_local":"2026-10-13","mode":"compact","result":"fulfilled","calls":38,"total_tokens":169439}
+{"section":"verification_result","date_local":"2026-10-13","mode":"full-fallback","result":"fulfilled","calls":1,"total_tokens":30524}
+{"section":"verification_result","date_local":"2026-10-13","mode":"original","result":"unfulfilled","calls":5,"total_tokens":7962}
+{"section":"verification_result","date_local":"2026-10-13","mode":"original","result":"fulfilled","calls":4,"total_tokens":6708}
+{"section":"verification_result","date_local":"2026-10-13","mode":"original","result":"inconclusive","calls":3,"total_tokens":3176}
+{"section":"identical_requests","date_local":"2026-09-29","company":"AVEP","calls":35,"distinct_requests":35,"repeated_identical_calls":0,"tokens_in_repeated_groups":0}
+{"section":"identical_requests","date_local":"2026-09-29","company":"Staff M&B","calls":152,"distinct_requests":142,"repeated_identical_calls":10,"tokens_in_repeated_groups":244195}
+{"section":"identical_requests","date_local":"2026-09-29","company":"Wagner Brum","calls":164,"distinct_requests":156,"repeated_identical_calls":8,"tokens_in_repeated_groups":149422}
+{"section":"identical_requests","date_local":"2026-09-30","company":"AVEP","calls":1607,"distinct_requests":1280,"repeated_identical_calls":327,"tokens_in_repeated_groups":4635286}
+{"section":"identical_requests","date_local":"2026-09-30","company":"Staff M&B","calls":448,"distinct_requests":411,"repeated_identical_calls":37,"tokens_in_repeated_groups":789166}
+{"section":"identical_requests","date_local":"2026-09-30","company":"TRIASA CORRETORA DE SEGUROS","calls":32,"distinct_requests":24,"repeated_identical_calls":8,"tokens_in_repeated_groups":28946}
+{"section":"identical_requests","date_local":"2026-09-30","company":"Vetor Modular","calls":385,"distinct_requests":192,"repeated_identical_calls":193,"tokens_in_repeated_groups":2060742}
+{"section":"identical_requests","date_local":"2026-09-30","company":"Wagner Brum","calls":151,"distinct_requests":135,"repeated_identical_calls":16,"tokens_in_repeated_groups":266612}
+{"section":"identical_requests","date_local":"2026-10-01","company":"AVEP","calls":1287,"distinct_requests":1131,"repeated_identical_calls":156,"tokens_in_repeated_groups":2324165}
+{"section":"identical_requests","date_local":"2026-10-01","company":"Staff M&B","calls":638,"distinct_requests":587,"repeated_identical_calls":51,"tokens_in_repeated_groups":780567}
+{"section":"identical_requests","date_local":"2026-10-01","company":"TRIASA CORRETORA DE SEGUROS","calls":12,"distinct_requests":6,"repeated_identical_calls":6,"tokens_in_repeated_groups":18145}
+{"section":"identical_requests","date_local":"2026-10-01","company":"Vetor Modular","calls":167,"distinct_requests":76,"repeated_identical_calls":91,"tokens_in_repeated_groups":1367419}
+{"section":"identical_requests","date_local":"2026-10-01","company":"Wagner Brum","calls":121,"distinct_requests":100,"repeated_identical_calls":21,"tokens_in_repeated_groups":309609}
+{"section":"identical_requests","date_local":"2026-10-02","company":"AVEP","calls":344,"distinct_requests":277,"repeated_identical_calls":67,"tokens_in_repeated_groups":449836}
+{"section":"identical_requests","date_local":"2026-10-02","company":"Lumyne Estética Avançada","calls":32,"distinct_requests":32,"repeated_identical_calls":0,"tokens_in_repeated_groups":0}
+{"section":"identical_requests","date_local":"2026-10-02","company":"Staff M&B","calls":705,"distinct_requests":651,"repeated_identical_calls":54,"tokens_in_repeated_groups":1360267}
+{"section":"identical_requests","date_local":"2026-10-02","company":"Vetor Modular","calls":106,"distinct_requests":16,"repeated_identical_calls":90,"tokens_in_repeated_groups":1233003}
+{"section":"identical_requests","date_local":"2026-10-02","company":"Wagner Brum","calls":170,"distinct_requests":145,"repeated_identical_calls":25,"tokens_in_repeated_groups":365882}
+{"section":"identical_requests","date_local":"2026-10-03","company":"AVEP","calls":47,"distinct_requests":44,"repeated_identical_calls":3,"tokens_in_repeated_groups":17946}
+{"section":"identical_requests","date_local":"2026-10-03","company":"Lumyne Estética Avançada","calls":93,"distinct_requests":85,"repeated_identical_calls":8,"tokens_in_repeated_groups":32691}
+{"section":"identical_requests","date_local":"2026-10-03","company":"Staff M&B","calls":185,"distinct_requests":152,"repeated_identical_calls":33,"tokens_in_repeated_groups":614450}
+{"section":"identical_requests","date_local":"2026-10-03","company":"TRIASA CORRETORA DE SEGUROS","calls":5,"distinct_requests":5,"repeated_identical_calls":0,"tokens_in_repeated_groups":0}
+{"section":"identical_requests","date_local":"2026-10-03","company":"Vetor Modular","calls":129,"distinct_requests":43,"repeated_identical_calls":86,"tokens_in_repeated_groups":1374065}
+{"section":"identical_requests","date_local":"2026-10-03","company":"Wagner Brum","calls":16,"distinct_requests":5,"repeated_identical_calls":11,"tokens_in_repeated_groups":160969}
+{"section":"identical_requests","date_local":"2026-10-04","company":"AVEP","calls":4,"distinct_requests":4,"repeated_identical_calls":0,"tokens_in_repeated_groups":0}
+{"section":"identical_requests","date_local":"2026-10-04","company":"Lumyne Estética Avançada","calls":30,"distinct_requests":27,"repeated_identical_calls":3,"tokens_in_repeated_groups":12886}
+{"section":"identical_requests","date_local":"2026-10-04","company":"Staff M&B","calls":113,"distinct_requests":91,"repeated_identical_calls":22,"tokens_in_repeated_groups":370619}
+{"section":"identical_requests","date_local":"2026-10-04","company":"TRIASA CORRETORA DE SEGUROS","calls":5,"distinct_requests":5,"repeated_identical_calls":0,"tokens_in_repeated_groups":0}
+{"section":"identical_requests","date_local":"2026-10-04","company":"Vetor Modular","calls":49,"distinct_requests":3,"repeated_identical_calls":46,"tokens_in_repeated_groups":669553}
+{"section":"identical_requests","date_local":"2026-10-04","company":"Wagner Brum","calls":5,"distinct_requests":3,"repeated_identical_calls":2,"tokens_in_repeated_groups":27046}
+{"section":"identical_requests","date_local":"2026-10-05","company":"AVEP","calls":461,"distinct_requests":421,"repeated_identical_calls":40,"tokens_in_repeated_groups":309889}
+{"section":"identical_requests","date_local":"2026-10-05","company":"Lumyne Estética Avançada","calls":186,"distinct_requests":163,"repeated_identical_calls":23,"tokens_in_repeated_groups":50844}
+{"section":"identical_requests","date_local":"2026-10-05","company":"Staff M&B","calls":488,"distinct_requests":459,"repeated_identical_calls":29,"tokens_in_repeated_groups":589720}
+{"section":"identical_requests","date_local":"2026-10-05","company":"TRIASA CORRETORA DE SEGUROS","calls":4,"distinct_requests":3,"repeated_identical_calls":1,"tokens_in_repeated_groups":4152}
+{"section":"identical_requests","date_local":"2026-10-05","company":"Vetor Modular","calls":39,"distinct_requests":3,"repeated_identical_calls":36,"tokens_in_repeated_groups":512994}
+{"section":"identical_requests","date_local":"2026-10-05","company":"Wagner Brum","calls":309,"distinct_requests":301,"repeated_identical_calls":8,"tokens_in_repeated_groups":157264}
+{"section":"identical_requests","date_local":"2026-10-06","company":"AVEP","calls":638,"distinct_requests":609,"repeated_identical_calls":29,"tokens_in_repeated_groups":293273}
+{"section":"identical_requests","date_local":"2026-10-06","company":"Lumyne Estética Avançada","calls":281,"distinct_requests":210,"repeated_identical_calls":71,"tokens_in_repeated_groups":367855}
+{"section":"identical_requests","date_local":"2026-10-06","company":"Staff M&B","calls":1214,"distinct_requests":1078,"repeated_identical_calls":136,"tokens_in_repeated_groups":2168714}
+{"section":"identical_requests","date_local":"2026-10-06","company":"TRIASA CORRETORA DE SEGUROS","calls":35,"distinct_requests":24,"repeated_identical_calls":11,"tokens_in_repeated_groups":48650}
+{"section":"identical_requests","date_local":"2026-10-06","company":"Vetor Modular","calls":193,"distinct_requests":142,"repeated_identical_calls":51,"tokens_in_repeated_groups":893358}
+{"section":"identical_requests","date_local":"2026-10-06","company":"Wagner Brum","calls":477,"distinct_requests":445,"repeated_identical_calls":32,"tokens_in_repeated_groups":515095}
+{"section":"identical_requests","date_local":"2026-10-07","company":"AVEP","calls":512,"distinct_requests":512,"repeated_identical_calls":0,"tokens_in_repeated_groups":0}
+{"section":"identical_requests","date_local":"2026-10-07","company":"Lumyne Estética Avançada","calls":96,"distinct_requests":94,"repeated_identical_calls":2,"tokens_in_repeated_groups":35910}
+{"section":"identical_requests","date_local":"2026-10-07","company":"Staff M&B","calls":1171,"distinct_requests":1154,"repeated_identical_calls":17,"tokens_in_repeated_groups":247257}
+{"section":"identical_requests","date_local":"2026-10-07","company":"TRIASA CORRETORA DE SEGUROS","calls":17,"distinct_requests":17,"repeated_identical_calls":0,"tokens_in_repeated_groups":0}
+{"section":"identical_requests","date_local":"2026-10-07","company":"Vetor Modular","calls":127,"distinct_requests":126,"repeated_identical_calls":1,"tokens_in_repeated_groups":9389}
+{"section":"identical_requests","date_local":"2026-10-07","company":"Wagner Brum","calls":338,"distinct_requests":336,"repeated_identical_calls":2,"tokens_in_repeated_groups":32015}
+{"section":"identical_requests","date_local":"2026-10-08","company":"AVEP","calls":287,"distinct_requests":287,"repeated_identical_calls":0,"tokens_in_repeated_groups":0}
+{"section":"identical_requests","date_local":"2026-10-08","company":"Lumyne Estética Avançada","calls":173,"distinct_requests":172,"repeated_identical_calls":1,"tokens_in_repeated_groups":6626}
+{"section":"identical_requests","date_local":"2026-10-08","company":"Staff M&B","calls":1121,"distinct_requests":1119,"repeated_identical_calls":2,"tokens_in_repeated_groups":31221}
+{"section":"identical_requests","date_local":"2026-10-08","company":"TRIASA CORRETORA DE SEGUROS","calls":22,"distinct_requests":22,"repeated_identical_calls":0,"tokens_in_repeated_groups":0}
+{"section":"identical_requests","date_local":"2026-10-08","company":"Vetor Modular","calls":177,"distinct_requests":177,"repeated_identical_calls":0,"tokens_in_repeated_groups":0}
+{"section":"identical_requests","date_local":"2026-10-08","company":"Wagner Brum","calls":135,"distinct_requests":135,"repeated_identical_calls":0,"tokens_in_repeated_groups":0}
+{"section":"identical_requests","date_local":"2026-10-09","company":"AVEP","calls":162,"distinct_requests":161,"repeated_identical_calls":1,"tokens_in_repeated_groups":14735}
+{"section":"identical_requests","date_local":"2026-10-09","company":"Lumyne Estética Avançada","calls":54,"distinct_requests":54,"repeated_identical_calls":0,"tokens_in_repeated_groups":0}
+{"section":"identical_requests","date_local":"2026-10-09","company":"Staff M&B","calls":387,"distinct_requests":386,"repeated_identical_calls":1,"tokens_in_repeated_groups":29880}
+{"section":"identical_requests","date_local":"2026-10-09","company":"TRIASA CORRETORA DE SEGUROS","calls":18,"distinct_requests":18,"repeated_identical_calls":0,"tokens_in_repeated_groups":0}
+{"section":"identical_requests","date_local":"2026-10-09","company":"Vetor Modular","calls":3,"distinct_requests":3,"repeated_identical_calls":0,"tokens_in_repeated_groups":0}
+{"section":"identical_requests","date_local":"2026-10-09","company":"Wagner Brum","calls":60,"distinct_requests":60,"repeated_identical_calls":0,"tokens_in_repeated_groups":0}
+{"section":"identical_requests","date_local":"2026-10-13","company":"AVEP","calls":183,"distinct_requests":183,"repeated_identical_calls":0,"tokens_in_repeated_groups":0}
+{"section":"identical_requests","date_local":"2026-10-13","company":"Lumyne Estética Avançada","calls":67,"distinct_requests":67,"repeated_identical_calls":0,"tokens_in_repeated_groups":0}
+{"section":"identical_requests","date_local":"2026-10-13","company":"Staff M&B","calls":424,"distinct_requests":424,"repeated_identical_calls":0,"tokens_in_repeated_groups":0}
+{"section":"identical_requests","date_local":"2026-10-13","company":"TRIASA CORRETORA DE SEGUROS","calls":9,"distinct_requests":9,"repeated_identical_calls":0,"tokens_in_repeated_groups":0}
+{"section":"identical_requests","date_local":"2026-10-13","company":"Vetor Modular","calls":1,"distinct_requests":1,"repeated_identical_calls":0,"tokens_in_repeated_groups":0}
+{"section":"identical_requests","date_local":"2026-10-13","company":"Wagner Brum","calls":165,"distinct_requests":165,"repeated_identical_calls":0,"tokens_in_repeated_groups":0}
+{"section":"whatsapp_payload","date_local":"2026-09-29","company":"AVEP","calls":45,"duplicate_calls":45,"repeated_chars":68085,"instructions_chars":389475,"input_chars":1387442,"scorecard_chars":210196,"additional_context_chars":68715,"existing_suggestions_chars":23186,"new_transcript_chars":67066}
+{"section":"whatsapp_payload","date_local":"2026-09-29","company":"Staff M&B","calls":3,"duplicate_calls":3,"repeated_chars":8583,"instructions_chars":28425,"input_chars":33376,"scorecard_chars":7392,"additional_context_chars":8778,"existing_suggestions_chars":6,"new_transcript_chars":6123}
+{"section":"whatsapp_payload","date_local":"2026-09-29","company":"TRIASA CORRETORA DE SEGUROS","calls":1,"duplicate_calls":1,"repeated_chars":114,"instructions_chars":5743,"input_chars":6302,"scorecard_chars":3696,"additional_context_chars":116,"existing_suggestions_chars":2,"new_transcript_chars":1707}
+{"section":"whatsapp_payload","date_local":"2026-09-29","company":"Vetor Modular","calls":3,"duplicate_calls":3,"repeated_chars":6795,"instructions_chars":25734,"input_chars":41245,"scorecard_chars":27327,"additional_context_chars":6852,"existing_suggestions_chars":2072,"new_transcript_chars":2512}
+{"section":"whatsapp_payload","date_local":"2026-09-29","company":"Wagner Brum","calls":1,"duplicate_calls":1,"repeated_chars":2861,"instructions_chars":9386,"input_chars":8734,"scorecard_chars":3696,"additional_context_chars":2926,"existing_suggestions_chars":2,"new_transcript_chars":1318}
+{"section":"whatsapp_payload","date_local":"2026-09-30","company":"AVEP","calls":18,"duplicate_calls":18,"repeated_chars":27234,"instructions_chars":155790,"input_chars":709631,"scorecard_chars":67563,"additional_context_chars":27486,"existing_suggestions_chars":9725,"new_transcript_chars":40759}
+{"section":"whatsapp_payload","date_local":"2026-09-30","company":"Staff M&B","calls":9,"duplicate_calls":9,"repeated_chars":25749,"instructions_chars":85275,"input_chars":610928,"scorecard_chars":22176,"additional_context_chars":26334,"existing_suggestions_chars":12844,"new_transcript_chars":10865}
+{"section":"whatsapp_payload","date_local":"2026-09-30","company":"TRIASA CORRETORA DE SEGUROS","calls":2,"duplicate_calls":2,"repeated_chars":228,"instructions_chars":11486,"input_chars":13101,"scorecard_chars":7392,"additional_context_chars":232,"existing_suggestions_chars":2272,"new_transcript_chars":1284}
+{"section":"whatsapp_payload","date_local":"2026-10-01","company":"AVEP","calls":355,"duplicate_calls":355,"repeated_chars":537115,"instructions_chars":3072525,"input_chars":7041732,"scorecard_chars":2578477,"additional_context_chars":542085,"existing_suggestions_chars":290881,"new_transcript_chars":1049880}
+{"section":"whatsapp_payload","date_local":"2026-10-01","company":"Staff M&B","calls":128,"duplicate_calls":128,"repeated_chars":366208,"instructions_chars":1212800,"input_chars":2284450,"scorecard_chars":602172,"additional_context_chars":374528,"existing_suggestions_chars":226946,"new_transcript_chars":347321}
+{"section":"whatsapp_payload","date_local":"2026-10-01","company":"TRIASA CORRETORA DE SEGUROS","calls":14,"duplicate_calls":14,"repeated_chars":1596,"instructions_chars":80402,"input_chars":99308,"scorecard_chars":51744,"additional_context_chars":1624,"existing_suggestions_chars":530,"new_transcript_chars":33980}
+{"section":"whatsapp_payload","date_local":"2026-10-01","company":"Vetor Modular","calls":33,"duplicate_calls":33,"repeated_chars":74745,"instructions_chars":283074,"input_chars":509024,"scorecard_chars":300597,"additional_context_chars":75372,"existing_suggestions_chars":49286,"new_transcript_chars":53567}
+{"section":"whatsapp_payload","date_local":"2026-10-01","company":"Wagner Brum","calls":8,"duplicate_calls":8,"repeated_chars":22888,"instructions_chars":75088,"input_chars":217634,"scorecard_chars":37486,"additional_context_chars":23408,"existing_suggestions_chars":26619,"new_transcript_chars":121980}
+{"section":"whatsapp_payload","date_local":"2026-10-02","company":"AVEP","calls":176,"duplicate_calls":176,"repeated_chars":266288,"instructions_chars":1523280,"input_chars":5336764,"scorecard_chars":1615358,"additional_context_chars":268752,"existing_suggestions_chars":472896,"new_transcript_chars":78687}
+{"section":"whatsapp_payload","date_local":"2026-10-02","company":"Lumyne Estética Avançada","calls":573,"duplicate_calls":573,"repeated_chars":65322,"instructions_chars":3290739,"input_chars":3089396,"scorecard_chars":2265990,"additional_context_chars":66468,"existing_suggestions_chars":48131,"new_transcript_chars":247163}
+{"section":"whatsapp_payload","date_local":"2026-10-02","company":"Staff M&B","calls":115,"duplicate_calls":115,"repeated_chars":329015,"instructions_chars":1089625,"input_chars":7358398,"scorecard_chars":670976,"additional_context_chars":336490,"existing_suggestions_chars":375234,"new_transcript_chars":65355}
+{"section":"whatsapp_payload","date_local":"2026-10-02","company":"Vetor Modular","calls":3,"duplicate_calls":3,"repeated_chars":6795,"instructions_chars":25734,"input_chars":43816,"scorecard_chars":30432,"additional_context_chars":6852,"existing_suggestions_chars":3166,"new_transcript_chars":602}
+{"section":"whatsapp_payload","date_local":"2026-10-02","company":"Wagner Brum","calls":13,"duplicate_calls":13,"repeated_chars":37193,"instructions_chars":122018,"input_chars":205346,"scorecard_chars":78994,"additional_context_chars":38038,"existing_suggestions_chars":65935,"new_transcript_chars":8840}
+{"section":"whatsapp_payload","date_local":"2026-10-03","company":"AVEP","calls":25,"duplicate_calls":25,"repeated_chars":37825,"instructions_chars":216375,"input_chars":261969,"scorecard_chars":190156,"additional_context_chars":38175,"existing_suggestions_chars":3471,"new_transcript_chars":9483}
+{"section":"whatsapp_payload","date_local":"2026-10-03","company":"Lumyne Estética Avançada","calls":125,"duplicate_calls":125,"repeated_chars":14250,"instructions_chars":717875,"input_chars":1050597,"scorecard_chars":773410,"additional_context_chars":14500,"existing_suggestions_chars":106614,"new_transcript_chars":40376}
+{"section":"whatsapp_payload","date_local":"2026-10-03","company":"Staff M&B","calls":26,"duplicate_calls":26,"repeated_chars":74386,"instructions_chars":246350,"input_chars":849127,"scorecard_chars":145162,"additional_context_chars":76076,"existing_suggestions_chars":91671,"new_transcript_chars":14114}
+{"section":"whatsapp_payload","date_local":"2026-10-03","company":"TRIASA CORRETORA DE SEGUROS","calls":1,"duplicate_calls":1,"repeated_chars":114,"instructions_chars":5743,"input_chars":5134,"scorecard_chars":3696,"additional_context_chars":116,"existing_suggestions_chars":2,"new_transcript_chars":542}
+{"section":"whatsapp_payload","date_local":"2026-10-04","company":"AVEP","calls":27,"duplicate_calls":27,"repeated_chars":40851,"instructions_chars":233685,"input_chars":289162,"scorecard_chars":211946,"additional_context_chars":41229,"existing_suggestions_chars":5963,"new_transcript_chars":7879}
+{"section":"whatsapp_payload","date_local":"2026-10-04","company":"Lumyne Estética Avançada","calls":44,"duplicate_calls":44,"repeated_chars":5016,"instructions_chars":252692,"input_chars":313830,"scorecard_chars":238133,"additional_context_chars":5104,"existing_suggestions_chars":23907,"new_transcript_chars":9135}
+{"section":"whatsapp_payload","date_local":"2026-10-04","company":"Staff M&B","calls":28,"duplicate_calls":28,"repeated_chars":80108,"instructions_chars":265300,"input_chars":1223384,"scorecard_chars":155997,"additional_context_chars":81928,"existing_suggestions_chars":83910,"new_transcript_chars":8964}
+{"section":"whatsapp_payload","date_local":"2026-10-05","company":"AVEP","calls":210,"duplicate_calls":210,"repeated_chars":317730,"instructions_chars":1817550,"input_chars":8730414,"scorecard_chars":1797394,"additional_context_chars":320670,"existing_suggestions_chars":363995,"new_transcript_chars":84045}
+{"section":"whatsapp_payload","date_local":"2026-10-05","company":"Lumyne Estética Avançada","calls":523,"duplicate_calls":523,"repeated_chars":59622,"instructions_chars":3003589,"input_chars":3264496,"scorecard_chars":2384482,"additional_context_chars":60668,"existing_suggestions_chars":186892,"new_transcript_chars":184815}
+{"section":"whatsapp_payload","date_local":"2026-10-05","company":"Staff M&B","calls":65,"duplicate_calls":65,"repeated_chars":185965,"instructions_chars":615875,"input_chars":3621713,"scorecard_chars":355448,"additional_context_chars":190190,"existing_suggestions_chars":210960,"new_transcript_chars":30888}
+{"section":"whatsapp_payload","date_local":"2026-10-05","company":"Vetor Modular","calls":1,"duplicate_calls":1,"repeated_chars":2265,"instructions_chars":8578,"input_chars":12555,"scorecard_chars":9109,"additional_context_chars":2284,"existing_suggestions_chars":2,"new_transcript_chars":257}
+{"section":"whatsapp_payload","date_local":"2026-10-05","company":"Wagner Brum","calls":25,"duplicate_calls":25,"repeated_chars":71525,"instructions_chars":234650,"input_chars":451149,"scorecard_chars":175834,"additional_context_chars":73150,"existing_suggestions_chars":156475,"new_transcript_chars":20121}
+{"section":"whatsapp_payload","date_local":"2026-10-06","company":"AVEP","calls":269,"duplicate_calls":269,"repeated_chars":406997,"instructions_chars":3199357,"input_chars":8402784,"scorecard_chars":2394335,"additional_context_chars":410763,"existing_suggestions_chars":800481,"new_transcript_chars":316646}
+{"section":"whatsapp_payload","date_local":"2026-10-06","company":"Lumyne Estética Avançada","calls":462,"duplicate_calls":462,"repeated_chars":52668,"instructions_chars":3857436,"input_chars":3258585,"scorecard_chars":2308154,"additional_context_chars":53592,"existing_suggestions_chars":209990,"new_transcript_chars":189027}
+{"section":"whatsapp_payload","date_local":"2026-10-06","company":"Staff M&B","calls":109,"duplicate_calls":109,"repeated_chars":311849,"instructions_chars":1262785,"input_chars":3325603,"scorecard_chars":640156,"additional_context_chars":318934,"existing_suggestions_chars":404052,"new_transcript_chars":59043}
+{"section":"whatsapp_payload","date_local":"2026-10-06","company":"TRIASA CORRETORA DE SEGUROS","calls":12,"duplicate_calls":12,"repeated_chars":1368,"instructions_chars":98682,"input_chars":108412,"scorecard_chars":77196,"additional_context_chars":1392,"existing_suggestions_chars":9551,"new_transcript_chars":6554}
+{"section":"whatsapp_payload","date_local":"2026-10-06","company":"Vetor Modular","calls":2,"duplicate_calls":2,"repeated_chars":4530,"instructions_chars":22568,"input_chars":35550,"scorecard_chars":18218,"additional_context_chars":4568,"existing_suggestions_chars":10072,"new_transcript_chars":309}
+{"section":"whatsapp_payload","date_local":"2026-10-06","company":"Wagner Brum","calls":27,"duplicate_calls":27,"repeated_chars":77247,"instructions_chars":321072,"input_chars":521768,"scorecard_chars":189963,"additional_context_chars":79002,"existing_suggestions_chars":195435,"new_transcript_chars":23914}
+{"section":"whatsapp_payload","date_local":"2026-10-07","company":"AVEP","calls":168,"duplicate_calls":168,"repeated_chars":254184,"instructions_chars":2246664,"input_chars":3010862,"scorecard_chars":1630580,"additional_context_chars":256536,"existing_suggestions_chars":584355,"new_transcript_chars":83679}
+{"section":"whatsapp_payload","date_local":"2026-10-07","company":"Lumyne Estética Avançada","calls":301,"duplicate_calls":301,"repeated_chars":34314,"instructions_chars":2543149,"input_chars":1876375,"scorecard_chars":1316967,"additional_context_chars":34916,"existing_suggestions_chars":79065,"new_transcript_chars":123361}
+{"section":"whatsapp_payload","date_local":"2026-10-07","company":"Staff M&B","calls":523,"duplicate_calls":523,"repeated_chars":1496303,"instructions_chars":6370663,"input_chars":5377160,"scorecard_chars":2516112,"additional_context_chars":1530298,"existing_suggestions_chars":383148,"new_transcript_chars":160939}
+{"section":"whatsapp_payload","date_local":"2026-10-07","company":"TRIASA CORRETORA DE SEGUROS","calls":12,"duplicate_calls":12,"repeated_chars":1368,"instructions_chars":101388,"input_chars":96293,"scorecard_chars":68832,"additional_context_chars":1392,"existing_suggestions_chars":6108,"new_transcript_chars":6210}
+{"section":"whatsapp_payload","date_local":"2026-10-07","company":"Vetor Modular","calls":1,"duplicate_calls":1,"repeated_chars":2265,"instructions_chars":11284,"input_chars":14082,"scorecard_chars":9109,"additional_context_chars":2284,"existing_suggestions_chars":847,"new_transcript_chars":596}
+{"section":"whatsapp_payload","date_local":"2026-10-07","company":"Wagner Brum","calls":14,"duplicate_calls":14,"repeated_chars":40054,"instructions_chars":169288,"input_chars":281466,"scorecard_chars":97802,"additional_context_chars":40964,"existing_suggestions_chars":111108,"new_transcript_chars":14264}
+{"section":"whatsapp_payload","date_local":"2026-10-08","company":"AVEP","calls":92,"duplicate_calls":92,"repeated_chars":139196,"instructions_chars":1230316,"input_chars":1497386,"scorecard_chars":834424,"additional_context_chars":140484,"existing_suggestions_chars":187049,"new_transcript_chars":62418}
+{"section":"whatsapp_payload","date_local":"2026-10-08","company":"Lumyne Estética Avançada","calls":105,"duplicate_calls":105,"repeated_chars":11970,"instructions_chars":887145,"input_chars":919795,"scorecard_chars":655937,"additional_context_chars":12180,"existing_suggestions_chars":92881,"new_transcript_chars":40130}
+{"section":"whatsapp_payload","date_local":"2026-10-08","company":"Staff M&B","calls":803,"duplicate_calls":803,"repeated_chars":2297383,"instructions_chars":9781343,"input_chars":8640351,"scorecard_chars":3589221,"additional_context_chars":2349578,"existing_suggestions_chars":509464,"new_transcript_chars":362055}
+{"section":"whatsapp_payload","date_local":"2026-10-08","company":"TRIASA CORRETORA DE SEGUROS","calls":3,"duplicate_calls":3,"repeated_chars":342,"instructions_chars":25347,"input_chars":17160,"scorecard_chars":11088,"additional_context_chars":348,"existing_suggestions_chars":993,"new_transcript_chars":1490}
+{"section":"whatsapp_payload","date_local":"2026-10-08","company":"Vetor Modular","calls":2,"duplicate_calls":2,"repeated_chars":4530,"instructions_chars":22568,"input_chars":26928,"scorecard_chars":18218,"additional_context_chars":4568,"existing_suggestions_chars":850,"new_transcript_chars":1110}
+{"section":"whatsapp_payload","date_local":"2026-10-08","company":"Wagner Brum","calls":13,"duplicate_calls":13,"repeated_chars":37193,"instructions_chars":157196,"input_chars":228025,"scorecard_chars":93068,"additional_context_chars":38038,"existing_suggestions_chars":71319,"new_transcript_chars":9453}
+{"section":"whatsapp_payload","date_local":"2026-10-09","company":"AVEP","calls":68,"duplicate_calls":68,"repeated_chars":102884,"instructions_chars":909364,"input_chars":2146394,"scorecard_chars":591701,"additional_context_chars":103836,"existing_suggestions_chars":255731,"new_transcript_chars":34290}
+{"section":"whatsapp_payload","date_local":"2026-10-09","company":"Lumyne Estética Avançada","calls":121,"duplicate_calls":121,"repeated_chars":13794,"instructions_chars":1022329,"input_chars":1117140,"scorecard_chars":801427,"additional_context_chars":14036,"existing_suggestions_chars":117074,"new_transcript_chars":45481}
+{"section":"whatsapp_payload","date_local":"2026-10-09","company":"Staff M&B","calls":74,"duplicate_calls":74,"repeated_chars":211714,"instructions_chars":901394,"input_chars":1214782,"scorecard_chars":359314,"additional_context_chars":216524,"existing_suggestions_chars":224403,"new_transcript_chars":28794}
+{"section":"whatsapp_payload","date_local":"2026-10-09","company":"TRIASA CORRETORA DE SEGUROS","calls":12,"duplicate_calls":12,"repeated_chars":1368,"instructions_chars":101388,"input_chars":109114,"scorecard_chars":69630,"additional_context_chars":1392,"existing_suggestions_chars":14986,"new_transcript_chars":8319}
+{"section":"whatsapp_payload","date_local":"2026-10-09","company":"Vetor Modular","calls":3,"duplicate_calls":3,"repeated_chars":6795,"instructions_chars":33852,"input_chars":41405,"scorecard_chars":27327,"additional_context_chars":6852,"existing_suggestions_chars":2226,"new_transcript_chars":1283}
+{"section":"whatsapp_payload","date_local":"2026-10-09","company":"Wagner Brum","calls":11,"duplicate_calls":11,"repeated_chars":31471,"instructions_chars":133012,"input_chars":154110,"scorecard_chars":64910,"additional_context_chars":32186,"existing_suggestions_chars":37512,"new_transcript_chars":6462}
+{"section":"whatsapp_payload","date_local":"2026-10-13","company":"AVEP","calls":225,"duplicate_calls":225,"repeated_chars":340425,"instructions_chars":3008925,"input_chars":3092924,"scorecard_chars":1876708,"additional_context_chars":343575,"existing_suggestions_chars":390224,"new_transcript_chars":103619}
+{"section":"whatsapp_payload","date_local":"2026-10-13","company":"Lumyne Estética Avançada","calls":159,"duplicate_calls":159,"repeated_chars":18126,"instructions_chars":1343391,"input_chars":1151912,"scorecard_chars":798203,"additional_context_chars":18444,"existing_suggestions_chars":92101,"new_transcript_chars":67958}
+{"section":"whatsapp_payload","date_local":"2026-10-13","company":"Staff M&B","calls":56,"duplicate_calls":56,"repeated_chars":160216,"instructions_chars":682136,"input_chars":1025154,"scorecard_chars":264920,"additional_context_chars":163856,"existing_suggestions_chars":245916,"new_transcript_chars":50314}
+{"section":"whatsapp_payload","date_local":"2026-10-13","company":"TRIASA CORRETORA DE SEGUROS","calls":6,"duplicate_calls":6,"repeated_chars":684,"instructions_chars":50694,"input_chars":39166,"scorecard_chars":22176,"additional_context_chars":696,"existing_suggestions_chars":6719,"new_transcript_chars":2882}
+{"section":"whatsapp_payload","date_local":"2026-10-13","company":"Vetor Modular","calls":3,"duplicate_calls":3,"repeated_chars":6795,"instructions_chars":33852,"input_chars":39489,"scorecard_chars":27327,"additional_context_chars":6852,"existing_suggestions_chars":477,"new_transcript_chars":1342}
+{"section":"whatsapp_payload","date_local":"2026-10-13","company":"Wagner Brum","calls":7,"duplicate_calls":7,"repeated_chars":20027,"instructions_chars":84644,"input_chars":154799,"scorecard_chars":43222,"additional_context_chars":20482,"existing_suggestions_chars":80132,"new_transcript_chars":2590}
+{"section":"ledger","date_local":"2026-09-29","entry_type":"grant","entries":1,"credits":5000}
+{"section":"ledger","date_local":"2026-10-01","entry_type":"expire","entries":1,"credits":-5000}
+{"section":"ledger","date_local":"2026-10-01","entry_type":"grant","entries":1,"credits":10000}
+{"section":"ledger","date_local":"2026-10-09","entry_type":"grant","entries":1,"credits":1000}
+{"section":"cross_source","date_local":"2026-09-29","matched":937,"usage_mismatches":0,"different_day":0,"zero_usage_events":0,"crossed_cutoff":0}
+{"section":"cross_source","date_local":"2026-09-30","matched":3200,"usage_mismatches":0,"different_day":0,"zero_usage_events":1,"crossed_cutoff":0}
+{"section":"cross_source","date_local":"2026-10-01","matched":3345,"usage_mismatches":0,"different_day":0,"zero_usage_events":1,"crossed_cutoff":0}
+{"section":"cross_source","date_local":"2026-10-02","matched":2775,"usage_mismatches":0,"different_day":0,"zero_usage_events":0,"crossed_cutoff":0}
+{"section":"cross_source","date_local":"2026-10-03","matched":799,"usage_mismatches":0,"different_day":0,"zero_usage_events":0,"crossed_cutoff":0}
+{"section":"cross_source","date_local":"2026-10-04","matched":474,"usage_mismatches":0,"different_day":0,"zero_usage_events":0,"crossed_cutoff":0}
+{"section":"cross_source","date_local":"2026-10-05","matched":3018,"usage_mismatches":0,"different_day":0,"zero_usage_events":0,"crossed_cutoff":0}
+{"section":"cross_source","date_local":"2026-10-06","matched":4303,"usage_mismatches":0,"different_day":0,"zero_usage_events":0,"crossed_cutoff":0}
+{"section":"cross_source","date_local":"2026-10-07","matched":3735,"usage_mismatches":0,"different_day":0,"zero_usage_events":0,"crossed_cutoff":0}
+{"section":"cross_source","date_local":"2026-10-08","matched":3667,"usage_mismatches":0,"different_day":0,"zero_usage_events":0,"crossed_cutoff":0}
+{"section":"cross_source","date_local":"2026-10-09","matched":1540,"usage_mismatches":0,"different_day":0,"zero_usage_events":0,"crossed_cutoff":0}
+{"section":"cross_source","date_local":"2026-10-13","matched":2089,"usage_mismatches":0,"different_day":0,"zero_usage_events":0,"crossed_cutoff":0}
