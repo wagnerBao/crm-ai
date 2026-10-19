@@ -137,6 +137,7 @@ public sealed record WhatsappConversationAnalysisInput(
     public WhatsappScorecardTemplateInput? ScorecardTemplate { get; init; }
     public string TimeZoneId { get; init; } = "America/Sao_Paulo";
     public AnalysisConversationParticipants? Participants { get; init; }
+    public RealEstateAnalysisInput? RealEstate { get; init; }
 
     public static WhatsappConversationAnalysisInput FromContext(
         OpportunityAnalysisContext context,
@@ -210,7 +211,8 @@ public sealed record WhatsappConversationAnalysisInput(
             GetString(data, "additionalContext"),
             analyzedAt)
         {
-            Participants = BuildParticipants(context.TriggerEvent, context)
+            Participants = BuildParticipants(context.TriggerEvent, context),
+            RealEstate = RealEstateAnalysisContextPolicy.Select(context, contextEntityKeys, analyzedAt)
         };
     }
 

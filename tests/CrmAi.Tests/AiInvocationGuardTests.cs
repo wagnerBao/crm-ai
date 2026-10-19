@@ -196,6 +196,8 @@ public sealed class AiInvocationGuardTests : IAsyncLifetime
                 message text not null, updated_at timestamptz not null default now());
             alter table ai_insights add column if not exists opportunity_id uuid;
             create table if not exists opportunities(id uuid primary key, company_id uuid not null);
+            create table if not exists whatsapp_conversations(id uuid primary key, company_id uuid, last_message_at timestamptz);
+            create table if not exists whatsapp_conversation_activity_settings(company_id uuid, is_active boolean, inactivity_minutes integer);
             create table if not exists ai_agent_settings(
                 agent_key text not null, company_id uuid, debounce_minutes integer not null,
                 is_active boolean not null, updated_at timestamptz not null default now());
@@ -205,6 +207,8 @@ public sealed class AiInvocationGuardTests : IAsyncLifetime
         var conversationId = Guid.NewGuid().ToString();
         await using (var insert = _db.CreateCommand("""
             insert into opportunities(id,company_id) values(@opportunity,@company);
+            insert into whatsapp_conversations(id,company_id,last_message_at)
+                values(@conversation,@company,now()-interval '2 hours');
             insert into ai_agent_settings(agent_key,company_id,debounce_minutes,is_active)
                 values('whatsapp-conversation-analysis',@company,1,true);
             insert into ai_insights(id,opportunity_id,kind,status,message)
@@ -213,6 +217,7 @@ public sealed class AiInvocationGuardTests : IAsyncLifetime
         {
             insert.Parameters.AddWithValue("id", id);
             insert.Parameters.AddWithValue("opportunity", opportunityId);
+            insert.Parameters.AddWithValue("conversation", Guid.Parse(conversationId));
             insert.Parameters.AddWithValue("company", Guid.Parse(_company));
             insert.Parameters.AddWithValue("message", JsonSerializer.Serialize(new { conversationId, latestEventId = "synthetic-event", latestText = "Synthetic conversation to preserve" }));
             await insert.ExecuteNonQueryAsync();

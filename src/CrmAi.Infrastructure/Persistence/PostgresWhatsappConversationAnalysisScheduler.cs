@@ -185,6 +185,13 @@ public sealed class PostgresWhatsappConversationAnalysisScheduler(
             select insight.id, insight.opportunity_id, insight.message
             from ai_insights insight
             inner join opportunities opportunity on opportunity.id = insight.opportunity_id
+            inner join whatsapp_conversations conversation
+                on conversation.id::text = insight.message::jsonb ->> 'conversationId'
+               and conversation.company_id = opportunity.company_id
+            left join whatsapp_conversation_activity_settings company_setting
+                on company_setting.company_id = opportunity.company_id
+            left join whatsapp_conversation_activity_settings default_setting
+                on default_setting.company_id is null
             inner join lateral (
                 select debounce_minutes, is_active
                 from ai_agent_settings settings
@@ -196,7 +203,11 @@ public sealed class PostgresWhatsappConversationAnalysisScheduler(
             where insight.kind = @kind
               and insight.status = 'pending'
               and settings.is_active = true
-              and insight.updated_at <= now() - (settings.debounce_minutes * interval '1 minute')
+              and coalesce(company_setting.is_active, default_setting.is_active, true) = true
+              -- Both incoming and outgoing messages reset the conversation clock.
+              -- Activity inactivity settings govern persistence, independently of the agent delay.
+              and conversation.last_message_at <= now() -
+                  (coalesce(company_setting.inactivity_minutes, default_setting.inactivity_minutes, settings.debounce_minutes) * interval '1 minute')
               and (nullif(insight.message::jsonb ->> 'nextAttemptUtc', '')::timestamptz is null
                    or (insight.message::jsonb ->> 'nextAttemptUtc')::timestamptz <= now())
             order by insight.updated_at
@@ -298,9 +309,13 @@ public sealed class PostgresWhatsappConversationAnalysisScheduler(
     {
         const string sql = """
             select
-                coalesce(settings.debounce_minutes, @fallbackDebounceMinutes) as debounce_minutes,
+                coalesce(company_setting.inactivity_minutes, default_setting.inactivity_minutes, settings.debounce_minutes, @fallbackDebounceMinutes) as debounce_minutes,
                 settings.context_instructions
             from opportunities opportunity
+            left join whatsapp_conversation_activity_settings company_setting
+                on company_setting.company_id = opportunity.company_id
+            left join whatsapp_conversation_activity_settings default_setting
+                on default_setting.company_id is null
             left join lateral (
                 select debounce_minutes, context_instructions, company_id, updated_at, is_active
                 from ai_agent_settings settings

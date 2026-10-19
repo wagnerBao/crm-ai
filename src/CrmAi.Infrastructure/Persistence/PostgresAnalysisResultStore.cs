@@ -48,7 +48,10 @@ public sealed class PostgresAnalysisResultStore(NpgsqlDataSource dataSource) : I
                 reasons = result.Reasons,
                 recommendations = result.Recommendations,
                 snapshot = result.SnapshotUpdate,
-                triggerEvent = context.TriggerEvent.Type
+                triggerEvent = context.TriggerEvent.Type,
+                realEstateFindings = result.RealEstateFindings,
+                realEstateModuleRevision = context.RealEstate?.ModuleRevision,
+                realEstateSnapshotAt = context.RealEstate?.SnapshotAt
             }, SerializerOptions));
             command.Parameters.AddWithValue("kind", "risk-analysis");
             command.Parameters.AddWithValue("confidence", NpgsqlDbType.Numeric, result.RiskScore / 100m);

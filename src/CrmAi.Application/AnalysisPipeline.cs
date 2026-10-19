@@ -156,6 +156,8 @@ public sealed class OpportunityAnalysisEventProcessor(
 {
     public async Task ProcessAsync(OpportunityEvent opportunityEvent, CancellationToken cancellationToken)
     {
+        var isRealEstateEvent=string.Equals(opportunityEvent.Type,"opportunity.real_estate.updated",StringComparison.OrdinalIgnoreCase);
+        if (isRealEstateEvent && (!opportunityEvent.Data.TryGetValue("schemaVersion",out var version) || version?.ToString() != "1")) return;
         if (OpportunityEventRouting.IsActivityAnalysisEvent(opportunityEvent.Type))
         {
             return;
@@ -218,6 +220,7 @@ public sealed class OpportunityAnalysisEventProcessor(
         {
             return;
         }
+        if (isRealEstateEvent && context.RealEstate is null) return;
         if (!string.Equals(context.Opportunity.Status, "active", StringComparison.OrdinalIgnoreCase))
         {
             return;

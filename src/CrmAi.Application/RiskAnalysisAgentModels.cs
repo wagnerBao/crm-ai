@@ -13,7 +13,11 @@ public sealed record OpenAiRiskAnalysisResponse(
     IReadOnlyCollection<string> Recommendations,
     int? ContextConfidenceScore = null,
     bool? NeedsFullMeetingContext = null,
-    IReadOnlyCollection<string>? MeetingEvidenceIds = null);
+    IReadOnlyCollection<string>? MeetingEvidenceIds = null,
+    IReadOnlyCollection<OpenAiRealEstateFinding>? RealEstateFindings = null);
+
+public sealed record OpenAiRealEstateFinding(
+    string Kind, string Summary, string Recommendation, IReadOnlyCollection<string> EvidenceIds);
 
 public sealed record RiskAnalysisAgentInput(
     AnalysisOpportunitySummary? Opportunity,
@@ -28,7 +32,8 @@ public sealed record RiskAnalysisAgentInput(
     IReadOnlyCollection<AnalysisAgentInsightSummary> RelatedAgentInsights,
     AnalysisTriggerEventSummary TriggerEvent,
     CommercialRuleAssessment CommercialRuleAssessment,
-    IReadOnlyCollection<AnalysisMeetingAudioSummary>? MeetingAudioAnalyses = null);
+    IReadOnlyCollection<AnalysisMeetingAudioSummary>? MeetingAudioAnalyses = null,
+    RealEstateAnalysisInput? RealEstate = null);
 
 public sealed record AnalysisOpportunitySummary(
     string Id,

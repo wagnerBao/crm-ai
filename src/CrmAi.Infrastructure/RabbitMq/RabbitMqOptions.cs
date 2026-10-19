@@ -63,13 +63,20 @@ public sealed class RabbitMqOptions
     public int RiskAnalysisConsumerCount { get; init; } = 2;
     public int RiskAnalysisSchedulerCount { get; init; } = 1;
     public ushort PrefetchCount { get; init; } = 1;
+    public bool RealEstateAnalysisEventsEnabled { get; init; }
     public bool RequeueOnFailure { get; init; }
     public string DeadLetterExchange { get => RabbitMqEnvironmentName.ExchangeName(_deadLetterExchange); init => _deadLetterExchange = value; }
     public string NotificationExchange { get => RabbitMqEnvironmentName.ExchangeName(_notificationExchange); init => _notificationExchange = value; }
     public string DeadLetterQueueSuffix { get; init; } = ".dlq";
     public int DailyCheckinSnapshotIntervalMinutes { get; init; } = 15;
     public int DailyCheckoutSnapshotIntervalMinutes { get; init; } = 15;
-    public IReadOnlyCollection<string> OpportunityAnalysisExchangeNames { get => PrefixExchangeNames(_opportunityAnalysisExchangeNames); init => _opportunityAnalysisExchangeNames = value; }
+    public IReadOnlyCollection<string> OpportunityAnalysisExchangeNames
+    {
+        get => PrefixExchangeNames(RealEstateAnalysisEventsEnabled
+            ? _opportunityAnalysisExchangeNames.Append("crm.events.opportunity.real_estate.updated").Distinct(StringComparer.Ordinal).ToArray()
+            : _opportunityAnalysisExchangeNames);
+        init => _opportunityAnalysisExchangeNames = value;
+    }
     public IReadOnlyCollection<string> ActivityAnalysisExchangeNames { get => PrefixExchangeNames(_activityAnalysisExchangeNames); init => _activityAnalysisExchangeNames = value; }
     public IReadOnlyCollection<string> DailyCheckinExchangeNames { get => PrefixExchangeNames(_dailyCheckinExchangeNames); init => _dailyCheckinExchangeNames = value; }
     public IReadOnlyCollection<string> GamificationExchangeNames { get => PrefixExchangeNames(_gamificationExchangeNames); init => _gamificationExchangeNames = value; }

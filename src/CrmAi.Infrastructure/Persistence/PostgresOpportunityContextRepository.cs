@@ -5,7 +5,7 @@ using NpgsqlTypes;
 
 namespace CrmAi.Infrastructure.Persistence;
 
-public sealed class PostgresOpportunityContextRepository(NpgsqlDataSource dataSource, IAiAgentRuntimeSettingsRepository settingsRepository) : IOpportunityContextRepository
+public sealed partial class PostgresOpportunityContextRepository(NpgsqlDataSource dataSource, IAiAgentRuntimeSettingsRepository settingsRepository) : IOpportunityContextRepository
 {
     public async Task<OpportunityAnalysisContext?> GetForAnalysisAsync(OpportunityEvent triggerEvent, CancellationToken cancellationToken)
     {
@@ -17,22 +17,27 @@ public sealed class PostgresOpportunityContextRepository(NpgsqlDataSource dataSo
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
 
         var opportunity = await ReadOpportunityAsync(connection, opportunityId, cancellationToken);
-        if (opportunity is null)
+        if (opportunity is null || !OpportunityEventTenantPolicy.Matches(triggerEvent, opportunity))
         {
             return null;
         }
+        if (!await EventConversationMatchesTenantAsync(connection, triggerEvent, opportunity.CompanyId, cancellationToken)) return null;
 
         var riskSettings = await settingsRepository.GetAsync("risk-analysis", opportunity.CompanyId, cancellationToken);
         var enabled = riskSettings.ContextEntityKeys.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var realEstateEnabled = (riskSettings.IsActive ? riskSettings.ContextEntityKeys : []).ToHashSet(StringComparer.OrdinalIgnoreCase);
         if (string.Equals(triggerEvent.Type, "opportunity.whatsapp.conversation.batch", StringComparison.OrdinalIgnoreCase))
         {
             var whatsappSettings = await settingsRepository.GetAsync("whatsapp-conversation-analysis", opportunity.CompanyId, cancellationToken);
             enabled.UnionWith(whatsappSettings.ContextEntityKeys);
+            if (whatsappSettings.IsActive) realEstateEnabled.UnionWith(whatsappSettings.ContextEntityKeys);
         }
-        if (string.Equals(triggerEvent.Type, "opportunity.instagram.message.created", StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(triggerEvent.Type, "opportunity.instagram.message.created", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(triggerEvent.Type, "opportunity.instagram.conversation.batch", StringComparison.OrdinalIgnoreCase))
         {
             var instagramSettings = await settingsRepository.GetAsync("instagram-conversation-analysis", opportunity.CompanyId, cancellationToken);
             enabled.UnionWith(instagramSettings.ContextEntityKeys);
+            if (instagramSettings.IsActive) realEstateEnabled.UnionWith(instagramSettings.ContextEntityKeys);
         }
 
         var stage = await ReadStageAsync(connection, Guid.Parse(opportunity.StageId), cancellationToken)
@@ -50,7 +55,21 @@ public sealed class PostgresOpportunityContextRepository(NpgsqlDataSource dataSo
             ? await ReadMeetingAudioAnalysesAsync(connection, opportunityId, cancellationToken)
             : [];
 
-        return new OpportunityAnalysisContext(opportunity, stage, notes, activities, contacts, users, history, account, products, insights, metricRules, triggerEvent, meetingAudioAnalyses);
+        var realEstate = await ReadRealEstateAsync(connection, opportunityId, opportunity.CompanyId, realEstateEnabled, cancellationToken);
+        return new OpportunityAnalysisContext(opportunity, stage, notes, activities, contacts, users, history, account, products, insights, metricRules, triggerEvent, meetingAudioAnalyses, realEstate);
+    }
+
+    private static async Task<bool> EventConversationMatchesTenantAsync(NpgsqlConnection connection, OpportunityEvent trigger, string? companyId, CancellationToken ct)
+    {
+        if (!trigger.Data.TryGetValue("conversationId", out var rawConversation) || rawConversation is null) return true;
+        var table = trigger.Type.StartsWith("opportunity.whatsapp.", StringComparison.OrdinalIgnoreCase) ? "whatsapp_conversations"
+            : trigger.Type.StartsWith("opportunity.instagram.", StringComparison.OrdinalIgnoreCase) ? "instagram_conversations" : null;
+        if (table is null) return true;
+        if (!Guid.TryParse(rawConversation.ToString(), out var conversationId) || !Guid.TryParse(companyId,out var tenant)) return false;
+        await using var command = new NpgsqlCommand($"select exists(select 1 from {table} where id=@conversationId and company_id=@companyId)",connection);
+        command.Parameters.AddWithValue("conversationId",conversationId);
+        command.Parameters.AddWithValue("companyId",tenant);
+        return await command.ExecuteScalarAsync(ct) is true;
     }
 
     private static async Task<OpportunitySnapshot?> ReadOpportunityAsync(NpgsqlConnection connection, Guid opportunityId, CancellationToken cancellationToken)

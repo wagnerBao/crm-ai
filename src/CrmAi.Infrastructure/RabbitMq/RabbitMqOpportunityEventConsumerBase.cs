@@ -277,7 +277,7 @@ public abstract class RabbitMqOpportunityEventConsumerBase(
         var userId = GetString(root, "userId");
         var data = ReadData(root);
 
-        return new OpportunityEvent(eventId, type, occurredAt, opportunityId, userId, data);
+        return new OpportunityEvent(eventId, type, occurredAt, opportunityId, userId, data, GetString(root, "companyId"));
     }
 
     private static Dictionary<string, object?> ReadData(JsonElement root)

@@ -36,7 +36,18 @@ public sealed class PostgresInstagramConversationAnalysisService(
             return;
         }
 
-        if (await WasProcessedAsync(connection, opportunityId, opportunityEvent.EventId, cancellationToken))
+        // The conversation is the authoritative tenant for channel events, including
+        // legacy batches without an envelope. Never enrich it with another tenant's deal.
+        if (!OpportunityEventTenantPolicy.MatchesCompany(opportunityEvent, conversation.CompanyId.Value.ToString())) return;
+        if (opportunityId.HasValue)
+        {
+            await using var ownership = new NpgsqlCommand("select exists(select 1 from opportunities where id=@id and company_id=@companyId)", connection);
+            ownership.Parameters.AddWithValue("id",opportunityId.Value);
+            ownership.Parameters.AddWithValue("companyId",conversation.CompanyId.Value);
+            if (await ownership.ExecuteScalarAsync(cancellationToken) is not true) return;
+        }
+
+        if (await WasProcessedAsync(connection, conversation.CompanyId.Value, opportunityId, opportunityEvent.EventId, cancellationToken))
         {
             return;
         }
@@ -58,10 +69,11 @@ public sealed class PostgresInstagramConversationAnalysisService(
             ["latestMessageAt"] = opportunityEvent.OccurredAt,
             ["additionalContext"] = settings.ContextInstructions
         };
-        var enrichedEvent = opportunityEvent with { Data = data };
+        var enrichedEvent = opportunityEvent with { Data = data, CompanyId = conversation.CompanyId.Value.ToString() };
         var context = opportunityId is null
             ? null
             : await contextRepository.GetForAnalysisAsync(enrichedEvent, cancellationToken);
+        if (opportunityId is not null && context is null) return;
         var input = context is null
             ? WhatsappConversationAnalysisInput.FromContactEvent(enrichedEvent)
             : WhatsappConversationAnalysisInput.FromContext(context, settings.ContextEntityKeys);
@@ -126,7 +138,7 @@ public sealed class PostgresInstagramConversationAnalysisService(
             select c.id, c.company_id, c.contact_id, c.owner_user_id, contact.account_id,
                    c.contact_name, c.summary
             from instagram_conversations c
-            left join contacts contact on contact.id = c.contact_id
+            left join contacts contact on contact.id = c.contact_id and contact.company_id = c.company_id
             where c.id = @conversationId and c.channel = 'instagram'
             limit 1;
             """;
@@ -150,6 +162,7 @@ public sealed class PostgresInstagramConversationAnalysisService(
 
     private static async Task<bool> WasProcessedAsync(
         NpgsqlConnection connection,
+        Guid companyId,
         Guid? opportunityId,
         string eventId,
         CancellationToken cancellationToken)
@@ -157,12 +170,13 @@ public sealed class PostgresInstagramConversationAnalysisService(
         const string sql = """
             select exists (
                 select 1 from ai_insights
-                where opportunity_id is not distinct from @opportunityId
+                where company_id = @companyId and opportunity_id is not distinct from @opportunityId
                   and kind = @kind
                   and message like @eventMarker
             );
             """;
         await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("companyId",companyId);
         command.Parameters.Add("opportunityId", NpgsqlDbType.Uuid).Value = opportunityId is null ? DBNull.Value : opportunityId.Value;
         command.Parameters.AddWithValue("kind", AgentKey);
         command.Parameters.AddWithValue("eventMarker", $"%{eventId}%");
@@ -366,10 +380,11 @@ public sealed class PostgresInstagramConversationAnalysisService(
         if (opportunityId is not null)
         {
             await using var opportunityCommand = new NpgsqlCommand(
-                "update opportunities set last_activity_at = greatest(coalesce(last_activity_at, @dateAt), @dateAt), updated_at = now() where id = @opportunityId;",
+                "update opportunities set last_activity_at = greatest(coalesce(last_activity_at, @dateAt), @dateAt), updated_at = now() where id = @opportunityId and company_id = @companyId;",
                 connection,
                 transaction);
             opportunityCommand.Parameters.AddWithValue("opportunityId", opportunityId.Value);
+            opportunityCommand.Parameters.AddWithValue("companyId", conversation.CompanyId!.Value);
             opportunityCommand.Parameters.AddWithValue("dateAt", activityDate.ToUniversalTime());
             await opportunityCommand.ExecuteNonQueryAsync(cancellationToken);
         }

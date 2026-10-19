@@ -46,7 +46,8 @@ public sealed class RiskAnalysisAgent(
             riskScore,
             Clean(agentResponse.Reasons),
             Clean(agentResponse.Recommendations),
-            request.SnapshotUpdate);
+            request.SnapshotUpdate,
+            RealEstateAnalysisContextPolicy.ValidateFindings(request.Input.RealEstate, agentResponse.RealEstateFindings));
     }
 
     private static RiskLevel ParseRiskLevel(string riskLevel, int riskScore)

@@ -2,6 +2,29 @@ namespace CrmAi.Application;
 
 internal static class RiskAnalysisJsonSchema
 {
+    public static object ForContext(bool compact, RealEstateAnalysisInput? realEstate)
+    {
+        var value = compact ? CompactValue : Value;
+        if (realEstate is null) return value;
+        var schema = System.Text.Json.JsonSerializer.SerializeToNode(value)!.AsObject();
+        schema["required"]!.AsArray().Add("realEstateFindings");
+        schema["properties"]!["realEstateFindings"] = System.Text.Json.JsonSerializer.SerializeToNode(new
+        {
+            type = "array", maxItems = realEstate.Evidence.Count == 0 ? 0 : 10,
+            items = new
+            {
+                type = "object", additionalProperties = false,
+                required = new[] { "kind", "summary", "recommendation", "evidenceIds" },
+                properties = new
+                {
+                    kind = new { type = "string" }, summary = new { type = "string" }, recommendation = new { type = "string" },
+                    evidenceIds = new { type = "array", minItems = 1, maxItems = 5, items = new { type = "string" } }
+                }
+            }
+        });
+        return schema;
+    }
+
     public static object CompactValue
     {
         get

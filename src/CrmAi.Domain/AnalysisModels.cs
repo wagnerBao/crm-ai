@@ -6,7 +6,8 @@ public sealed record OpportunityEvent(
     DateTime OccurredAt,
     string OpportunityId,
     string? UserId,
-    IReadOnlyDictionary<string, object?> Data);
+    IReadOnlyDictionary<string, object?> Data,
+    string? CompanyId = null);
 
 public sealed record OpportunityAnalysisContext(
     OpportunitySnapshot Opportunity,
@@ -21,7 +22,8 @@ public sealed record OpportunityAnalysisContext(
     IReadOnlyCollection<AgentInsightSnapshot> AgentInsights,
     IReadOnlyCollection<CommercialAnalysisMetricRuleSnapshot> MetricRules,
     OpportunityEvent TriggerEvent,
-    IReadOnlyCollection<MeetingAudioAnalysisSnapshot>? MeetingAudioAnalyses = null);
+    IReadOnlyCollection<MeetingAudioAnalysisSnapshot>? MeetingAudioAnalyses = null,
+    RealEstateAnalysisContext? RealEstate = null);
 
 public sealed record OpportunitySnapshot(
     string Id,
@@ -109,7 +111,8 @@ public sealed record RiskAnalysisResult(
     int RiskScore,
     IReadOnlyCollection<string> Reasons,
     IReadOnlyCollection<string> Recommendations,
-    OpportunityAnalysisSnapshotUpdate SnapshotUpdate);
+    OpportunityAnalysisSnapshotUpdate SnapshotUpdate,
+    IReadOnlyCollection<RealEstateAnalysisFinding>? RealEstateFindings = null);
 
 public sealed record WhatsappConversationAnalysisResult(
     string ConversationSummary,

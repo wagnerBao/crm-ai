@@ -6,6 +6,23 @@ namespace CrmAi.Tests;
 public sealed class OpportunityAnalysisEventProcessorTests
 {
     [Theory]
+    [InlineData(true,1,1)]
+    [InlineData(false,1,0)]
+    [InlineData(true,2,0)]
+    public async Task Real_estate_events_require_known_schema_and_explicit_authorized_context(bool hasContext,int version,int expectedCalls)
+    {
+        var trigger=CreateEvent("opportunity.real_estate.updated") with { Data=new Dictionary<string,object?> { ["schemaVersion"]=version } };
+        var context=CreateContext(trigger) with { RealEstate=hasContext ? RealEstateAnalysisContextTests.Snapshot() : null };
+        var repository=new CountingOpportunityContextRepository(context);
+        var risk=new CountingRiskAnalysisScheduler();
+        var processor=new OpportunityAnalysisEventProcessor(repository,risk,new NullWhatsappConversationAnalysisAgent(),
+            new CountingWhatsappConversationActionStore(),new CountingWhatsappConversationAnalysisScheduler(),new NullMeetingAudioAnalysisService());
+        await processor.ProcessAsync(trigger,default);
+        Assert.Equal(expectedCalls,risk.Calls);
+        if(version!=1) Assert.Equal(0,repository.Calls);
+    }
+
+    [Theory]
     [InlineData(true)]
     [InlineData(false)]
     public async Task Completed_whatsapp_batch_redelivery_does_not_repeat_inference(bool hasOpportunity)

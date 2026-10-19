@@ -43,7 +43,7 @@ public sealed class RabbitRiskAnalysisScheduler(IAiAgentRuntimeSettingsRepositor
         if (!settings.IsActive) return;
         cancellationToken.ThrowIfCancellationRequested();
         // Publisher confirmation precedes acknowledgement of the originating CRM event.
-        messages.PublishRequest(new(company, opportunity, context.TriggerEvent with { OpportunityId = context.Opportunity.Id, Data = new Dictionary<string, object?>() },
+        messages.PublishRequest(new(company, opportunity, context.TriggerEvent with { OpportunityId = context.Opportunity.Id, CompanyId = company.ToString(), Data = new Dictionary<string, object?>() },
             Math.Clamp(settings.DebounceMinutes, 1, 1440)));
     }
 }
@@ -121,8 +121,11 @@ public sealed class ScheduledRiskAnalysisProcessor(
 {
     public async Task ProcessAsync(RiskAnalysisClaim claim, CancellationToken cancellationToken)
     {
+        if (!Guid.TryParse(claim.Event.OpportunityId, out var eventOpportunity) || eventOpportunity != claim.OpportunityId
+            || (claim.Event.CompanyId is not null && (!Guid.TryParse(claim.Event.CompanyId, out var eventCompany) || eventCompany != claim.CompanyId))) return;
         // Reload after the quiet period; never analyze the snapshot held by the event consumer.
-        var context = await contextRepository.GetForAnalysisAsync(claim.Event, cancellationToken);
+        // Bind legacy events to the validated lease envelope BEFORE loading any tenant children.
+        var context = await contextRepository.GetForAnalysisAsync(claim.Event with { CompanyId = claim.CompanyId.ToString() }, cancellationToken);
         if (context is null
             || !Guid.TryParse(context.Opportunity.CompanyId, out var companyId) || companyId != claim.CompanyId
             || !Guid.TryParse(context.Opportunity.Id, out var opportunityId) || opportunityId != claim.OpportunityId

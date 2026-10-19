@@ -79,6 +79,11 @@ public sealed class OpenAiResponsesWhatsappConversationAnalysisClient(
         AiAgentInvocationContext invocationContext,
         CancellationToken cancellationToken)
     {
+        if (input.RealEstate is not null)
+        {
+            settings = settings with { ContextInstructions = string.Join("\n\n", new[] { settings.ContextInstructions, RealEstateAnalysisContextPolicy.Instructions }.Where(value => !string.IsNullOrWhiteSpace(value))) };
+            invocationContext = RealEstateAnalysisContextPolicy.WithMetadata(invocationContext, input.RealEstate);
+        }
         var configuredOptions = options.Value;
         var apiKey = ResolveApiKey(settings);
         var endpoint = configuredOptions.ResponsesEndpoint;

@@ -41,6 +41,11 @@ public sealed class OpenAiResponsesRiskAnalysisClient(
         AiAgentInvocationContext invocationContext,
         CancellationToken cancellationToken)
     {
+        if (input.RealEstate is not null)
+        {
+            settings = settings with { ContextInstructions = string.Join("\n\n", new[] { settings.ContextInstructions, RealEstateAnalysisContextPolicy.Instructions }.Where(value => !string.IsNullOrWhiteSpace(value))) };
+            invocationContext = RealEstateAnalysisContextPolicy.WithMetadata(invocationContext, input.RealEstate);
+        }
         var mode = options.Value.RiskMeetingContextMode.ToLowerInvariant();
         if (mode is not ("full" or "shadow" or "compact"))
             throw new InvalidOperationException("OpenAI:RiskMeetingContextMode must be full, shadow or compact.");
@@ -50,13 +55,13 @@ public sealed class OpenAiResponsesRiskAnalysisClient(
         var comparisonId = Guid.NewGuid().ToString("N");
         if (mode == "full" || !prompt.SavesCharacters)
             return await AnalyzeRequestAsync(settings, prompt.FullJson, false,
-                prompt.WithMetrics(invocationContext, "original", comparisonId), cancellationToken);
+                prompt.WithMetrics(invocationContext, "original", comparisonId), cancellationToken, input.RealEstate);
 
         if (mode == "shadow")
         {
             // Obtain the authoritative result before spending credits on the comparison.
             var full = await AnalyzeRequestAsync(settings, prompt.FullJson, false,
-                prompt.WithMetrics(invocationContext, "shadow-full", comparisonId), cancellationToken);
+                prompt.WithMetrics(invocationContext, "shadow-full", comparisonId), cancellationToken, input.RealEstate);
             try
             {
                 var comparisonContext = prompt.WithMetrics(invocationContext, "shadow-compact", comparisonId);
@@ -64,7 +69,7 @@ public sealed class OpenAiResponsesRiskAnalysisClient(
                 {
                     Metadata = new Dictionary<string, object?>(comparisonContext.Metadata!) { ["riskFullResponse"] = full }
                 };
-                await AnalyzeRequestAsync(settings, prompt.CompactJson, true, comparisonContext, cancellationToken);
+                await AnalyzeRequestAsync(settings, prompt.CompactJson, true, comparisonContext, cancellationToken, input.RealEstate);
             }
             catch (Exception exception) when (exception is not OperationCanceledException)
             {
@@ -76,7 +81,7 @@ public sealed class OpenAiResponsesRiskAnalysisClient(
         try
         {
             var compact = await AnalyzeRequestAsync(settings, prompt.CompactJson, true,
-                prompt.WithMetrics(invocationContext, "compact", comparisonId), cancellationToken);
+                prompt.WithMetrics(invocationContext, "compact", comparisonId), cancellationToken, input.RealEstate);
             if (prompt.Supports(compact)) return compact;
         }
         catch (Exception exception) when (exception is JsonException or IncompleteRiskResponseException)
@@ -84,7 +89,7 @@ public sealed class OpenAiResponsesRiskAnalysisClient(
             // A refused or malformed model result is insufficient evidence; recover full context once.
         }
         return await AnalyzeRequestAsync(settings, prompt.FullJson, false,
-            prompt.WithMetrics(invocationContext, "full-fallback", comparisonId), cancellationToken);
+            prompt.WithMetrics(invocationContext, "full-fallback", comparisonId), cancellationToken, input.RealEstate);
     }
 
     private async Task<OpenAiRiskAnalysisResponse> AnalyzeRequestAsync(
@@ -92,7 +97,8 @@ public sealed class OpenAiResponsesRiskAnalysisClient(
         string inputJson,
         bool compact,
         AiAgentInvocationContext invocationContext,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        RealEstateAnalysisInput? realEstate)
     {
         var configuredOptions = options.Value;
         var apiKey = ResolveApiKey(settings);
@@ -114,7 +120,7 @@ public sealed class OpenAiResponsesRiskAnalysisClient(
                     type = "json_schema",
                     name = "risk_analysis_result",
                     strict = true,
-                    schema = compact ? RiskAnalysisJsonSchema.CompactValue : RiskAnalysisJsonSchema.Value
+                    schema = RiskAnalysisJsonSchema.ForContext(compact, realEstate)
                 }
             }
         };

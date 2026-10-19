@@ -146,7 +146,8 @@ public sealed class RiskAnalysisAgentInputBuilder(CommercialRuleAssessmentServic
                     analysis.Summary,
                     analysis.TranscribedAt?.ToUniversalTime(),
                     analysis.UpdatedAt.ToUniversalTime(), analysis.RiskContext))
-                .ToArray() : []);
+                .ToArray() : [],
+            RealEstateAnalysisContextPolicy.Select(context, entityKeys.Keys, analyzedAt));
 
     private static DateTime? GetLatestInteraction(OpportunityAnalysisContext context)
     {
@@ -181,6 +182,8 @@ public sealed class RiskAnalysisAgentInputBuilder(CommercialRuleAssessmentServic
     private sealed class ContextEntitySelection(IReadOnlyCollection<string>? keys)
     {
         private readonly HashSet<string> _keys = (keys ?? []).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        public IReadOnlyCollection<string> Keys => _keys;
 
         public bool Has(string key) => _keys.Contains(key);
     }

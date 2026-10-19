@@ -23,7 +23,8 @@ public sealed class ScheduledRiskAnalysisProcessorTests
             Guid.Parse(context.Opportunity.Id), Guid.NewGuid(), 1, ev);
         await processor.ProcessAsync(claim, CancellationToken.None);
         Assert.Equal(1, repository.Calls);
-        Assert.Same(ev, repository.LastEvent);
+        Assert.Equal(ev.EventId, repository.LastEvent!.EventId);
+        Assert.Equal(claim.CompanyId.ToString(), repository.LastEvent.CompanyId);
         Assert.Equal(expected, agent.Calls);
         Assert.Equal(expected, store.Calls);
         if (expected == 1)
@@ -31,6 +32,19 @@ public sealed class ScheduledRiskAnalysisProcessorTests
             Assert.Same(context.Opportunity, agent.Context!.Opportunity);
             Assert.True(agent.Context.TriggerEvent.OccurredAt > ev.OccurredAt);
         }
+    }
+
+    [Fact]
+    public async Task RejectsContradictoryLeaseEnvelopeBeforeLoadingChildren()
+    {
+        var context=RiskAnalysisStateTests.Context();
+        var repository=new Repository(context);
+        var processor=new ScheduledRiskAnalysisProcessor(repository,new RiskAnalysisStateTests.Settings(),new Agent(),new Store());
+        var claim=new RiskAnalysisClaim(Guid.Parse(context.Opportunity.CompanyId!),Guid.Parse(context.Opportunity.Id),Guid.NewGuid(),1,
+            context.TriggerEvent with { CompanyId=Guid.NewGuid().ToString() });
+        await processor.ProcessAsync(claim,default);
+        await processor.ProcessAsync(claim with { Event=context.TriggerEvent with { OpportunityId=Guid.NewGuid().ToString() } },default);
+        Assert.Equal(0,repository.Calls);
     }
     private sealed class Repository(OpportunityAnalysisContext context) : IOpportunityContextRepository
     {
