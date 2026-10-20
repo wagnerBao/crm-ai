@@ -325,6 +325,7 @@ public sealed class OpenAiMeetingAudioClient(
         AiAgentInvocationContext invocationContext,
         CancellationToken cancellationToken)
     {
+        settings = CommercialCoachingPolicy.ForAnalysis(settings);
         var configuredOptions = options.Value;
         var apiKey = ResolveApiKey(settings);
         var endpoint = configuredOptions.ResponsesEndpoint;

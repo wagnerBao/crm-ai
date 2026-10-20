@@ -48,6 +48,10 @@ public sealed class OpenAiMeetingAudioClientTests
         Assert.Contains("valor que ja estiver em currentValue", requestBody);
         Assert.Contains("Para reunioes e ligacoes", requestBody);
         Assert.Contains("Nao crie atividade para conversa social", requestBody);
+        using var request = System.Text.Json.JsonDocument.Parse(requestBody);
+        var instructions = request.RootElement.GetProperty("instructions").GetString()!;
+        Assert.Contains(CommercialCoachingPolicy.DataContextInstructions, instructions);
+        Assert.Contains(CommercialCoachingPolicy.FollowUpInstructions, instructions);
     }
 
     [Fact]

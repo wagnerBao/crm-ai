@@ -15,6 +15,8 @@ public sealed class SkoposCoachSynthesisClient(
 
     public async Task<CoachSynthesisResult?> AnalyzeAsync(AiAgentRuntimeSettings settings, object input, string companyId, CancellationToken cancellationToken)
     {
+        settings = CommercialCoachingPolicy.ForAnalysis(settings);
+        settings = settings with { ContextInstructions = settings.ContextInstructions + "\n\nApresente o resumo em ordem de importancia: principal prioridade da equipe, evidencias, impacto possivel e acao recomendada. Cada treinamento deve incluir pratica aplicada, revisao pelo gestor e criterio observavel de sucesso. Diferencie tendencia com amostra pequena de problema confirmado. Nao some colaboradores de temas distintos como se fossem pessoas unicas." };
         if (string.IsNullOrWhiteSpace(settings.ApiKey)) return null;
         var endpoint = options.Value.ResponsesEndpoint;
         var model = string.IsNullOrWhiteSpace(settings.Model) ? options.Value.Model : settings.Model;

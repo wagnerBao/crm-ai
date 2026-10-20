@@ -41,6 +41,7 @@ public sealed class OpenAiResponsesRiskAnalysisClient(
         AiAgentInvocationContext invocationContext,
         CancellationToken cancellationToken)
     {
+        settings = CommercialCoachingPolicy.ForAnalysis(settings);
         if (input.RealEstate is not null)
         {
             settings = settings with { ContextInstructions = string.Join("\n\n", new[] { settings.ContextInstructions, RealEstateAnalysisContextPolicy.Instructions }.Where(value => !string.IsNullOrWhiteSpace(value))) };

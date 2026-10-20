@@ -11,6 +11,22 @@ public sealed class SkoposIndividualCoachClient(
     IOptions<OpenAiRiskAnalysisOptions> options,
     IAiAgentInvocationLogStore invocationLogStore)
 {
+    public const string DevelopmentInstructions = """
+        Plano de desenvolvimento individual:
+        - Use as competencias e evidencias ja analisadas. Priorize ate tres pontos com maior necessidade e suporte factual.
+        - A linha de base e a nota deterministica fornecida; se for null, baselineScore e targetScore devem ser null. Nao gere nota por frequencia de palavras. Nao compare pessoas entre si.
+        - Explique o comportamento observado e por que a prioridade merece atencao, sem diagnosticar personalidade ou intencao.
+        - Cada item deve conter guide: diagnosis (achado com evidencia), whyItMatters (impacto possivel, nao causalidade provada),
+          firstAction (acao que a pessoa pode iniciar), managerSupport (apoio concreto do gestor),
+          successCriteria (resultado observavel e forma de revisar) e steps (duas a quatro etapas em ordem de execucao).
+        - Cada etapa inclui title, instruction, deliverable e dueInDays relativo ao inicio proposto do ciclo.
+          Combine revisao de casos, pratica aplicada e verificacao do resultado. O prazo da etapa nao pode exceder dueInDays do item.
+        - Relacione evidenceIds somente aos samples da mesma competencia. Nao use um exemplo como prova de recorrencia.
+        - action resume o habito a desenvolver; measurement define numerador, denominador ou amostra de revisao quando pertinente.
+        - resource deve usar os materiais e produtos existentes no contexto ou sugerir apoio do gestor, sem inventar cursos ou links.
+        - Se houve plano anterior, use-o como historico para continuidade, sem afirmar melhora quando os periodos ou dados nao permitem.
+        - Metas sao propostas para revisao humana. Ausencia de resposta, meta ou scorecard deve ser reconhecida como limitacao.
+        """;
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     public async Task<IndividualCoachResult?> AnalyzeAsync(AiAgentRuntimeSettings settings, object input, string companyId, CancellationToken cancellationToken)
@@ -99,18 +115,38 @@ public sealed class SkoposIndividualCoachClient(
                 items = new
                 {
                     type = "object", additionalProperties = false,
-                    required = new[] { "competencyKey", "title", "baselineScore", "targetScore", "action", "measurement", "resource", "dueInDays", "evidenceIds" },
+                    required = new[] { "competencyKey", "title", "baselineScore", "targetScore", "action", "measurement", "resource", "dueInDays", "evidenceIds", "guide" },
                     properties = new
                     {
                         competencyKey = CompetencyKey,
                         title = ShortText,
-                        baselineScore = Score,
-                        targetScore = Score,
+                        baselineScore = new { type = new[] { "integer", "null" }, minimum = 0, maximum = 100 },
+                        targetScore = new { type = new[] { "integer", "null" }, minimum = 0, maximum = 100 },
                         action = LongText,
                         measurement = LongText,
                         resource = LongText,
                         dueInDays = new { type = "integer", minimum = 7, maximum = 90 },
-                        evidenceIds = new { type = "array", maxItems = 5, items = new { type = "string" } }
+                        evidenceIds = new { type = "array", maxItems = 5, items = new { type = "string" } },
+                        guide = new
+                        {
+                            type = "object", additionalProperties = false,
+                            required = new[] { "diagnosis", "whyItMatters", "firstAction", "managerSupport", "successCriteria", "steps" },
+                            properties = new
+                            {
+                                diagnosis = LongText, whyItMatters = LongText, firstAction = LongText,
+                                managerSupport = LongText, successCriteria = LongText,
+                                steps = new
+                                {
+                                    type = "array", minItems = 2, maxItems = 4,
+                                    items = new
+                                    {
+                                        type = "object", additionalProperties = false,
+                                        required = new[] { "title", "instruction", "deliverable", "dueInDays" },
+                                        properties = new { title = ShortText, instruction = LongText, deliverable = LongText, dueInDays = new { type = "integer", minimum = 1, maximum = 90 } }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -120,4 +156,6 @@ public sealed class SkoposIndividualCoachClient(
 
 public sealed record IndividualCoachResult(string Summary, string Objective, IReadOnlyCollection<IndividualCoachStrength> Strengths, IReadOnlyCollection<IndividualCoachItem> Items);
 public sealed record IndividualCoachStrength(string Key, string Title, string Summary, int Score);
-public sealed record IndividualCoachItem(string CompetencyKey, string Title, int BaselineScore, int TargetScore, string Action, string Measurement, string Resource, int DueInDays, IReadOnlyCollection<string> EvidenceIds);
+public sealed record IndividualCoachItem(string CompetencyKey, string Title, int? BaselineScore, int? TargetScore, string Action, string Measurement, string Resource, int DueInDays, IReadOnlyCollection<string> EvidenceIds, IndividualDevelopmentGuide? Guide = null);
+public sealed record IndividualDevelopmentGuide(string Diagnosis, string WhyItMatters, string FirstAction, string ManagerSupport, string SuccessCriteria, IReadOnlyCollection<IndividualDevelopmentStep> Steps);
+public sealed record IndividualDevelopmentStep(string Title, string Instruction, string Deliverable, int DueInDays);

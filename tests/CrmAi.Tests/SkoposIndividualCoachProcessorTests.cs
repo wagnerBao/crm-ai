@@ -7,6 +7,68 @@ namespace CrmAi.Tests;
 public sealed class SkoposIndividualCoachProcessorTests
 {
     [Fact]
+    public void Qualitative_context_cannot_generate_a_numeric_grade()
+    {
+        Assert.Null(SkoposIndividualCoachProcessor.ScoreFromEvidence([]));
+        Assert.Null(SkoposIndividualCoachProcessor.ScoreFromEvidence([new(90, 0, 1, false)]));
+        Assert.Equal(90, SkoposIndividualCoachProcessor.ScoreFromEvidence([new(90, 100, 1, true)]));
+    }
+
+    [Fact]
+    public void Explicit_competency_mapping_overrides_name_aliases_and_can_disable_a_link()
+    {
+        Assert.Equal("product", SkoposIndividualCoachProcessor.MapCriterionToCompetency("next_step", "Critério próprio", "product"));
+        Assert.Null(SkoposIndividualCoachProcessor.MapCriterionToCompetency("next_step", "Próximo passo", "none"));
+        Assert.Null(SkoposIndividualCoachProcessor.MapCriterionToCompetency("next_step", "Próximo passo", "invalid"));
+    }
+
+    [Fact]
+    public void Development_priority_rejects_evidence_from_another_competency_or_outside_the_sample()
+    {
+        var valid = Guid.NewGuid(); var otherCompetency = Guid.NewGuid(); var outsideSample = Guid.NewGuid();
+        var allowed = new[] { valid.ToString(), otherCompetency.ToString() }.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var evidence = SkoposIndividualCoachProcessor.SelectCompetencyEvidence(
+            [otherCompetency.ToString(), outsideSample.ToString()], [valid, outsideSample], allowed);
+        Assert.Equal([valid.ToString()], evidence);
+    }
+
+    [Fact]
+    public void Development_guide_fallback_provides_practice_deliverables_and_manager_review()
+    {
+        var guide = SkoposIndividualCoachProcessor.NormalizeGuide(null, "cadence", 4, 30);
+        Assert.Contains("4 relatório(s)", guide.Diagnosis);
+        Assert.Contains("próximo passo", guide.FirstAction);
+        Assert.Equal(3, guide.Steps.Count);
+        Assert.All(guide.Steps, step => Assert.False(string.IsNullOrWhiteSpace(step.Deliverable)));
+        Assert.Equal(30, guide.Steps.Last().DueInDays);
+        Assert.Contains("revisão semanal", guide.ManagerSupport);
+    }
+
+    [Fact]
+    public void Development_steps_are_ordered_and_limited_to_the_item_horizon()
+    {
+        var input = new IndividualDevelopmentGuide("Achado", "Impacto possível", "Ação", "Revisar casos", "Medir", [
+            new("Verificar", "Revisar resultado", "Revisão registrada", 90),
+            new("Praticar", "Aplicar no atendimento", "Caso registrado", 0),
+            new("Inválida", "", "", 4)
+        ]);
+        var guide = SkoposIndividualCoachProcessor.NormalizeGuide(input, "qualification", 3, 14);
+        Assert.Equal(new[] { 1, 14 }, guide.Steps.Select(step => step.DueInDays));
+        Assert.Equal("Praticar", guide.Steps.First().Title);
+    }
+
+    [Fact]
+    public void Incomplete_development_steps_get_a_complete_fallback_without_losing_the_diagnosis()
+    {
+        var input = new IndividualDevelopmentGuide("Achado confirmado", "", "", "", "", []);
+        var guide = SkoposIndividualCoachProcessor.NormalizeGuide(input, "objections", 2, 7);
+        Assert.Equal("Achado confirmado", guide.Diagnosis);
+        Assert.Equal(3, guide.Steps.Count);
+        Assert.All(guide.Steps, step => Assert.InRange(step.DueInDays, 1, 7));
+        Assert.False(string.IsNullOrWhiteSpace(guide.SuccessCriteria));
+    }
+
+    [Fact]
     public void Coverage_reaches_full_score_only_with_complete_sample()
     {
         var metrics = new SkoposIndividualCoachProcessor.ObjectiveMetrics(
