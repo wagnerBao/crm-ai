@@ -77,17 +77,41 @@ public sealed class SkoposIndividualCoachProcessor(
         if (!settings.IsActive) throw new InvalidOperationException("Skopos Individual Coach is inactive for this company.");
         var reports = await ReadReportsAsync(connection, plan, cancellationToken);
         var metrics = await ReadMetricsAsync(connection, plan, reports, cancellationToken);
-        if (metrics.ReportCount < 5 || metrics.OpportunityCount < 3)
+        if (!IsReady(metrics))
         {
             await MarkInsufficientAsync(connection, plan, metrics, cancellationToken);
             return;
         }
 
         var scorecardSignals = await ReadScorecardSignalsAsync(connection, plan, cancellationToken);
+        var reportById = reports.ToDictionary(report => report.Id);
+        scorecardSignals = scorecardSignals.Where(signal => reportById.ContainsKey(signal.Report.Id))
+            .Select(signal => signal with { Report = reportById[signal.Report.Id] }).ToArray();
         var candidates = BuildCandidates(reports, scorecardSignals);
+        var sampledIds = SkoposEvidenceSampling.Select(reports.Select(report => new SkoposEvidenceSampling.Case(
+            report.Id, report.CaseKey ?? report.Id.ToString(), report.OpportunityId is null, report.OccurredAt,
+            scorecardSignals.Where(s => s.Report.Id == report.Id).Select(s => (int?)s.Score).Min()))).ToHashSet();
+        var excerptLimits = SkoposEvidenceSampling.TextLimits(sampledIds.Count);
+        var serviceSegments = reports.GroupBy(report => report.OpportunityId is null).Select(group =>
+        {
+            var groupIds = group.Select(report => report.Id).ToHashSet();
+            return new
+            {
+                withoutOpportunityAtAnalysis = group.Key,
+                reportCount = group.Count(), caseCount = group.Select(report => report.CaseKey).Distinct().Count(),
+                competencies = candidates.Select(candidate => new
+                {
+                    key = candidate.Rule.Key,
+                    evidenceCount = candidate.Reports.Count(report => groupIds.Contains(report.Id)),
+                    score = ScoreFromEvidence(candidate.Signals.Where(signal => groupIds.Contains(signal.Report.Id))
+                        .Select(signal => new StructuredScoreInput(signal.Score, signal.Confidence, signal.Weight, signal.Reviewed)))
+                }).Where(item => item.evidenceCount > 0).ToArray()
+            };
+        }).ToArray();
         var competencyScores = candidates.Select(candidate => new CompetencyScore(candidate.Rule.Key, candidate.Rule.Title, Score(candidate, metrics), candidate.Reports.Length, candidate.Signals.Length > 0 ? "scorecard" : "qualitative")).ToArray();
         var context = await ReadCommercialContextAsync(connection, plan, cancellationToken);
         IndividualCoachResult? synthesis = null;
+        string? synthesisLimitation = null;
         try
         {
             synthesis = await client.AnalyzeAsync(settings, new
@@ -95,7 +119,7 @@ public sealed class SkoposIndividualCoachProcessor(
                 period = new { from = plan.From, to = plan.To },
                 dataContext = new
                 {
-                    version = "commercial-development-v1",
+                    version = "contact-development-v2",
                     coverage = Coverage(metrics),
                     confidence = Confidence(metrics),
                     definitions = new
@@ -109,7 +133,13 @@ public sealed class SkoposIndividualCoachProcessor(
                 methodology = new
                 {
                     minimumReports = 5,
-                    minimumOpportunities = 3,
+                    minimumDistinctCases = 3,
+                    requiresOpportunity = false,
+                    minimumTargetEvidenceSamples = SkoposEvidenceSampling.MinimumTargetReports,
+                    maximumEvidenceSamples = SkoposEvidenceSampling.MaximumReports,
+                    selectedEvidenceSamples = sampledIds.Count,
+                    summaryCharacterLimit = excerptLimits.Summary,
+                    observationCharacterLimit = excerptLimits.Observation,
                     responseAttribution = "authenticated_sender_only",
                     excludedActivityType = "agent-skopos",
                     contentPolicy = "structured_scorecards_first_sanitized_legacy_summaries_fallback",
@@ -121,11 +151,24 @@ public sealed class SkoposIndividualCoachProcessor(
                         reviewedEvidenceWeightMultiplier = 2
                     }
                 },
-                operationalContext = metrics.OperationalContext,
                 metrics,
+                serviceSegments,
+                evidenceSample = reports.Where(report => sampledIds.Contains(report.Id)).Select(report => new
+                {
+                    id = report.Id, source = report.SourceType, report.OccurredAt,
+                    withoutOpportunity = report.OpportunityId is null,
+                    competencyKeys = candidates.Where(candidate => candidate.Reports.Any(item => item.Id == report.Id)).Select(candidate => candidate.Rule.Key),
+                    summary = Truncate(SkoposCoachProjectionService.SanitizeForCoach(report.Summary), excerptLimits.Summary),
+                    criteria = scorecardSignals.Where(signal => signal.Report.Id == report.Id)
+                        .OrderBy(signal => signal.Score).Take(1)
+                        .Concat(scorecardSignals.Where(signal => signal.Report.Id == report.Id).OrderByDescending(signal => signal.Score).Take(1))
+                        .DistinctBy(signal => signal.CriterionKey).Select(signal => new { signal.CriterionKey, signal.Score, signal.Reviewed,
+                            observation = Truncate(SkoposCoachProjectionService.SanitizeForCoach(signal.Justification), excerptLimits.Observation) })
+                }),
                 scorecardEvolution = scorecardSignals.GroupBy(signal => new { signal.CriterionKey, signal.TemplateKey, signal.TemplateVersion })
+                    .OrderByDescending(group => group.Max(signal => signal.Report.OccurredAt)).Take(12)
                     .Select(group => new { group.Key, observations = group.OrderBy(signal => signal.Report.OccurredAt)
-                        .Select(signal => new { signal.Report.OccurredAt, signal.Score, signal.Reviewed, reportId = signal.Report.Id }).TakeLast(20) }),
+                        .Select(signal => new { signal.Report.OccurredAt, signal.Score, signal.Reviewed, reportId = signal.Report.Id }).TakeLast(6) }),
                 competencies = candidates.Select(candidate => new
                 {
                     key = candidate.Rule.Key,
@@ -136,27 +179,24 @@ public sealed class SkoposIndividualCoachProcessor(
                         ? candidate.Signals.Any(signal => signal.Reviewed) ? "reviewed_scorecard" : "ai_scorecard"
                         : "legacy_summary",
                     reviewedEvidenceCount = candidate.Signals.Where(signal => signal.Reviewed).Select(signal => signal.Report.Id).Distinct().Count(),
-                    samples = candidate.Reports.Take(5).Select(report => new
-                    {
-                        id = report.Id.ToString(),
-                        source = report.SourceType,
-                        summary = Truncate(SkoposCoachProjectionService.SanitizeForCoach(
-                            SelectEvidenceExcerpt(candidate, report)), 600)
-                    })
+                    sampledEvidenceCount = candidate.Reports.Count(report => sampledIds.Contains(report.Id))
                 }),
                 commercialContext = JsonSerializer.Deserialize<object>(context, JsonOptions)
             }, plan.CompanyId.ToString(), cancellationToken);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
+            if (exception is SkoposContextBudgetException) synthesisLimitation = exception.Message;
             logger.LogWarning(exception, "Individual Coach synthesis failed; deterministic PDI will be used for {PlanId}.", plan.Id);
         }
 
-        var allowedEvidenceIds = reports.Select(report => report.Id.ToString()).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var items = NormalizeItems(synthesis, candidates, competencyScores, allowedEvidenceIds);
+        var allowedEvidenceIds = reports.Where(report => sampledIds.Contains(report.Id)).Select(report => report.Id.ToString()).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var items = NormalizeItems(synthesis, candidates, competencyScores, synthesis is null ? reports.Select(report => report.Id.ToString()).ToHashSet(StringComparer.OrdinalIgnoreCase) : allowedEvidenceIds);
         var strengths = NormalizeStrengths(synthesis, competencyScores);
         var limitations = BuildLimitations(scorecardSignals, candidates, metrics).ToList();
-        if (synthesis is null) limitations.Add("A síntese por IA estava indisponível. Este roteiro inicial foi preparado por regras e precisa de contextualização pelo gestor.");
+        if (sampledIds.Count < SkoposEvidenceSampling.MinimumTargetReports)
+            limitations.Add($"A amostra ilustrativa contém {sampledIds.Count} análises elegíveis, abaixo do alvo de 15. Foram usados somente os exemplos disponíveis, sem repetir casos para preencher a amostra.");
+        if (synthesis is null) limitations.Add(synthesisLimitation ?? "A síntese por IA estava indisponível. Este roteiro inicial foi preparado por regras e precisa de contextualização pelo gestor.");
         var assessmentId = Guid.NewGuid();
         var coverage = Coverage(metrics);
         var confidence = Confidence(metrics);
@@ -164,7 +204,7 @@ public sealed class SkoposIndividualCoachProcessor(
         var scorecardReportCount = scorecardSignals.Select(signal => signal.Report.Id).Distinct().Count();
         var reviewedScorecardCount = scorecardSignals.Where(signal => signal.Reviewed).Select(signal => signal.Report.Id).Distinct().Count();
         var summary = string.IsNullOrWhiteSpace(synthesis?.Summary)
-            ? $"Avaliação baseada em {metrics.ReportCount} relatórios, {metrics.OpportunityCount} oportunidades, {metrics.SourceCount} fontes e {scorecardReportCount} scorecards válidos ({reviewedScorecardCount} revisados). O plano prioriza até três competências com evidências rastreáveis."
+            ? $"Avaliação baseada em {metrics.ReportCount} análises em {metrics.CaseCount} casos distintos ({metrics.WithoutOpportunityCaseCount} sem oportunidade vinculada na análise), {metrics.OpportunityCount} oportunidades, {metrics.SourceCount} fontes e {scorecardReportCount} scorecards válidos ({reviewedScorecardCount} revisados). O plano prioriza até três competências com evidências rastreáveis."
             : synthesis.Summary.Trim();
         var objective = string.IsNullOrWhiteSpace(synthesis?.Objective)
             ? "Elevar a consistência do atendimento e da execução comercial com ações mensuráveis no próximo ciclo."
@@ -173,7 +213,7 @@ public sealed class SkoposIndividualCoachProcessor(
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         await InsertAssessmentAsync(connection, transaction, assessmentId, plan, metrics, coverage, confidence, competencyScores, strengths, items, limitations, settings.Model, fingerprint, cancellationToken);
         await InsertEvidenceAsync(connection, transaction, assessmentId, candidates, cancellationToken);
-        await UpdatePlanAsync(connection, transaction, plan.Id, assessmentId, summary, objective, coverage, confidence, strengths, limitations, settings.Model, fingerprint, items.Select(item => item.DueInDays).DefaultIfEmpty(30).Max(), BuildMethodology(metrics), cancellationToken);
+        await UpdatePlanAsync(connection, transaction, plan.Id, assessmentId, summary, objective, coverage, confidence, strengths, limitations, settings.Model, fingerprint, items.Select(item => item.DueInDays).DefaultIfEmpty(30).Max(), BuildMethodology(metrics, sampledIds.Count), cancellationToken);
         await InsertItemsAsync(connection, transaction, plan, items, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
     }
@@ -181,11 +221,9 @@ public sealed class SkoposIndividualCoachProcessor(
     private static async Task<List<Report>> ReadReportsAsync(NpgsqlConnection connection, PlanRequest plan, CancellationToken cancellationToken)
     {
         const string sql = """
-            SELECT id, source_type, opportunity_id, report_summary, occurred_at
-            FROM skopos_coach_agent_reports
-            WHERE company_id = @companyId AND owner_user_id = @userId
-              AND occurred_at >= @from::date AND occurred_at < (@to::date + interval '1 day')
-            ORDER BY occurred_at DESC
+            SELECT report_id, source_type, opportunity_id, report_summary, occurred_at, case_key
+            FROM skopos_coach_interaction_evidence(@companyId,@from,@to,@userId)
+            ORDER BY occurred_at DESC, report_id
             """;
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue("companyId", plan.CompanyId);
@@ -194,7 +232,7 @@ public sealed class SkoposIndividualCoachProcessor(
         command.Parameters.AddWithValue("to", plan.To);
         var reports = new List<Report>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        while (await reader.ReadAsync(cancellationToken)) reports.Add(new(reader.GetGuid(0), reader.GetString(1), reader.IsDBNull(2) ? null : reader.GetGuid(2), reader.GetString(3), reader.GetDateTime(4)));
+        while (await reader.ReadAsync(cancellationToken)) reports.Add(new(reader.GetGuid(0), reader.GetString(1), reader.IsDBNull(2) ? null : reader.GetGuid(2), reader.GetString(3), reader.GetDateTime(4), reader.GetString(5)));
         return reports;
     }
 
@@ -268,7 +306,7 @@ public sealed class SkoposIndividualCoachProcessor(
                 (SELECT percentile_cont(0.5) WITHIN GROUP(ORDER BY response_seconds)::int FROM responses),
                 (SELECT percentile_cont(0.9) WITHIN GROUP(ORDER BY response_seconds)::int FROM responses),
                 activity_count,completed_activity_count,overdue_activity_count,
-                skopos_operational_context(@companyId,@userId,@from,@to)::text
+                (skopos_operational_context(@companyId,@userId,@from,@to) || jsonb_build_object('contactCoverage',skopos_coach_contact_coverage(@companyId,@userId,@from,@to)))::text
             FROM skopos_activity_metrics(@companyId,@from,@to,@userId)
             """;
         await using var command = new NpgsqlCommand(sql, connection);
@@ -281,7 +319,9 @@ public sealed class SkoposIndividualCoachProcessor(
             reports.Select(report => report.OpportunityId).Where(id => id.HasValue).Distinct().Count(),
             reports.Select(report => report.SourceType).Distinct().Count(),
             reader.GetInt32(0), reader.IsDBNull(1) ? null : reader.GetInt32(1), reader.IsDBNull(2) ? null : reader.GetInt32(2),
-            reader.GetInt32(3), reader.GetInt32(4), reader.GetInt32(5), JsonSerializer.Deserialize<JsonElement>(reader.GetString(6)));
+            reader.GetInt32(3), reader.GetInt32(4), reader.GetInt32(5), JsonSerializer.Deserialize<JsonElement>(reader.GetString(6)),
+            reports.Select(report => report.CaseKey).Distinct().Count(),
+            reports.Where(report => report.OpportunityId is null).Select(report => report.CaseKey).Distinct().Count());
     }
 
     private static async Task<string> ReadCommercialContextAsync(NpgsqlConnection connection, PlanRequest plan, CancellationToken cancellationToken)
@@ -289,17 +329,17 @@ public sealed class SkoposIndividualCoachProcessor(
         const string sql = """
             SELECT jsonb_build_object(
               'previousCycles', (SELECT coalesce(jsonb_agg(item), '[]'::jsonb) FROM (
-                SELECT previous.date_from, previous.date_to, previous.status, previous.objective,
+                SELECT previous.date_from, previous.date_to, previous.status, left(previous.objective,400) objective,
                   (SELECT coalesce(jsonb_agg(jsonb_build_object('competencyKey', item.competency_key,
                     'baseline', item.baseline_score, 'current', item.current_score, 'target', item.target_score,
-                    'action', item.action, 'status', item.status)), '[]'::jsonb)
+                    'action', left(item.action,240), 'status', item.status)), '[]'::jsonb)
                    FROM skopos_development_plan_items item WHERE item.plan_id = previous.id) items
                 FROM skopos_development_plans previous
                 WHERE previous.company_id = @companyId AND previous.user_id = @userId AND previous.id <> @planId
                   AND previous.status IN ('completed', 'cancelled')
                 ORDER BY previous.created_at DESC LIMIT 2) item),
-              'checkoutGoals', (SELECT coalesce(jsonb_agg(item), '[]'::jsonb) FROM (
-                SELECT snapshot.snapshot_date, person -> 'goals' goals,
+              'individualCheckinGoals', (SELECT coalesce(jsonb_agg(item), '[]'::jsonb) FROM (
+                SELECT snapshot.snapshot_date, jsonb_array_length(coalesce(person -> 'goals','[]'::jsonb)) applicable_goal_count,
                        person -> 'planned' planned, person -> 'executed' executed
                 FROM daily_checkout_snapshots snapshot
                 CROSS JOIN LATERAL jsonb_array_elements(coalesce(snapshot.payload_json -> 'tables' -> 'performance', '[]'::jsonb)) person
@@ -394,7 +434,7 @@ public sealed class SkoposIndividualCoachProcessor(
         return structured?.Justification ?? report.Summary;
     }
 
-    internal static string[] BuildMethodology(ObjectiveMetrics metrics) =>
+    internal static string[] BuildMethodology(ObjectiveMetrics metrics, int? sampleCount = null) =>
     [
         "A autoria individual vem do usuário autenticado no envio. O responsável atual não substitui autoria desconhecida.",
         metrics.OperationalContext is { } context && context.TryGetProperty("clockBasis", out var basis) && basis.GetString() == "business"
@@ -404,12 +444,22 @@ public sealed class SkoposIndividualCoachProcessor(
         "Análises automáticas, tarefas de revisão de follow-up e conclusões sem autoria comprovada ficam separadas da execução humana.",
         "A nota revisada de cada critério prevalece sobre a IA. Cada interação usa o scorecard corrente, sem duplicar versões substituídas.",
         "Evolução só deve ser comparada dentro do mesmo critério, template e versão. Resumos sem scorecard fornecem contexto qualitativo, sem nota.",
+        "A amostra inclui contatos com e sem oportunidade. Ausência de oportunidade não comprova perda, falha de qualificação ou atendimento ruim.",
+        "Uma análise por conversa e dia ou reunião e dia evita repetição. Checkout e risco comercial não substituem evidência de atendimento. Cobertura e confiança são indicadores heurísticos, não probabilidades de acerto.",
+        $"A amostra ilustrativa tem alvo de 15 a 30 análises{(sampleCount.HasValue ? $"; {sampleCount.Value} disponíveis e selecionadas neste ciclo" : "")}, equilibrando casos com e sem oportunidade e notas altas, baixas e recentes. O número respeita a base disponível e o limite de dois exemplos por caso. As notas consolidadas usam toda a base elegível.",
         "Campanhas são contexto comercial. O vínculo usa o responsável observado na captura do evento; registros antigos sem esse vínculo não são atribuídos retroativamente."
     ];
 
     private static string[] BuildLimitations(IReadOnlyCollection<ScorecardSignal> signals, IReadOnlyCollection<CompetencyCandidate> candidates, ObjectiveMetrics metrics)
     {
         var limitations = new List<string>();
+        if (metrics.OpportunityCount == 0) limitations.Add("Não há oportunidades vinculadas na amostra; o PDI avalia atendimento, sem concluir conversão, perda ou fechamento.");
+        if (metrics.OperationalContext is { } coverageContext && coverageContext.TryGetProperty("contactCoverage", out var contactCoverage))
+        {
+            if (contactCoverage.TryGetProperty("unanalyzedWithoutOpportunity", out var unanalysed) && unanalysed.GetInt32() > 0)
+                limitations.Add($"{unanalysed.GetInt32()} conversas sem oportunidade não têm análise elegível no período. Não foi inferida qualidade para esses atendimentos.");
+            limitations.Add("A cobertura da carteira usa o responsável atual ou análises atribuídas. O vínculo atual com oportunidades não mede conversão nem reconstitui transferências históricas.");
+        }
         if (metrics.ResponseCount == 0) limitations.Add("Não há respostas com autoria individual comprovada no período. O histórico sem autoria não foi atribuído ao responsável atual.");
         if (metrics.OperationalContext is { } context)
         {
@@ -440,7 +490,7 @@ public sealed class SkoposIndividualCoachProcessor(
     {
         var validKeys = scores.Where(score => score.EvidenceCount > 0).Select(score => score.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var modelItems = synthesis?.Items
-            .Where(item => validKeys.Contains(item.CompetencyKey))
+            .Where(item => validKeys.Contains(item.CompetencyKey) && candidates.First(candidate => candidate.Rule.Key.Equals(item.CompetencyKey, StringComparison.OrdinalIgnoreCase)).Reports.Any(report => allowedEvidenceIds.Contains(report.Id.ToString())))
             .GroupBy(item => item.CompetencyKey, StringComparer.OrdinalIgnoreCase).Select(group => group.First()).Take(3)
             .Select(item =>
             {
@@ -592,7 +642,7 @@ public sealed class SkoposIndividualCoachProcessor(
 
     private static async Task MarkInsufficientAsync(NpgsqlConnection connection, PlanRequest plan, ObjectiveMetrics metrics, CancellationToken cancellationToken)
     {
-        const string limitation = "A amostra deixou de atender ao mínimo de 5 relatórios e 3 oportunidades antes do processamento.";
+        const string limitation = "A amostra deixou de atender ao mínimo de 5 análises de atendimento em 3 casos distintos, com ou sem oportunidade antes do processamento.";
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         var assessmentId = Guid.NewGuid();
         await using (var command = new NpgsqlCommand("INSERT INTO skopos_coach_user_assessments (id, company_id, user_id, group_id, date_from, date_to, status, report_count, opportunity_count, source_count, limitations_json, completed_at) VALUES (@id,@company,@user,@group,@from,@to,'insufficient',@reports,@opportunities,@sources,@limitations::jsonb,now())", connection, transaction))
@@ -636,15 +686,16 @@ public sealed class SkoposIndividualCoachProcessor(
         var numerator = signals.Sum(value => Math.Clamp(value.Score, 0, 100) * (double)value.Weight * value.Confidence / 100d * (value.Reviewed ? 2d : 1d));
         return Math.Clamp((int)Math.Round(numerator / denominator), 0, 100);
     }
-    internal static int Coverage(ObjectiveMetrics metrics) => Math.Min(100, Math.Min(metrics.ReportCount, 10) * 4 + Math.Min(metrics.OpportunityCount, 3) * 10 + Math.Min(metrics.SourceCount, 2) * 10 + (metrics.ResponseCount > 0 ? 10 : 0));
-    internal static int Confidence(ObjectiveMetrics metrics) => Math.Min(95, 35 + Math.Min(metrics.ReportCount, 10) * 3 + Math.Min(metrics.OpportunityCount, 3) * 5 + Math.Min(metrics.SourceCount, 2) * 5 + (metrics.ResponseCount > 0 ? 5 : 0));
+    internal static bool IsReady(ObjectiveMetrics metrics) => metrics.ReportCount >= 5 && metrics.CaseCount >= 3;
+    internal static int Coverage(ObjectiveMetrics metrics) => Math.Min(100, Math.Min(metrics.ReportCount, 10) * 4 + Math.Min(metrics.CaseCount, 3) * 10 + Math.Min(metrics.SourceCount, 2) * 10 + (metrics.ResponseCount > 0 ? 10 : 0));
+    internal static int Confidence(ObjectiveMetrics metrics) => metrics.ReportCount == 0 ? 0 : Math.Min(85, 35 + Math.Min(metrics.ReportCount, 10) * 3 + Math.Min(metrics.CaseCount, 3) * 5 + Math.Min(metrics.SourceCount, 2) * 5 + (metrics.ResponseCount > 0 ? 5 : 0));
     private static string Truncate(string? value, int length) { var normalized = value?.Trim() ?? ""; return normalized.Length <= length ? normalized : normalized[..length]; }
     private static string DefaultAction(string key) => key switch { "cadence" => "Registrar o próximo passo ao final de cada atendimento e executar os retornos no prazo combinado.", "qualification" => "Aplicar um roteiro curto de necessidade, urgência, autoridade e critério de decisão antes de avançar.", "objections" => "Praticar escuta, validação e resposta baseada em valor para as objeções recorrentes da amostra.", "proposal" => "Apresentar proposta conectando valor, condição e próximo compromisso verificável.", "product" => "Revisar os produtos mais presentes na carteira e praticar sua conexão com necessidades reais.", "service" => "Reduzir esperas e tornar cada resposta clara, contextual e orientada ao próximo passo.", _ => "Revisar a carteira diariamente e concluir atividades comerciais não automáticas dentro do prazo." };
-    private static string DefaultMeasurement(string key) => key switch { "cadence" => "Ao menos 90% dos atendimentos avaliados com próximo passo registrado.", "qualification" => "Quatro critérios de qualificação registrados em 80% das oportunidades novas.", "objections" => "Registrar objeção, resposta aplicada e reação do cliente em cinco casos revisados.", "proposal" => "Toda proposta enviada com data de retorno e compromisso seguinte definidos.", "service" => "Reduzir a mediana e o P90 de resposta em relação à linha de base do período.", _ => "Revisão semanal de cinco evidências com evolução observável no indicador da competência." };
+    private static string DefaultMeasurement(string key) => key switch { "cadence" => "Ao menos 90% dos atendimentos avaliados com próximo passo registrado.", "qualification" => "Quatro critérios de qualificação registrados em 80% dos atendimentos revisados em que sejam aplicáveis, com ou sem oportunidade.", "objections" => "Registrar objeção, resposta aplicada e reação do cliente em cinco casos revisados.", "proposal" => "Toda proposta enviada com data de retorno e compromisso seguinte definidos.", "service" => "Reduzir a mediana e o P90 de resposta em relação à linha de base do período.", _ => "Revisão semanal de cinco evidências com evolução observável no indicador da competência." };
 
-    internal sealed record ObjectiveMetrics(int ReportCount, int OpportunityCount, int SourceCount, int ResponseCount, int? MedianResponseSeconds, int? P90ResponseSeconds, int ActivityCount, int CompletedActivityCount, int OverdueActivityCount, JsonElement? OperationalContext = null);
+    internal sealed record ObjectiveMetrics(int ReportCount, int OpportunityCount, int SourceCount, int ResponseCount, int? MedianResponseSeconds, int? P90ResponseSeconds, int ActivityCount, int CompletedActivityCount, int OverdueActivityCount, JsonElement? OperationalContext = null, int CaseCount = 0, int WithoutOpportunityCaseCount = 0);
     private sealed record PlanRequest(Guid Id, Guid CompanyId, Guid UserId, Guid? GroupId, DateOnly From, DateOnly To);
-    private sealed record Report(Guid Id, string SourceType, Guid? OpportunityId, string Summary, DateTime OccurredAt);
+    private sealed record Report(Guid Id, string SourceType, Guid? OpportunityId, string Summary, DateTime OccurredAt, string? CaseKey = null);
     private sealed record CompetencyRule(string Key, string Title, string[] Keywords);
     private sealed record CompetencyCandidate(CompetencyRule Rule, Report[] Reports, ScorecardSignal[] Signals);
     private sealed record CompetencyScore(string Key, string Title, int? Score, int EvidenceCount, string ScoreOrigin);

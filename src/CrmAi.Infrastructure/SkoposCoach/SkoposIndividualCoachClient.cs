@@ -1,6 +1,7 @@
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using CrmAi.Application;
 using Microsoft.Extensions.Options;
 
@@ -21,12 +22,48 @@ public sealed class SkoposIndividualCoachClient(
           successCriteria (resultado observavel e forma de revisar) e steps (duas a quatro etapas em ordem de execucao).
         - Cada etapa inclui title, instruction, deliverable e dueInDays relativo ao inicio proposto do ciclo.
           Combine revisao de casos, pratica aplicada e verificacao do resultado. O prazo da etapa nao pode exceder dueInDays do item.
-        - Relacione evidenceIds somente aos samples da mesma competencia. Nao use um exemplo como prova de recorrencia.
+        - Consulte evidenceSample para os exemplos e relacione evidenceIds somente aos exemplos cuja competencyKeys inclui a competencia do item. Nao use um exemplo como prova de recorrencia.
         - action resume o habito a desenvolver; measurement define numerador, denominador ou amostra de revisao quando pertinente.
         - resource deve usar os materiais e produtos existentes no contexto ou sugerir apoio do gestor, sem inventar cursos ou links.
         - Se houve plano anterior, use-o como historico para continuidade, sem afirmar melhora quando os periodos ou dados nao permitem.
+        - Contatos sem oportunidade fazem parte do atendimento. Sem oportunidade vinculada nao significa oportunidade perdida nem falha do colaborador. Nao invente motivos de nao conversao.
+        - Separe fatos observados, hipoteses para revisao e ausencia de cobertura. Reconheca boas praticas e problemas com exemplos, respeitando os denominadores e o escopo de cada metrica.
+        - serviceSegments separa as evidencias pelo vinculo informado na analise; compare apenas competencias cobertas, com denominadores e sem atribuir causalidade.
+        - Se evidenceTextCompactedForBudget estiver ativo, os trechos foram encurtados para respeitar o orcamento; reconheca quando um exemplo curto nao permite concluir o comportamento.
+        - As contagens de carteira usam vinculos atuais; nao as apresente como conversao de uma coorte nem como autoria historica comprovada. Casos sem analise nao receberam nota.
+        - Metas individuais do check-in nao sao configuracao operacional do checkout. Zero sem meta aplicavel significa nao aplicavel, nunca desconfiguracao.
         - Metas sao propostas para revisao humana. Ausencia de resposta, meta ou scorecard deve ser reconhecida como limitacao.
         """;
+    internal const int MaximumInputCharacters = 32_000;
+    internal static string SerializeBoundedInput(object input)
+    {
+        var json = JsonSerializer.Serialize(input, JsonOptions);
+        if (json.Length <= MaximumInputCharacters) return json;
+        var root = JsonNode.Parse(json) as JsonObject;
+        if (root?["evidenceSample"] is JsonArray examples)
+        {
+            // Keep every selected case, its membership and scores; compact narrative only.
+            foreach (var limits in new (int Summary, int Observation)[] { (240, 90), (180, 60), (120, 40), (80, 25) })
+            {
+                foreach (var example in examples.OfType<JsonObject>())
+                {
+                    Trim(example, "summary", limits.Summary);
+                    if (example["criteria"] is JsonArray criteria)
+                        foreach (var criterion in criteria.OfType<JsonObject>()) Trim(criterion, "observation", limits.Observation);
+                }
+                root["evidenceTextCompactedForBudget"] = true;
+                json = root.ToJsonString(JsonOptions);
+                if (json.Length <= MaximumInputCharacters) return json;
+            }
+        }
+        throw new SkoposContextBudgetException();
+
+        static void Trim(JsonObject item, string key, int limit)
+        {
+            if (item[key] is JsonValue value && value.TryGetValue<string>(out var text) && text.Length > limit)
+                item[key] = text[..limit];
+        }
+    }
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     public async Task<IndividualCoachResult?> AnalyzeAsync(AiAgentRuntimeSettings settings, object input, string companyId, CancellationToken cancellationToken)
@@ -39,7 +76,7 @@ public sealed class SkoposIndividualCoachClient(
             model,
             reasoning = new { effort = "low" },
             instructions = settings.Instructions,
-            input = JsonSerializer.Serialize(input, JsonOptions),
+            input = SerializeBoundedInput(input),
             store = false,
             text = new { format = new { type = "json_schema", name = "skopos_individual_pdi", strict = true, schema = Schema } }
         };
@@ -159,3 +196,6 @@ public sealed record IndividualCoachStrength(string Key, string Title, string Su
 public sealed record IndividualCoachItem(string CompetencyKey, string Title, int? BaselineScore, int? TargetScore, string Action, string Measurement, string Resource, int DueInDays, IReadOnlyCollection<string> EvidenceIds, IndividualDevelopmentGuide? Guide = null);
 public sealed record IndividualDevelopmentGuide(string Diagnosis, string WhyItMatters, string FirstAction, string ManagerSupport, string SuccessCriteria, IReadOnlyCollection<IndividualDevelopmentStep> Steps);
 public sealed record IndividualDevelopmentStep(string Title, string Instruction, string Deliverable, int DueInDays);
+
+internal sealed class SkoposContextBudgetException() : InvalidOperationException(
+    "O contexto do PDI excedeu o orçamento de 32 mil caracteres. Nenhuma chamada de IA foi feita; o roteiro determinístico precisa de revisão pelo gestor.");

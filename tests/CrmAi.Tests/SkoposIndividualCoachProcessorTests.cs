@@ -80,10 +80,10 @@ public sealed class SkoposIndividualCoachProcessorTests
             P90ResponseSeconds: 1800,
             ActivityCount: 12,
             CompletedActivityCount: 10,
-            OverdueActivityCount: 1);
+            OverdueActivityCount: 1, CaseCount: 3);
 
         Assert.Equal(100, SkoposIndividualCoachProcessor.Coverage(metrics));
-        Assert.Equal(95, SkoposIndividualCoachProcessor.Confidence(metrics));
+        Assert.Equal(85, SkoposIndividualCoachProcessor.Confidence(metrics));
     }
 
     [Fact]
@@ -98,7 +98,7 @@ public sealed class SkoposIndividualCoachProcessorTests
             P90ResponseSeconds: null,
             ActivityCount: 0,
             CompletedActivityCount: 0,
-            OverdueActivityCount: 0);
+            OverdueActivityCount: 0, CaseCount: 3);
 
         Assert.Equal(60, SkoposIndividualCoachProcessor.Coverage(metrics));
         Assert.InRange(SkoposIndividualCoachProcessor.Confidence(metrics), 0, 94);
