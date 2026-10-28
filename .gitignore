@@ -397,3 +397,11 @@ FodyWeavers.xsd
 
 # JetBrains Rider
 *.sln.iml
+
+# Credenciais, logs e cópias de produção locais dos agentes
+/.agent-local/
+
+# BEGIN:skopos-private-data
+# Credenciais, logs e cópias de produção locais dos agentes
+/.agent-local/
+# END:skopos-private-data

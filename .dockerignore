@@ -10,3 +10,11 @@ Dockerfile
 portainer-stack-api.yml
 README.md
 *.md
+
+# Credenciais, logs e cópias de produção locais dos agentes
+.agent-local/
+
+# BEGIN:skopos-private-data
+# Credenciais, logs e cópias de produção locais dos agentes
+.agent-local/
+# END:skopos-private-data

@@ -1,0 +1,8 @@
+{
+  "chat.agentHost.codexAgent.enabled": true,
+  "chat.editor.codex.preferAgentHost": true,
+  "chat.useAgentsMdFile": true,
+  "chat.useNestedAgentsMdFiles": true,
+  "chat.subagents.showCreditUsage": true,
+  "sessions.useWorktree": true
+}
