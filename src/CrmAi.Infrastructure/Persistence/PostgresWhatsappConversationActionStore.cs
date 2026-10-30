@@ -660,6 +660,7 @@ public sealed class PostgresWhatsappConversationActionStore(NpgsqlDataSource dat
             select direction, message_at
             from whatsapp_messages
             where conversation_id = @conversationId
+              and not coalesce((to_jsonb(whatsapp_messages) ->> 'is_historical')::boolean, false)
               and status <> 'deleted'
             order by message_at desc, created_at desc
             limit 1;
@@ -743,6 +744,7 @@ public sealed class PostgresWhatsappConversationActionStore(NpgsqlDataSource dat
                            select 1
                            from whatsapp_messages message
                            where message.conversation_id = coalesce(@conversationId, ai_agent_suggestions.conversation_id)
+                             and not coalesce((to_jsonb(message) ->> 'is_historical')::boolean, false)
                              and message.direction = 'incoming'
                              and coalesce(message.status, '') <> 'deleted'
                              and message.message_at > ai_agent_suggestions.resolved_at
@@ -761,6 +763,7 @@ public sealed class PostgresWhatsappConversationActionStore(NpgsqlDataSource dat
                         select 1
                         from whatsapp_messages message
                         where message.conversation_id = coalesce(@conversationId, ai_agent_suggestions.conversation_id)
+                             and not coalesce((to_jsonb(message) ->> 'is_historical')::boolean, false)
                           and message.direction = 'incoming'
                           and coalesce(message.status, '') <> 'deleted'
                           and message.message_at > ai_agent_suggestions.resolved_at

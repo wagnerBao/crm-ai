@@ -672,6 +672,7 @@ public sealed class PostgresDailyCheckinProjectionService(NpgsqlDataSource dataS
                     on conversation.id = message.conversation_id
                    and conversation.company_id = message.company_id
                 where conversation.owner_user_id = any(@userIds)
+                  and not coalesce((to_jsonb(message) ->> 'is_historical')::boolean, false)
                   and conversation.is_group = false
                   and message.direction = 'outgoing'
                   and coalesce(message.status, '') <> 'failed'

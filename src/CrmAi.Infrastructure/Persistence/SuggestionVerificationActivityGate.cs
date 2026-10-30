@@ -38,6 +38,7 @@ internal static class SuggestionVerificationActivityGate
                     select 1 from whatsapp_messages message
                     inner join whatsapp_conversations conversation on conversation.id = message.conversation_id
                     where conversation.company_id = suggestion.company_id
+                      and not coalesce((to_jsonb(message) ->> 'is_historical')::boolean, false)
                       and conversation.contact_id = suggestion.contact_id
                       and message.message_at >= suggestion.created_at
                       and (

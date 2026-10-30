@@ -203,6 +203,10 @@ public sealed class PostgresWhatsappConversationAnalysisScheduler(
             where insight.kind = @kind
               and insight.status = 'pending'
               and settings.is_active = true
+              and exists (select 1 from whatsapp_messages live_message
+                  where live_message.conversation_id = conversation.id
+                    and not coalesce((to_jsonb(live_message) ->> 'is_historical')::boolean, false)
+                    and live_message.status <> 'deleted')
               and coalesce(company_setting.is_active, default_setting.is_active, true) = true
               -- Both incoming and outgoing messages reset the conversation clock.
               -- Activity inactivity settings govern persistence, independently of the agent delay.
@@ -494,6 +498,7 @@ public sealed class PostgresWhatsappConversationAnalysisScheduler(
                 limit 1
             ) transcription on true
             where message.conversation_id = @conversationId
+              and not coalesce((to_jsonb(message) ->> 'is_historical')::boolean, false)
               and message.status <> 'deleted'
               and (@after::timestamptz is null or message.message_at > @after::timestamptz)
             order by message.message_at desc

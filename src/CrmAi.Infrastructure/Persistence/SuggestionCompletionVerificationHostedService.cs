@@ -287,6 +287,7 @@ public sealed class SuggestionCompletionVerificationProcessor(
                     limit 1
                 ) transcription on true
                 where @includeWhatsappMessages
+                  and not coalesce((to_jsonb(message) ->> 'is_historical')::boolean, false)
                   and conversation.company_id = @companyId and conversation.contact_id = @contactId
                   and message.message_at >= @windowStart
 

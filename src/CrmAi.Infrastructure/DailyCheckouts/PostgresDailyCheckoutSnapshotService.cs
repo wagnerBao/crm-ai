@@ -963,6 +963,7 @@ public sealed class PostgresDailyCheckoutSnapshotService(
                 select min(created_at) from whatsapp_conversations where company_id = @companyId
                 union all
                 select min(message_at) from whatsapp_messages where company_id = @companyId
+                    and not coalesce((to_jsonb(whatsapp_messages) ->> 'is_historical')::boolean, false)
                 union all
                 select min(created_at) from opportunity_history where company_id = @companyId
             ) operational_dates
