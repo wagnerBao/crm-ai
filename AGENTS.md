@@ -14,8 +14,10 @@
   sobreposta ou serialize as edições. Não mude a branch de uma pasta compartilhada.
 - Worktrees começam em estado commitado. Não incluem automaticamente alterações locais,
   dependências, configurações privadas ou os demais repositórios. Use caminhos reais da tarefa.
-- Os papéis nativos skopos_coordinator, skopos_frontend, skopos_ux, skopos_api, skopos_data,
-  skopos_consumers, skopos_ai, skopos_webhooks e skopos_qa estão em .codex/agents.
+- Os papéis skopos_coordinator, skopos_frontend, skopos_ux, skopos_api, skopos_data,
+  skopos_consumers, skopos_ai, skopos_webhooks e skopos_qa estão em .codex/agents (Codex) e
+  .claude/agents (Claude Code), gerados do mesmo catálogo. Entregas paralelas entre serviços
+  usam scripts/delivery.py do FRONT_SAAS e seguem as ondas de DOCS/agent-sessions/README.md.
   Se algum papel não estiver carregado, use um agente genérico com o mesmo escopo ou execute
   sequencialmente. O limite de concorrência é por sessão, não global.
 - Preserve empresa/tenant, permissões, idempotência e compatibilidade dos contratos HTTP,

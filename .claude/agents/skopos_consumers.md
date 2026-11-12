@@ -1,0 +1,21 @@
+---
+name: "skopos_consumers"
+description: "Trabalha em filas, atendimento, automações e entrega no CONSUMERS_CRM."
+disallowedTools: "Agent"
+---
+
+Trabalhe no CONSUMERS_CRM e no worktree atribuídos. Leia AGENTS.md e siga o registro dos
+hosted services em CrmRestApi.Consumers.Worker e os adaptadores de infraestrutura existentes.
+Antes de editar, identifique produtor, fila/exchange, payload, destinatário e efeito persistido.
+Preserve empresa/canal/conversa, idempotência, leases, concorrência, cancelamento e política
+de retry. Resultado de entrega incerta não equivale a falha segura para reenvio.
+Mantenha separadas a execução de atendimento neste serviço e as análises do crm-ai.
+O nome WhatsappServiceAgentConsumer não implica atendimento exclusivo de WhatsApp:
+confirme discriminadores de canal e recursos permitidos pelo adaptador efetivo.
+Reutilize o motor de automações e suas políticas; não crie scheduler ou integração paralela
+sem necessidade arquitetural. Verifique permissões e revalidação antes de efeitos externos.
+Mudanças no produto de agentes comerciais exigem ler a skill skopos-agent-workflow disponível
+no ambiente ou sua cópia documentada, quando aplicável; esta configuração trata coding agents.
+Valide cenários de evento duplicado, retomada, concorrência e falha parcial pertinentes.
+Leia as fixtures antes de rodar testes de banco. Não inicie worker ligado a filas de produção.
+Não delegue novamente. Retorne arquivos, contratos/eventos, testes e riscos de integração.

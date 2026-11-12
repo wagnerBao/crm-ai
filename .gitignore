@@ -403,5 +403,7 @@ FodyWeavers.xsd
 
 # BEGIN:skopos-private-data
 # Credenciais, logs e cópias de produção locais dos agentes
+/.claude/settings.local.json
+/.claude/worktrees/
 /.agent-local/
 # END:skopos-private-data
