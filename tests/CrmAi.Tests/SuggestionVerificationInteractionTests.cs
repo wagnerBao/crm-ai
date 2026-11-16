@@ -35,17 +35,7 @@ public sealed class SuggestionVerificationInteractionTests : IAsyncLifetime
     private readonly Guid suggestionId = Guid.NewGuid();
     private readonly CancellationToken ct = CancellationToken.None;
 
-    public async Task InitializeAsync()
-    {
-        var connectionString = Environment.GetEnvironmentVariable("SUGGESTION_VERIFICATION_TEST_DATABASE");
-        if (string.IsNullOrWhiteSpace(connectionString)) return;
-        var configuration = new NpgsqlConnectionStringBuilder(connectionString)
-        {
-            SearchPath = "pg_temp", MaxPoolSize = 1, MinPoolSize = 1,
-            NoResetOnClose = true, ApplicationName = "Skopos.Verification.Interaction.Tests"
-        };
-        db = NpgsqlDataSource.Create(configuration.ConnectionString);
-        await Sql("""
+    internal const string CreateTablesSql = """
             create temporary table ai_agent_suggestions (
                 id uuid primary key, company_id uuid, contact_id uuid, conversation_id uuid,
                 suggestion_type text default 'activity', status text default 'pending',
@@ -114,8 +104,20 @@ public sealed class SuggestionVerificationInteractionTests : IAsyncLifetime
                 transcribed_at timestamptz, updated_at timestamptz default now(), created_at timestamptz default now(),
                 summary text, transcript text
             );
-            set default_transaction_read_only = on;
-            """);
+            """;
+
+    public async Task InitializeAsync()
+    {
+        var connectionString = Environment.GetEnvironmentVariable("SUGGESTION_VERIFICATION_TEST_DATABASE");
+        if (string.IsNullOrWhiteSpace(connectionString)) return;
+        var configuration = new NpgsqlConnectionStringBuilder(connectionString)
+        {
+            SearchPath = "pg_temp", MaxPoolSize = 1, MinPoolSize = 1,
+            NoResetOnClose = true, ApplicationName = "Skopos.Verification.Interaction.Tests"
+        };
+        db = NpgsqlDataSource.Create(configuration.ConnectionString);
+        await Sql(CreateTablesSql);
+        await Sql("set default_transaction_read_only = on");
         Assert.Equal("on", await Scalar<string>("select current_setting('transaction_read_only')"));
         Assert.Equal("pg_temp", await Scalar<string>("show search_path"));
         await Sql($"""
@@ -194,6 +196,89 @@ public sealed class SuggestionVerificationInteractionTests : IAsyncLifetime
         var complete = typeof(PostgresWhatsappConversationActionStore).GetMethod("CompleteQueuedRunAsync",
             System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)!;
         await (Task)complete.Invoke(null, [connection, runId, conversationId, "Resumo de fixture", ct])!;
+    }
+
+    [SuggestionPostgresFact]
+    public async Task Unchanged_backlog_is_deferred_in_bounded_batches_without_attempts_or_history()
+    {
+        const int backlogSize = 63;
+        await Sql($"""
+            delete from ai_agent_suggestions;
+            insert into ai_agent_suggestions(id, company_id, contact_id, verification_status,
+                last_verified_at, next_verification_at, verification_attempt_count)
+            select gen_random_uuid(), '{companyId}', '{contactId}', 'unfulfilled',
+                   now()-interval '1 hour', now()-interval '1 second', 3
+            from generate_series(1, {backlogSize});
+            """);
+        var originalCheck = await Scalar<DateTime>("select min(last_verified_at) from ai_agent_suggestions");
+        for (var batch = 1; batch <= 3; batch++)
+        {
+            Assert.False(await Process());
+            Assert.Equal(Math.Min(backlogSize, batch * SuggestionCompletionVerificationProcessor.ClaimBatchSize),
+                await Scalar<long>("select count(*) from ai_agent_suggestions where next_verification_at > now()"));
+        }
+        Assert.False(await Process());
+        Assert.Equal(0, client.Calls);
+        Assert.Equal(0L, await HistoryCount());
+        Assert.Equal(backlogSize, await Scalar<long>("select count(*) from ai_agent_suggestions where verification_attempt_count=3 and verification_status='unfulfilled'"));
+        Assert.Equal(originalCheck, await Scalar<DateTime>("select min(last_verified_at) from ai_agent_suggestions"));
+        Assert.Equal(originalCheck, await Scalar<DateTime>("select max(last_verified_at) from ai_agent_suggestions"));
+        Assert.True(await Scalar<bool>("select bool_and(next_verification_at between now()+interval '4 minutes' and now()+interval '6 minutes') from ai_agent_suggestions"));
+    }
+
+    [SuggestionPostgresFact]
+    public async Task Rejected_batch_does_not_starve_the_next_eligible_suggestion()
+    {
+        await Sql($"""
+            insert into ai_agent_suggestions(id,company_id,contact_id,verification_status,last_verified_at,created_at,next_verification_at)
+            select gen_random_uuid(),'{companyId}','{contactId}','unfulfilled',now()-interval '1 hour',
+                   now()-interval '3 days', now()-interval '2 hours'
+            from generate_series(1,{SuggestionCompletionVerificationProcessor.ClaimBatchSize});
+            update ai_agent_suggestions set next_verification_at=now()-interval '1 hour' where id='{suggestionId}';
+            """);
+        Assert.False(await Process());
+        // Even if processing the backlog takes longer than the fallback delay,
+        // its original head must not overtake due work that has not been visited.
+        await Sql($"update ai_agent_suggestions set next_verification_at=now()-interval '1 second' where id<>'{suggestionId}'");
+        Assert.True(await Process());
+        Assert.Equal("unfulfilled", await Scalar<string>($"select verification_status from ai_agent_suggestions where id='{suggestionId}'"));
+        Assert.Equal(1L, await HistoryCount());
+        Assert.False(await Process());
+    }
+
+    [SuggestionPostgresFact]
+    public async Task Scheduler_can_advance_the_fallback_poll_when_new_evidence_arrives()
+    {
+        Assert.True(await Process());
+        await Due();
+        Assert.False(await Process());
+        var fallback = await Scalar<DateTime>("select next_verification_at from ai_agent_suggestions");
+        await Sql($"insert into ai_agent_settings(company_id,agent_key,debounce_minutes) values ('{companyId}','suggestion-completion-verification',1)");
+        await Message("now()");
+        await RequestForScope();
+        Assert.True(await Scalar<DateTime>("select next_verification_at from ai_agent_suggestions") < fallback);
+        await Due();
+        Assert.True(await Process());
+        Assert.Equal(1, client.Calls);
+        Assert.Equal(2L, await HistoryCount());
+    }
+
+    [SuggestionPostgresFact]
+    public async Task Unchanged_backlog_keeps_unclaimed_eligible_work_and_recovers_expired_leases()
+    {
+        var other = Guid.NewGuid();
+        await Sql($"""
+            update ai_agent_suggestions set verification_status='processing', updated_at=now()-interval '16 minutes', next_verification_at=now()-interval '2 days';
+            insert into ai_agent_suggestions(id,company_id,contact_id,created_at)
+            values ('{other}','{companyId}','{contactId}',now()-interval '1 day');
+            """);
+        Assert.True(await Process());
+        Assert.Equal(1, await Scalar<int>($"select verification_attempt_count from ai_agent_suggestions where id='{suggestionId}'"));
+        Assert.Equal(0, await Scalar<int>($"select verification_attempt_count from ai_agent_suggestions where id='{other}'"));
+        Assert.Equal("pending", await Scalar<string>($"select verification_status from ai_agent_suggestions where id='{other}'"));
+        Assert.True(await Process());
+        Assert.Equal(2L, await HistoryCount());
+        Assert.False(await Process());
     }
 
     [SuggestionPostgresFact]

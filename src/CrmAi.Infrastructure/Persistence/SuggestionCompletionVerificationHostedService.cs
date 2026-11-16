@@ -56,6 +56,7 @@ public sealed class SuggestionCompletionVerificationProcessor(
     internal const string NotificationEventKey = "activity_suggestion_unfulfilled";
     internal const string ResponseNotificationEventKey = "activity_suggestion_response_pending";
     internal const int ConfidenceThreshold = 80;
+    internal const int ClaimBatchSize = 25;
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     private sealed record ClaimedSuggestion(
@@ -177,12 +178,15 @@ public sealed class SuggestionCompletionVerificationProcessor(
     {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
-        // The correlated eligibility checks have a high estimated cost even on
-        // idle polls. Keep JIT compilation off only for this short transaction.
+        // Bound and lock the due work before consulting the evidence sources.
+        // Rejected rows get a fallback poll date; new evidence can still bring
+        // it forward through SuggestionCompletionVerificationScheduler.
+        // Order by the scheduled deadline within each priority bucket so a
+        // deferred head cannot keep overtaking an unvisited overdue backlog.
         var sql = $$"""
             set local jit = off;
-            with candidate as (
-                select id, verification_status, evidence_fingerprint
+            with due_batch as materialized (
+                select suggestion.*
                 from ai_agent_suggestions suggestion
                 where status = 'pending'
                   and (
@@ -202,12 +206,33 @@ public sealed class SuggestionCompletionVerificationProcessor(
                     next_verification_at,
                     coalesce(suggested_due_at, created_at) + interval '5 minutes'
                   ) <= now()
-                  {{SuggestionVerificationActivityGate.Sql}}
                 order by case when priority_at is null then 0 else 1 end,
+                         coalesce(next_verification_at, coalesce(suggested_due_at, created_at) + interval '5 minutes'),
                          suggested_due_at,
-                         created_at
+                         created_at,
+                         id
                 for update skip locked
+                limit {{ClaimBatchSize}}
+            ), eligible as materialized (
+                select suggestion.*
+                from due_batch suggestion
+                where true
+                  {{SuggestionVerificationActivityGate.Sql}}
+            ), candidate as (
+                select id, verification_status, evidence_fingerprint
+                from eligible
+                order by case when priority_at is null then 0 else 1 end,
+                         coalesce(next_verification_at, coalesce(suggested_due_at, created_at) + interval '5 minutes'),
+                         suggested_due_at,
+                         created_at,
+                         id
                 limit 1
+            ), deferred as (
+                update ai_agent_suggestions suggestion
+                set next_verification_at = now() + interval '5 minutes'
+                from due_batch
+                where suggestion.id = due_batch.id
+                  and not exists (select 1 from eligible where eligible.id = due_batch.id)
             )
             update ai_agent_suggestions suggestion
             set verification_status = 'processing',
