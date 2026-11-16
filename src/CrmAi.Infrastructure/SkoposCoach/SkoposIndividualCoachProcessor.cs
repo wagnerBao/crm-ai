@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using CrmAi.Application;
+using CrmAi.Infrastructure.Persistence;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 using NpgsqlTypes;
@@ -53,7 +54,7 @@ public sealed class SkoposIndividualCoachProcessor(
 
     private static async Task<PlanRequest?> ClaimAsync(NpgsqlConnection connection, CancellationToken cancellationToken)
     {
-        const string sql = """
+        var sql = """
             UPDATE skopos_development_plans plan
             SET status = 'processing', attempt_count = attempt_count + 1, updated_at = now(), error_message = null
             WHERE plan.id = (
@@ -63,6 +64,8 @@ public sealed class SkoposIndividualCoachProcessor(
             )
             RETURNING plan.id, plan.company_id, plan.user_id, plan.group_id, plan.date_from, plan.date_to
             """;
+        if (await PostgresSaasPlanGate.AvailableAsync(connection, cancellationToken))
+            sql = sql.Replace("pending.status = 'pending'", "pending.status = 'pending' AND coalesce(saas_plan_entitlement(pending.company_id,'feature_intelligence'),1)>0", StringComparison.Ordinal);
         await using var command = new NpgsqlCommand(sql, connection);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken)) return null;
@@ -71,6 +74,8 @@ public sealed class SkoposIndividualCoachProcessor(
 
     private async Task ProcessAsync(NpgsqlConnection connection, PlanRequest plan, CancellationToken cancellationToken)
     {
+        if (!await PostgresSaasPlanGate.IncludedAsync(connection, plan.CompanyId, "feature_intelligence", cancellationToken))
+            throw new InvalidOperationException("SAAS_FEATURE_NOT_INCLUDED: Coach individual não incluído no plano vigente.");
         var settings = await settingsRepository.GetAsync(AgentKey, plan.CompanyId.ToString(), cancellationToken);
         settings = CommercialCoachingPolicy.ForAnalysis(settings);
         settings = settings with { ContextInstructions = settings.ContextInstructions + "\n\n" + SkoposIndividualCoachClient.DevelopmentInstructions };

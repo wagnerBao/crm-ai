@@ -251,6 +251,7 @@ public sealed class PostgresMeetingAudioAnalysisService(
     {
         if (!Guid.TryParse(recording.CompanyId, out var companyId)) return null;
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        if (!await PostgresSaasPlanGate.IncludedAsync(connection, companyId, "feature_intelligence", cancellationToken)) return null;
         const string templateSql = """
             select template.id, template.template_key, template.version, template.name
             from conversation_scorecard_templates template

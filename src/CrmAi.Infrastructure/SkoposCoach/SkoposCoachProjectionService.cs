@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using CrmAi.Application;
+using CrmAi.Infrastructure.Persistence;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 using NpgsqlTypes;
@@ -89,13 +90,19 @@ public sealed partial class SkoposCoachProjectionService(
 
     private async Task QueueDailyRunsAsync(NpgsqlConnection connection, CancellationToken cancellationToken)
     {
-        await using var command = new NpgsqlCommand(SkoposCoachProjectionSql.QueueDailyRuns, connection);
+        var sql = SkoposCoachProjectionSql.QueueDailyRuns;
+        if (await PostgresSaasPlanGate.AvailableAsync(connection, cancellationToken))
+            sql = sql.Replace("WHERE NOT EXISTS (", "WHERE coalesce(saas_plan_entitlement(candidate.company_id,'feature_intelligence'),1)>0 AND NOT EXISTS (", StringComparison.Ordinal);
+        await using var command = new NpgsqlCommand(sql, connection);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static async Task<RunRow?> ClaimRunAsync(NpgsqlConnection connection, CancellationToken cancellationToken)
     {
-        await using var command = new NpgsqlCommand(SkoposCoachProjectionSql.ClaimRun, connection);
+        var sql = SkoposCoachProjectionSql.ClaimRun;
+        if (await PostgresSaasPlanGate.AvailableAsync(connection, cancellationToken))
+            sql = sql.Replace("pending.status = 'pending'", "pending.status = 'pending' AND coalesce(saas_plan_entitlement(pending.company_id,'feature_intelligence'),1)>0", StringComparison.Ordinal);
+        await using var command = new NpgsqlCommand(sql, connection);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken)) return null;
         return new(reader.GetGuid(0), reader.GetGuid(1), reader.GetFieldValue<DateOnly>(2), reader.GetFieldValue<DateOnly>(3), reader.GetString(4));
@@ -103,6 +110,8 @@ public sealed partial class SkoposCoachProjectionService(
 
     private async Task ProcessRunAsync(NpgsqlConnection connection, RunRow run, CancellationToken cancellationToken)
     {
+        if (!await PostgresSaasPlanGate.IncludedAsync(connection, run.CompanyId, "feature_intelligence", cancellationToken))
+            throw new InvalidOperationException("SAAS_FEATURE_NOT_INCLUDED: Skopos Coach não incluído no plano vigente.");
         var settings = await settingsRepository.GetAsync(AgentKey, run.CompanyId.ToString(), cancellationToken);
         if (!settings.IsActive) throw new InvalidOperationException("Skopos Coach is inactive for this company.");
 

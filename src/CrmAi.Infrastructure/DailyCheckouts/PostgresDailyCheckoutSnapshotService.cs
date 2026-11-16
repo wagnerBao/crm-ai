@@ -28,6 +28,8 @@ public sealed class PostgresDailyCheckoutSnapshotService(
             {
                 var companyId = setting.CompanyId
                     ?? throw new InvalidOperationException("Daily checkout setting does not have a company id.");
+                if (Guid.TryParse(companyId, out var planCompany) &&
+                    !await CrmAi.Infrastructure.Persistence.PostgresSaasPlanGate.IncludedAsync(connection, planCompany, "feature_intelligence", cancellationToken)) continue;
                 var timeZone = ResolveTimeZone(setting.TimeZoneId);
                 var localNow = TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(utcNow, DateTimeKind.Utc), timeZone);
                 var runAt = ParseRunAt(setting.RunAt);

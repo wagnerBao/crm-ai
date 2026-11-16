@@ -25,6 +25,7 @@ public sealed class PostgresWhatsappScorecardContextRepository(NpgsqlDataSource 
         var occurredAt = GetDateTime(opportunityEvent, "latestMessageAt") ?? opportunityEvent.OccurredAt;
 
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        if (!await PostgresSaasPlanGate.IncludedAsync(connection, companyId, "feature_intelligence", cancellationToken)) return null;
         const string templateSql = """
             with scope as (
                 select opportunity.pipeline_id, opportunity.stage_id,

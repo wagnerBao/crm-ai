@@ -143,8 +143,17 @@ public sealed class PostgresAiAgentInvocationLogStore(NpgsqlDataSource dataSourc
     public async Task EnsureCreditsAvailableAsync(AiAgentInvocationContext context, CancellationToken cancellationToken)
     {
         if (!Guid.TryParse(context.CompanyId, out var companyId)) return;
-        if (!enforcementEnabled) return;
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        // A credit top-up or shadow mode cannot unlock a feature outside the company plan.
+        var feature = context.PlatformArea.Contains("coach", StringComparison.OrdinalIgnoreCase)
+            || context.PlatformArea.Contains("checkout", StringComparison.OrdinalIgnoreCase)
+            || context.PlatformArea.Contains("checkin", StringComparison.OrdinalIgnoreCase)
+            || context.PlatformArea.Contains("scorecard", StringComparison.OrdinalIgnoreCase)
+            || context.PlatformArea.Contains("quality", StringComparison.OrdinalIgnoreCase)
+            ? "feature_intelligence" : "feature_ai_agents";
+        if (!await PostgresSaasPlanGate.IncludedAsync(connection, companyId, feature, cancellationToken))
+            throw new InvalidOperationException("SAAS_FEATURE_NOT_INCLUDED: recurso de IA não incluído no plano vigente.");
+        if (!enforcementEnabled && !await PostgresSaasPlanGate.IsPaidSelfServiceAsync(connection, companyId, cancellationToken)) return;
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         await LockCompanyAsync(connection, transaction, companyId, cancellationToken);
         if (await IsUnlimitedAsync(connection, transaction, companyId, cancellationToken))
@@ -180,6 +189,9 @@ public sealed class PostgresAiAgentInvocationLogStore(NpgsqlDataSource dataSourc
 
     private static async Task ChargeAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, Guid companyId, AiAgentInvocationLogEntry entry, string? reservationInvocationId, bool meteringEnabled, bool enforcementEnabled, CancellationToken cancellationToken)
     {
+        var selfServiceEnforced = await PostgresSaasPlanGate.IsPaidSelfServiceAsync(connection, companyId, cancellationToken, transaction);
+        meteringEnabled |= selfServiceEnforced;
+        enforcementEnabled |= selfServiceEnforced;
         var input = Math.Max(0, (entry.Usage.PromptTokens ?? 0) - (entry.Usage.CachedPromptTokens ?? 0));
         var output = Math.Max(0, entry.Usage.CompletionTokens ?? 0);
         var cached = Math.Max(0, entry.Usage.CachedPromptTokens ?? 0);
